@@ -13,7 +13,7 @@
 - 同一 `request_id` 携带不同请求体会返回 HTTP 409 `IDEMPOTENCY_KEY_CONFLICT`。
 - 已知 `run_id` 的任务可以通过 `GET /v1/runs/{run_id}` 重新对账；需要等待的请求会继续进行有界轮询。
 - 已知 `plan_id` 且还没有提交运行的任务可以从该计划继续，不重新创建计划。
-- 在 `plan_submitting` 或 `run_submitting` 阶段发生传输异常时，系统记录 `submission_uncertain`，不会自动重复提交。必须先向 WARDEN 查询或由操作员确认该远端请求的结果。
+- 在 `plan_submitting` 或 `run_submitting` 阶段发生传输异常时，系统记录 `submission_uncertain`，不会自动重复提交。已知计划的运行提交可按下述唯一匹配规则向 WARDEN 查询；其余情况需操作员核对。
 
 该设计提供的是**防止 AgentGuard 自己盲目重复提交**，不是对 WARDEN 的远端 exactly-once 保证。若 WARDEN 本身不支持幂等键，网络中断后无法从客户端单方面证明远端操作只执行了一次。
 
@@ -49,3 +49,12 @@ REST 接口：
 ## 验证边界
 
 本版本的持久化、幂等、恢复分支和 API 行为通过本地测试替身验证。它没有证明实际 WARDEN 部署一定支持所有状态名称，也没有验证私有 FRACTAL-Bench、StegoPot 模型执行或真实模型的因果干预。部署前仍需针对实际 WARDEN commit 执行 `docs/INTEGRATION_GUIDE.md` 中的现场检查。
+# 丢失运行提交响应后的唯一匹配恢复（2026-10-24）
+
+当 SQLite 记录处于 `submission_uncertain` 且已知 WARDEN `plan_id` 时，
+AgentGuard 先读取 WARDEN 计划，核对 `request_id/contract_id/model_id/runtime_id/mode`，
+再列出远端运行。只有**恰好一个**运行属于该计划且有 `run_id`，才读取其终态并
+继续原工作流；零个、多个、身份不一致或内核不可达时继续返回
+`reconciliation_required`，不会再次执行 `POST /v1/runs`。真实 HTTP 演练从
+现存观察运行恢复到 SQLite `finished`，没有再次调用模型。
+本次全量测试 146 通过、2 跳过，真实 HTTP 专项 1 通过。

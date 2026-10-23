@@ -122,6 +122,18 @@ def test_warden_client_sanitizes_http_errors():
     assert "must-not-leak" not in str(caught.value)
 
 
+def test_warden_client_lists_runs_with_strict_response_shape():
+    transport = FakeTransport([
+        (200, [{"run_id": "run-1", "plan_id": "plan-1", "status": "completed"}]),
+        (200, {"run_id": "run-1"}),
+    ])
+    client = WardenKernelClient("https://warden.local", transport=transport)
+    assert client.list_runs()[0]["plan_id"] == "plan-1"
+    with pytest.raises(WardenKernelError) as caught:
+        client.list_runs()
+    assert caught.value.code == "WARDEN_BAD_RESPONSE"
+
+
 def test_warden_status_distinguishes_not_configured(monkeypatch):
     monkeypatch.delenv("AGENTGUARD_WARDEN_URL", raising=False)
     assert warden_status()["status"] == "not_configured"

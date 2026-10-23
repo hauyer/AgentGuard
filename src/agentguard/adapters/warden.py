@@ -153,6 +153,10 @@ class WardenKernelClient:
         path = f"/v1/runs/{quote(run_id, safe='')}"
         return self._expect_object(self._request("GET", path), path)
 
+    def list_runs(self) -> list[dict[str, Any]]:
+        """List WARDEN runs for safe reconciliation of an uncertain submission."""
+        return self._expect_object_list(self._request("GET", "/v1/runs"), "/v1/runs")
+
     def submit_audit(
         self, payload: Mapping[str, Any], *, start_run: bool = True
     ) -> dict[str, Any]:

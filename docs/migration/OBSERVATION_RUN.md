@@ -17,6 +17,10 @@ WARDEN 给出 `observational` 证据工件，AgentGuard 重查并将结果写入
 轮次，不含正文或基准真值。AgentGuard 按原工作流恢复并持久化终态；这仍是
 观察性证据，不构成风险或因果结论。
 
+利用该 WARDEN 运行的真实计划和运行编号，还演练了丢失提交响应后的恢复：
+AgentGuard 核对远端计划的请求身份，发现唯一匹配运行后将本地
+`submission_uncertain` 工作流恢复为 `finished`，没有再次提交模型调用。
+
 **实验总体并未成功**：8 条件中 6 个完成、2 个失败，StegoPot 汇总状态
 `failed`；总体 `benign_accuracy=0.0`、`coordinated_target_rate=0.0`。
 因此这次运行只验证真实观察链路，不能证明风险识别、因果归因或定向防御有效。

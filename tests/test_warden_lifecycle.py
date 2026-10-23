@@ -72,6 +72,14 @@ class FakeKernel:
             return dict(self.poll_runs.pop(0))
         return dict(self.initial_run)
 
+    def list_runs(self):
+        self.calls.append(("list_runs",))
+        return []
+
+    def get_audit_plan(self, plan_id):
+        self.calls.append(("get_audit_plan", plan_id))
+        return {"plan_id": plan_id, "request": request().to_warden_payload()}
+
 
 def request(**overrides):
     payload = {
@@ -519,6 +527,80 @@ def test_uncertain_run_submission_is_never_retried_automatically(tmp_path):
     result = service.execute(request())
     assert result["status"] == "reconciliation_required"
     assert len([call for call in kernel.calls if call[0] == "start_run"]) == 1
+
+
+def test_uncertain_run_submission_reconciles_one_matching_warden_run(tmp_path):
+    from agentguard.adapters.warden import WardenKernelError
+    from agentguard.services.warden_workflow_store import WardenWorkflowStore
+
+    class LostRunResponseKernel(FakeKernel):
+        def start_run(self, plan_id):
+            self.calls.append(("start_run", plan_id))
+            raise WardenKernelError("response lost", code="WARDEN_TIMEOUT")
+
+        def list_runs(self):
+            self.calls.append(("list_runs",))
+            return [dict(self.initial_run)]
+
+    journal = WardenWorkflowStore(tmp_path / "warden_workflows.sqlite3")
+    kernel = LostRunResponseKernel()
+    service = WardenLifecycleService(kernel, workflows=journal)
+    with pytest.raises(WardenKernelError):
+        service.execute(request())
+    recovered = service.execute(request())
+    assert recovered["status"] == "completed"
+    assert recovered["recovered"] is True
+    assert journal.get("req-1")["status"] == "finished"
+    assert len([call for call in kernel.calls if call[0] == "start_run"]) == 1
+
+
+def test_uncertain_run_submission_stays_ambiguous_with_multiple_matches(tmp_path):
+    from agentguard.services.warden_workflow_store import WardenWorkflowStore
+
+    class AmbiguousKernel(FakeKernel):
+        def list_runs(self):
+            self.calls.append(("list_runs",))
+            return [
+                {"run_id": "run-a", "plan_id": "plan-1", "status": "completed"},
+                {"run_id": "run-b", "plan_id": "plan-1", "status": "completed"},
+            ]
+
+    journal = WardenWorkflowStore(tmp_path / "warden_workflows.sqlite3")
+    value = request()
+    journal.begin(value.request_id, value.model_dump(mode="json"))
+    journal.update(value.request_id, "submission_uncertain", context={
+        "stage": "run_submitting",
+        "plan": {"plan_id": "plan-1", "status": "planned"},
+    })
+    kernel = AmbiguousKernel()
+    result = WardenLifecycleService(kernel, workflows=journal).execute(value)
+    assert result["status"] == "reconciliation_required"
+    assert journal.get("req-1")["status"] == "submission_uncertain"
+    assert not any(call[0] == "start_run" for call in kernel.calls)
+
+
+def test_uncertain_run_submission_rejects_mismatched_remote_plan(tmp_path):
+    from agentguard.services.warden_workflow_store import WardenWorkflowStore
+
+    class WrongPlanKernel(FakeKernel):
+        def get_audit_plan(self, plan_id):
+            value = super().get_audit_plan(plan_id)
+            value["request"]["request_id"] = "someone-else"
+            return value
+
+        def list_runs(self):
+            return [dict(self.initial_run)]
+
+    journal = WardenWorkflowStore(tmp_path / "warden_workflows.sqlite3")
+    value = request()
+    journal.begin(value.request_id, value.model_dump(mode="json"))
+    journal.update(value.request_id, "submission_uncertain", context={
+        "stage": "run_submitting",
+        "plan": {"plan_id": "plan-1", "status": "planned"},
+    })
+    result = WardenLifecycleService(WrongPlanKernel(), workflows=journal).execute(value)
+    assert result["status"] == "reconciliation_required"
+    assert journal.get("req-1")["status"] == "submission_uncertain"
 
 
 def test_workflow_api_lists_durable_workflow_summaries(tmp_path, monkeypatch):

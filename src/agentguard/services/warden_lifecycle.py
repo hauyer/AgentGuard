@@ -67,7 +67,9 @@ class WardenLifecycleService:
                 replay["idempotent_replay"] = True
                 replay["workflow_revision"] = entry["revision"]
                 return replay
-            if entry.get("status") in {"run_submitted", "polling", "timed_out", "plan_created"}:
+            if entry.get("status") in {
+                "run_submitted", "polling", "timed_out", "plan_created", "submission_uncertain"
+            }:
                 return self._resume_existing(request, entry)
             if entry.get("status") not in {"created", "preflighting", "interrupted"}:
                 return self._reconciliation_report(entry)
@@ -216,6 +218,35 @@ class WardenLifecycleService:
         plan = dict(context.get("plan") or {})
         run = dict(context.get("run") or {})
         state = str(entry.get("status") or "unknown")
+
+        if state == "submission_uncertain" and context.get("stage") == "run_submitting":
+            plan_id = plan.get("plan_id")
+            if isinstance(plan_id, str) and plan_id.strip():
+                try:
+                    remote_plan = self.client.get_audit_plan(plan_id)
+                    remote_request = remote_plan.get("request")
+                    expected = request.to_warden_payload()
+                    identity_keys = (
+                        "request_id", "contract_id", "model_id", "runtime_id", "mode"
+                    )
+                    if not isinstance(remote_request, Mapping) or any(
+                        remote_request.get(key) != expected[key] for key in identity_keys
+                    ):
+                        return self._reconciliation_report(entry)
+                    matches = [
+                        item for item in self.client.list_runs()
+                        if item.get("plan_id") == plan_id
+                    ]
+                except WardenKernelError:
+                    return self._reconciliation_report(entry)
+                if len(matches) == 1 and isinstance(matches[0].get("run_id"), str):
+                    run = dict(matches[0])
+                    self.workflows.update(
+                        request_id, "run_submitted",
+                        context={"stage": "run_submitted", "run": run},
+                        detail={"reconciled": True, "run_id": run["run_id"]},
+                    )
+                    state = "run_submitted"
 
         if state == "plan_created":
             if not request.start_run:
