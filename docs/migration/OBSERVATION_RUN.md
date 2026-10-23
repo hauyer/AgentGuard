@@ -12,6 +12,11 @@ WARDEN 通过 FRACTAL-Bench 冻结合同比对和 StegoPot `core.llm` 运行生�
 WARDEN 给出 `observational` 证据工件，AgentGuard 重查并将结果写入 SQLite
 （`finished`、8 条状态事件，因果状态 `not_assessed`）。
 
+第二次真实运行 `run-3ee7cf5d82fe4f498a11e3015719004f` 验证了观察证据
+的通信边元数据：指定条件公开 3 条消息，每条仅有消息 ID、发送/接收节点和
+轮次，不含正文或基准真值。AgentGuard 按原工作流恢复并持久化终态；这仍是
+观察性证据，不构成风险或因果结论。
+
 **实验总体并未成功**：8 条件中 6 个完成、2 个失败，StegoPot 汇总状态
 `failed`；总体 `benign_accuracy=0.0`、`coordinated_target_rate=0.0`。
 因此这次运行只验证真实观察链路，不能证明风险识别、因果归因或定向防御有效。
