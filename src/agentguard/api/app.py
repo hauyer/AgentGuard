@@ -1,7 +1,7 @@
-"""REST API for AgentGuard's controlled research workflow.
+"""REST API for AgentGuard's controlled research and WARDEN workflows.
 
-The default app uses synthetic data. Real-backend write operations require a configured
-operator approval token and an explicitly isolated experiment scope.
+The built-in research engine is synthetic. Real audit execution enters through the
+WARDEN client so this API does not become a second low-level model runtime.
 """
 from __future__ import annotations
 
@@ -97,6 +97,17 @@ def create_app(
     data_dir: str | Path | None = None,
     paired_executor=None,
 ) -> FastAPI:
+    if engine is not None and engine.runtime.capabilities().backend_mode == "real":
+        raise ValueError(
+            "Real audit runtimes must be accessed through the WARDEN kernel API; "
+            "direct AgentGuard runtime injection is limited to synthetic research backends"
+        )
+    if paired_executor is not None:
+        raise ValueError(
+            "Direct paired execution is not a production AgentGuard API path; "
+            "submit controlled audits through WARDEN"
+        )
+
     @asynccontextmanager
     async def lifespan(application: FastAPI):
         yield

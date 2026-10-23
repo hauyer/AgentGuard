@@ -25,4 +25,4 @@
 
 ## 阶段门槛
 
-阶段 0 已审计，阶段 1 已完成真实 WARDEN HTTP 联调与明确 blocked 的计划验证，详见 `STAGE1_REPORT.md`。真实模型运行链尚未建立，因此迁移删除重复底层代码的阶段 2 条件仍不满足。各后续阶段分别提交、报告测试结果、兼容风险与独立 Git commit；不自动推送或创建 PR。
+阶段 0 已审计；阶段 1 已完成真实 WARDEN HTTP 联调、blocked 计划验证和真实 7B 模型观察运行，详见 `STAGE1_REPORT.md` 与 `OBSERVATION_RUN.md`。阶段 2 已关闭 AgentGuard API 的直接真实运行时入口；底层重复模块的删除仍需 WARDEN Probe/白盒/因果重放等价能力及调用方迁移，详见 `STAGE2_BOUNDARY.md`。各后续阶段分别提交、报告测试结果、兼容风险与独立 Git commit；不自动推送或创建 PR。

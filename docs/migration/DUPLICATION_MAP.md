@@ -1,6 +1,6 @@
 # 重复能力与调用点清单
 
-依据 AgentGuard 本地导入基线 `3bc9584`、WARDEN `3116af8`。分类：A = WARDEN 已提供等价能力、迁移后可删除；B = 只部分覆盖，需保留适配/兼容；C = AgentGuard 上层职责；D = 确认无调用者的死代码。以下是**现状分类**，不是删除授权。
+依据 AgentGuard 本地导入基线 `3bc9584`、WARDEN `3116af8`，并于 2026-10-24 对照 WARDEN 观察运行提交 `e9aa65d` 复核。分类：A = WARDEN 已提供等价能力、迁移后可删除；B = 只部分覆盖，需保留适配/兼容；C = AgentGuard 上层职责；D = 确认无调用者的死代码。以下是**现状分类**，不是删除授权。
 
 | AgentGuard 模块 | 具体功能与现有调用者 | WARDEN 对应位置与差异 | 分类、处理 |
 | --- | --- | --- | --- |
@@ -14,6 +14,8 @@
 ## 其他保留能力
 
 `agents/coordinator.py`、`core/investigation.py`、`core/planner.py`、`core/policy.py`、`core/defense.py`、`memory/store.py`、`core/experience_bandit.py`、`research_registry.py`、`core/statistics.py`、API/CLI 与 `services/warden_workflow_store.py` 属于 AgentGuard 的调查、决策、研究管理和持久化职责，分类 **C**。`adapters/warden.py` 是必要边界，非重复内核。
+
+WARDEN `e9aa65d` 已提供冻结 FRACTAL-Bench 合同和 StegoPot 真实观察运行，但尚无公开的真实 Probe 训练/预测、白盒激活执行或配对因果重放等价入口。因此以上六类的删除判断不变。AgentGuard API 已拒绝直接注入真实 runtime 或 paired executor；旧模块仍有离线研究、弃用 API 或测试调用者。
 
 **可立即删除的业务模块：无。** 六个重点模块均有直接测试、公开导出、API/CLI/MCP 调用或文档用户。未确认任何 **D** 类模块。未来删除前须检查源码、测试、文档、JSON Schema、发布打包断言和外部用户迁移情况；不能因当前默认 API 未实例化某类就认定无调用者。
 

@@ -2,6 +2,7 @@
 
 ## Unreleased — Real-model observation integration
 
+- Prevent real runtime or paired-executor injection into the AgentGuard API; real audits must use WARDEN. Keep legacy offline interfaces until kernel parity is verified.
 - Added `observation` mode to WARDEN requests and diagnostics. Local model runs now return `queued` promptly and can be polled through the existing durable AgentGuard workflow.
 - Kept completed observation evidence at `causal_claim_status=not_assessed`; no causal claim is inferred from a message trace.
 - Recorded a real local 7B model run and its failed aggregate experiment in `docs/migration/OBSERVATION_RUN.md`.

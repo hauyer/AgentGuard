@@ -175,6 +175,7 @@ agentguard adapters check
 - [ ] 尚未做真实前瞻评估；该功能不是 RL 训练，也不提供校准成功概率。
 # 1.0.0 迁移补充：真实模型观察运行（2026-10-24）
 
+- [x] 阶段 2 边界加固：AgentGuard API 不再接收直接注入的真实运行时或配对执行器；真实审计经 WARDEN 客户端。见 `migration/STAGE2_BOUNDARY.md`。
 - [x] WARDEN 读取冻结 FRACTAL-Bench 合同，经 StegoPot 使用本地 7B 模型执行多智能体观察条件；AgentGuard 通过 HTTP 提交、轮询并将终态持久化到 SQLite。见 `migration/OBSERVATION_RUN.md`。
 - [x] 观察证据只含消息/模型调用数量和工件引用；`causal_claim_status=not_assessed`，没有把完成的条件误称为完整实验成功。
 - [ ] 8 个实验条件中 2 个失败，汇总状态 failed；尚无可用白盒激活后端、受控干预或因果验证。
