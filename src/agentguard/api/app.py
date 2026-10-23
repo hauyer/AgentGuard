@@ -20,6 +20,7 @@ from fastapi import FastAPI, Header, HTTPException, Query, Request
 from fastapi.responses import HTMLResponse, JSONResponse, Response
 from pydantic import Field
 
+from agentguard import __version__
 from agentguard.adapters.mock import MockBackend
 from agentguard.adapters.warden import WardenKernelClient, WardenKernelError, warden_status
 from agentguard.artifacts.local_store import ArtifactNotFoundError, LocalArtifactStore
@@ -42,6 +43,7 @@ from agentguard.core.orchestrator import AgentGuardEngine
 from agentguard.core.policy import InterventionPolicyEngine
 from agentguard.memory.store import ExperienceStore
 from agentguard.services.warden_lifecycle import WardenLifecycleService
+from agentguard.services.warden_diagnostics import diagnose_kernel
 from agentguard.services.warden_workflow_store import WardenWorkflowStore, WorkflowConflictError
 from agentguard.core.experience_bandit import recommend_actions
 from agentguard.contracts.research import (
@@ -104,7 +106,7 @@ def create_app(
 
     app = FastAPI(
         title="AgentGuard API",
-        version="0.9.0",
+        version=__version__,
         description=(
             "Controlled research API for multi-agent information-flow investigation. "
             "WARDEN workflows use a durable idempotency journal; the default research backend remains synthetic. "
@@ -246,7 +248,7 @@ def create_app(
 
     @app.get("/health")
     def health() -> dict:
-        return {"status": "ok", "service": "agentguard", "version": "0.8.0"}
+        return {"status": "ok", "service": "agentguard", "version": __version__}
 
     @app.get("/console", response_class=HTMLResponse)
     def console() -> str:
@@ -273,6 +275,19 @@ def create_app(
     def get_kernel_status() -> dict:
         """Report WARDEN integration state without treating missing infrastructure as low risk."""
         return warden_status()
+
+    @app.get("/v1/kernel/doctor")
+    def get_kernel_doctor(
+        contract_id: str | None = None,
+        probe_id: str | None = None,
+        sae_id: str | None = None,
+    ) -> dict:
+        return diagnose_kernel(
+            _configured_warden_client(),
+            contract_id=contract_id,
+            probe_id=probe_id,
+            sae_id=sae_id,
+        )
 
     @app.get("/v1/kernel/capabilities")
     def get_kernel_capabilities() -> dict:

@@ -296,6 +296,8 @@ class WardenLifecycleService:
         health = self.client.health()
         if health.get("status") != "ok":
             return {"status": "unavailable", "blockers": ["WARDEN_HEALTH_NOT_OK"], "health": health}
+        if health.get("api_version") != "v1":
+            return {"status": "blocked", "blockers": ["WARDEN_API_VERSION_INCOMPATIBLE"], "health": health}
 
         capabilities = self.client.capabilities()
         contracts = self.client.contracts()
@@ -410,6 +412,13 @@ class WardenLifecycleService:
         for key in ("evidence", "evidence_bundle", "artifacts", "result"):
             value = run.get(key)
             if isinstance(value, Mapping):
+                artifacts = value.get("artifacts")
+                if isinstance(artifacts, list):
+                    for artifact in artifacts:
+                        if isinstance(artifact, Mapping):
+                            ref = artifact.get("uri") or artifact.get("artifact_id")
+                            if isinstance(ref, str) and ref.strip():
+                                refs.append(ref.strip())
                 for ref_key in ("evidence_refs", "artifact_refs"):
                     items = value.get(ref_key)
                     if isinstance(items, list):

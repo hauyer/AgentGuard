@@ -31,6 +31,7 @@ from agentguard.core.planner import InvestigationPlanner, DefensePlanner
 from agentguard.core.experience_bandit import recommend_actions
 from agentguard.services.warden_lifecycle import WardenLifecycleService
 from agentguard.services.warden_workflow_store import WardenWorkflowStore
+from agentguard.services.warden_diagnostics import diagnose_kernel
 
 
 def _build_engine(*, use_llm_investigator: bool = False) -> tuple[AgentGuardEngine, MockBackend]:
@@ -143,9 +144,12 @@ def main() -> None:
     study.add_argument("--output", help="optional JSON output path")
 
     kernel = sub.add_parser("kernel", help="inspect or call the authoritative WARDEN audit kernel")
-    kernel.add_argument("action", choices=["status", "capabilities", "resources", "contracts", "submit", "run", "workflow-status"])
+    kernel.add_argument("action", choices=["status", "doctor", "capabilities", "resources", "contracts", "submit", "run", "workflow-status"])
     kernel.add_argument("--request-id", help="AgentGuard workflow request ID (workflow-status only)")
     kernel.add_argument("--kind", choices=["probe", "sae"], help="filter WARDEN resources")
+    kernel.add_argument("--contract-id", help="required WARDEN threat contract (doctor only)")
+    kernel.add_argument("--probe-id", help="required ready Probe resource (doctor only)")
+    kernel.add_argument("--sae-id", help="required ready SAE resource (doctor only)")
     kernel.add_argument("--config", help="JSON WARDEN audit request for the submit action")
     kernel.add_argument("--plan-only", action="store_true", help="create a plan but do not submit a run")
     kernel.add_argument("--wait", action="store_true", help="wait for a terminal WARDEN run status (run action only)")
@@ -211,6 +215,10 @@ def main() -> None:
                 raise
         if args.action == "status":
             print(json.dumps(warden_status(client), ensure_ascii=False, indent=2))
+        elif args.action == "doctor":
+            print(json.dumps(diagnose_kernel(
+                client, contract_id=args.contract_id, probe_id=args.probe_id, sae_id=args.sae_id,
+            ), ensure_ascii=False, indent=2))
         elif args.action == "workflow-status":
             if not args.request_id:
                 parser.error("kernel workflow-status requires --request-id")

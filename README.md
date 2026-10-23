@@ -1,6 +1,6 @@
 # AgentGuard
 
-> **1.0.0 迁移审计（阶段 0）：** 已建立 0.9.0 源码基线并核对 WARDEN 0.2.0 实际接口。当前完整测试在 nanogpt/PyTorch 环境为 135 通过、1 失败；WARDEN 默认服务缺运行时、审计资源和调度器，真实模型审计尚未验收。详见 [迁移基线](docs/migration/BASELINE.md)、[重复能力与调用点](docs/migration/DUPLICATION_MAP.md)、[接口兼容性](docs/migration/API_COMPATIBILITY.md)和[迁移顺序](docs/migration/MIGRATION_PLAN.md)。
+> **1.0.0 迁移进度：** 阶段 0 审计与阶段 1 真实 WARDEN HTTP 联调已完成；默认 WARDEN 因缺少运行时、Probe 与调度器明确阻塞模型审计。查看[阶段 1 实测报告](docs/migration/STAGE1_REPORT.md)、[迁移基线](docs/migration/BASELINE.md)、[重复能力与调用点](docs/migration/DUPLICATION_MAP.md)、[接口兼容性](docs/migration/API_COMPATIBILITY.md)和[迁移顺序](docs/migration/MIGRATION_PLAN.md)。
 
 **AgentGuard 0.9.0** 是一个面向多 Agent 信息流风险研究的上层工程框架，目标是连接 FRACTAL-Bench 的场景/独立评价能力与 StegoPot 的运行时能力，并提供检测、主动调查、受控干预、定向防御和证据审计。
 

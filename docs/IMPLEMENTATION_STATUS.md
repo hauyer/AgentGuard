@@ -1,5 +1,14 @@
 # AgentGuard 0.8.0 大规模开发验收清单
 
+## 1.0.0 迁移阶段 1（2026-10-23）
+
+- [x] 与独立 WARDEN 进程完成真实 HTTP health、capabilities、resources、contracts 和 blocked audit plan 联调，并将状态写入 SQLite。详见 `migration/STAGE1_REPORT.md`。
+- [x] 核对 WARDEN `api_version=v1`、调度器状态和真实 `EvidenceBundle.artifacts` 格式；公开计划剔除隐藏真值。
+- [x] 主环境 pytest 137 通过、2 跳过；nanogpt/PyTorch 环境 142 通过、1 跳过；WARDEN pytest 20 通过；FRACTAL-Bench 74 通过。
+- [ ] 默认 WARDEN 无真实模型 Runtime、执行阶段、调度器、Probe/SAE 工件；模型级审计未执行。
+- [ ] AgentGuard 全仓 Ruff 历史问题与 StegoPot 无测试文件的问题仍待处理。
+
+
 ## 1.0.0 迁移阶段 0 审计（2026-10-23）
 
 - [x] 将无 Git 历史的 0.9.0 压缩包导入本地基线，创建 `feature/warden-kernel-migration`。

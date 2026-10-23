@@ -74,6 +74,22 @@ def test_warden_client_submits_only_after_nonblocked_plan():
     assert json.loads(transport.calls[1][3]) == {"plan_id": "plan-1"}
 
 
+def test_warden_client_removes_hidden_truth_from_old_kernel_plan_responses():
+    plan = {"plan_id": "plan-1", "status": "blocked", "threat_contract": {
+        "contract_id": "contract-1", "scenario_id": "scenario-1",
+        "harmful_objective": "hidden-sentinel target",
+        "truth": {"secret": "hidden-sentinel"},
+    }}
+    transport = FakeTransport([(200, plan), (200, plan)])
+    client = WardenKernelClient("https://warden.local", transport=transport)
+    created = client.create_audit_plan(_payload())
+    fetched = client.get_audit_plan("plan-1")
+    assert "truth" not in created["threat_contract"]
+    assert "truth" not in fetched["threat_contract"]
+    assert set(created["threat_contract"]) == {"contract_id", "scenario_id"}
+    assert "hidden-sentinel" not in str((created, fetched))
+
+
 def test_warden_client_fails_closed_on_unknown_plan_status():
     transport = FakeTransport([(200, {"plan_id": "plan-unknown", "status": "new-status"})])
     client = WardenKernelClient("https://warden.local", transport=transport)

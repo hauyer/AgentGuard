@@ -12,6 +12,24 @@ from agentguard.memory.store import ExperienceStore
 from agentguard.services.warden_lifecycle import WardenLifecycleService
 
 
+def test_actual_warden_evidence_bundle_artifacts_are_referenced():
+    run = {"run_id": "run-1", "plan_id": "plan-1", "status": "completed", "evidence": {
+        "artifacts": [{"artifact_id": "artifact-1", "uri": "artifact://trace-1", "content_hash": "a" * 64}],
+        "risk_scores": [], "findings": [], "metrics": {}, "limitations": [],
+    }}
+    assert WardenLifecycleService._evidence_refs(run) == ["artifact://trace-1"]
+
+
+def test_incompatible_warden_api_blocks_before_plan_submission():
+    class OldKernel:
+        def health(self):
+            return {"status": "ok", "version": "0.1.0", "api_version": "v0"}
+
+    result = WardenLifecycleService(OldKernel()).preflight(request())
+    assert result["status"] == "blocked"
+    assert result["blockers"] == ["WARDEN_API_VERSION_INCOMPATIBLE"]
+
+
 class FakeKernel:
     def __init__(self, *, contracts=None, probes=None, saes=None, plan=None, run=None, poll_runs=None):
         self.contract_ids = contracts if contracts is not None else ["contract-1"]
@@ -26,7 +44,7 @@ class FakeKernel:
 
     def health(self):
         self.calls.append(("health",))
-        return {"status": "ok", "version": "0.2.0"}
+        return {"status": "ok", "version": "0.2.0", "api_version": "v1"}
 
     def capabilities(self):
         self.calls.append(("capabilities",))
@@ -203,7 +221,7 @@ def test_kernel_workflow_api_runs_preflight_and_reports_blocked(tmp_path, monkey
         def __call__(self, method, url, headers, body, timeout):
             self.calls.append((method, url, body))
             if url.endswith("/v1/health"):
-                payload = {"status": "ok", "version": "0.2.0"}
+                payload = {"status": "ok", "version": "0.2.0", "api_version": "v1"}
             elif url.endswith("/v1/capabilities"):
                 payload = []
             elif url.endswith("/v1/contracts"):
@@ -232,14 +250,14 @@ def test_real_client_boundary_full_lifecycle_uses_only_documented_warden_v1_rout
         def __init__(self):
             self.calls = []
             self.responses = [
-                (200, {"status": "ok", "version": "0.2.0"}),
+                (200, {"status": "ok", "version": "0.2.0", "api_version": "v1"}),
                 (200, [{"component_id": "activation.backend", "available": True}]),
                 (200, ["contract-1"]),
                 (200, [{"resource_id": "probe-1", "state": "ready", "version": "v1"}]),
                 (200, {"plan_id": "plan-1", "status": "planned", "blockers": []}),
                 (200, {"run_id": "run-1", "plan_id": "plan-1", "status": "running"}),
                 (200, {"run_id": "run-1", "plan_id": "plan-1", "status": "completed", "evidence_refs": ["artifact://trace-1"]}),
-                (200, {"status": "ok", "version": "0.2.0"}),
+                (200, {"status": "ok", "version": "0.2.0", "api_version": "v1"}),
             ]
 
         def __call__(self, method, url, headers, body, timeout):
@@ -396,7 +414,7 @@ def test_workflow_api_replays_same_request_and_exposes_audit_events(tmp_path, mo
         def __call__(self, method, url, headers, body, timeout):
             self.calls.append((method, url))
             if url.endswith("/v1/health"):
-                payload = {"status": "ok", "version": "0.2.0"}
+                payload = {"status": "ok", "version": "0.2.0", "api_version": "v1"}
             elif url.endswith("/v1/capabilities"):
                 payload = []
             elif url.endswith("/v1/contracts"):
@@ -433,7 +451,7 @@ def test_workflow_api_conflicting_reuse_of_request_id_returns_409(tmp_path, monk
     class Transport:
         def __call__(self, method, url, headers, body, timeout):
             if url.endswith("/v1/health"):
-                payload = {"status": "ok", "version": "0.2.0"}
+                payload = {"status": "ok", "version": "0.2.0", "api_version": "v1"}
             elif url.endswith("/v1/capabilities"):
                 payload = []
             elif url.endswith("/v1/contracts"):
@@ -501,7 +519,7 @@ def test_workflow_api_lists_durable_workflow_summaries(tmp_path, monkeypatch):
     class Transport:
         def __call__(self, method, url, headers, body, timeout):
             if url.endswith("/v1/health"):
-                payload = {"status": "ok", "version": "0.2.0"}
+                payload = {"status": "ok", "version": "0.2.0", "api_version": "v1"}
             elif url.endswith("/v1/capabilities"):
                 payload = []
             elif url.endswith("/v1/contracts"):

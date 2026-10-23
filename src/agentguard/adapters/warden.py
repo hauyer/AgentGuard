@@ -96,6 +96,17 @@ class WardenKernelClient:
             )
         return value
 
+    @classmethod
+    def _public_plan(cls, value: Any, endpoint: str) -> dict[str, Any]:
+        """Discard benchmark truth even when connected to an older WARDEN service."""
+        plan = cls._expect_object(value, endpoint)
+        contract = plan.get("threat_contract")
+        if isinstance(contract, dict):
+            plan = {**plan, "threat_contract": {
+                key: contract[key] for key in ("contract_id", "scenario_id") if key in contract
+            }}
+        return plan
+
     def health(self) -> dict[str, Any]:
         return self._expect_object(self._request("GET", "/v1/health"), "/v1/health")
 
@@ -127,13 +138,13 @@ class WardenKernelClient:
         return value
 
     def create_audit_plan(self, payload: Mapping[str, Any]) -> dict[str, Any]:
-        return self._expect_object(
+        return self._public_plan(
             self._request("POST", "/v1/audit-plans", dict(payload)), "/v1/audit-plans"
         )
 
     def get_audit_plan(self, plan_id: str) -> dict[str, Any]:
         path = f"/v1/audit-plans/{quote(plan_id, safe='')}"
-        return self._expect_object(self._request("GET", path), path)
+        return self._public_plan(self._request("GET", path), path)
 
     def start_run(self, plan_id: str) -> dict[str, Any]:
         return self._expect_object(self._request("POST", "/v1/runs", {"plan_id": plan_id}), "/v1/runs")

@@ -1,15 +1,9 @@
 import pytest
 
-try:
-    import torch
-except ImportError:
-    torch = None
+torch = pytest.importorskip("torch", reason="PyTorch is optional")
 
 from agentguard.contracts.whitebox import ActivationPatchSpec
 from agentguard.whitebox.activation import WhiteBoxActivationAdapter, WhiteBoxAdapterError
-
-
-pytestmark = pytest.mark.skipif(torch is None, reason="PyTorch is optional")
 
 
 class TinyCausalToy(torch.nn.Module):

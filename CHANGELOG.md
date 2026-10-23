@@ -2,6 +2,8 @@
 
 ## Unreleased — 1.0.0 migration, stage 0 audit
 
+- Stage 1: added live WARDEN diagnostics, API-version preflight, real `evidence.artifacts` reference extraction, an opt-in HTTP integration test, and defense-in-depth redaction of benchmark truth in plan responses.
+- Fixed optional-PyTorch test collection, Windows SQLite connection cleanup, and `/health` version drift; recorded a real blocked-plan HTTP run in `docs/migration/STAGE1_REPORT.md`.
 - Imported the supplied 0.9.0 source archive into a new local Git baseline and created `feature/warden-kernel-migration`; the archive contained no original Git history.
 - Documented test/CLI/API baselines, direct callers of overlapping modules, WARDEN 0.2.0 source/API compatibility, and an ordered migration with rollback gates in `docs/migration/`.
 - No production module was removed or changed. The full suite still has a Windows SQLite cleanup failure; real WARDEN HTTP and model execution remain unverified.

@@ -1,6 +1,7 @@
 """SQLite-backed immutable preregistration and analysis registry."""
 from __future__ import annotations
 
+from contextlib import closing
 from datetime import datetime, timezone
 import hashlib
 import json
@@ -41,7 +42,7 @@ class ResearchRegistry:
         return connection
 
     def _initialize(self) -> None:
-        with self._connect() as connection:
+        with closing(self._connect()) as connection, connection:
             connection.execute(
                 """CREATE TABLE IF NOT EXISTS registered_studies (
                     study_id TEXT PRIMARY KEY,
@@ -69,7 +70,7 @@ class ResearchRegistry:
             registration_sha256=registration_hash,
         )
         payload = study.model_dump(mode="json")
-        with self._lock, self._connect() as connection:
+        with self._lock, closing(self._connect()) as connection, connection:
             connection.execute(
                 "INSERT INTO registered_studies(study_id, registered_at, registration_sha256, payload_json) VALUES(?,?,?,?)",
                 (study.study_id, study.registered_at.isoformat(), registration_hash, canonical_json(payload)),
@@ -77,14 +78,14 @@ class ResearchRegistry:
         return study
 
     def get(self, study_id: str) -> RegisteredStudy | None:
-        with self._connect() as connection:
+        with closing(self._connect()) as connection, connection:
             row = connection.execute(
                 "SELECT payload_json FROM registered_studies WHERE study_id=?", (study_id,)
             ).fetchone()
         return RegisteredStudy.model_validate_json(row["payload_json"]) if row else None
 
     def list(self, limit: int = 100) -> list[RegisteredStudy]:
-        with self._connect() as connection:
+        with closing(self._connect()) as connection, connection:
             rows = connection.execute(
                 "SELECT payload_json FROM registered_studies ORDER BY registered_at DESC LIMIT ?",
                 (max(1, min(int(limit), 500)),),
@@ -93,7 +94,7 @@ class ResearchRegistry:
 
     def add_analysis(self, report: StudyAnalysisReport) -> None:
         payload = report.model_dump(mode="json")
-        with self._lock, self._connect() as connection:
+        with self._lock, closing(self._connect()) as connection, connection:
             exists = connection.execute(
                 "SELECT 1 FROM registered_studies WHERE study_id=? AND registration_sha256=?",
                 (report.study_id, report.registration_sha256),
@@ -106,7 +107,7 @@ class ResearchRegistry:
             )
 
     def analyses(self, study_id: str) -> list[StudyAnalysisReport]:
-        with self._connect() as connection:
+        with closing(self._connect()) as connection, connection:
             rows = connection.execute(
                 "SELECT payload_json FROM study_analyses WHERE study_id=? ORDER BY analyzed_at",
                 (study_id,),

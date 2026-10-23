@@ -1,5 +1,7 @@
 # AgentGuard ↔ WARDEN 0.2.0 接口核查
 
+> 本文保留阶段 0 的原始差异记录。阶段 1 已修复公开计划投影、`evidence.artifacts[]` 提取与 API 版本预检；实测见 `STAGE1_REPORT.md`。
+
 核查源：WARDEN commit `3116af8eb3a7fc3cc9d14ecfa4e5b469f2356e4a` 的 `warden/interface/api/`、`sdk.py`、`application/`、`core/domain/` 和默认 FastAPI 进程内烟测。未启动独立 HTTP 服务，也未执行真实模型。
 
 | WARDEN `/v1` 接口 | 源码与实际返回 | AgentGuard 当前实现 | 判定 |
