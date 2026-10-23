@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased — 1.0.0 migration, stage 0 audit
+
+- Imported the supplied 0.9.0 source archive into a new local Git baseline and created `feature/warden-kernel-migration`; the archive contained no original Git history.
+- Documented test/CLI/API baselines, direct callers of overlapping modules, WARDEN 0.2.0 source/API compatibility, and an ordered migration with rollback gates in `docs/migration/`.
+- No production module was removed or changed. The full suite still has a Windows SQLite cleanup failure; real WARDEN HTTP and model execution remain unverified.
+
 ## 0.9.0 — Durable WARDEN workflow journal and recovery
 
 - Added a SQLite-backed workflow journal with canonical request hashes, append-only status events, request snapshots, run/plan snapshots, and durable results.

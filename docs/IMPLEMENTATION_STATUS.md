@@ -1,5 +1,16 @@
 # AgentGuard 0.8.0 大规模开发验收清单
 
+## 1.0.0 迁移阶段 0 审计（2026-10-23）
+
+- [x] 将无 Git 历史的 0.9.0 压缩包导入本地基线，创建 `feature/warden-kernel-migration`。
+- [x] 核对 WARDEN `3116af8` 的真实 `/v1` 源码与默认 FastAPI 响应；完成模块调用点和迁移映射。见 `docs/migration/`。
+- [x] nanogpt/PyTorch 环境白盒测试 5 通过；完整 pytest 135 通过、1 失败（Windows SQLite 临时文件占用）。
+- [ ] 完整测试和 Ruff 尚未通过：Ruff 基线 173 项问题；项目虚拟环境未装 PyTorch 时白盒测试在收集阶段出错。
+- [ ] 尚未执行 AgentGuard→独立 WARDEN 服务的真实 HTTP 联调；WARDEN 默认服务没有 Runtime、Probe/SAE 资源或 Dispatcher。
+- [ ] 尚无真实模型运行、真实干预或因果有效性验收。阶段 1–7 均未开始。
+
+以上是 1.0.0 迁移项目的新阶段编号，不覆盖下文旧设计文档的 Phase 0–6 编号。
+
 ## 0.8.0 WARDEN 生命周期编排（2026-10-23）
 
 - [x] 新增 `WardenLifecycleService`：health/capabilities/contracts/resources 预检、计划提交、运行提交和有界轮询。
