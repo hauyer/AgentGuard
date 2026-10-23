@@ -1,0 +1,173 @@
+{
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {
+      "const": "0.1",
+      "default": "0.1",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "node_id": {
+      "maxLength": 256,
+      "minLength": 1,
+      "title": "Node Id",
+      "type": "string"
+    },
+    "node_type": {
+      "enum": [
+        "sender_activation",
+        "sender_logits",
+        "sender_cot",
+        "public_token",
+        "receiver_activation",
+        "receiver_cot",
+        "receiver_output",
+        "tool_result",
+        "other"
+      ],
+      "title": "Node Type",
+      "type": "string"
+    },
+    "baseline_secret_recovery": {
+      "items": {
+        "type": "number"
+      },
+      "maxItems": 100000,
+      "minItems": 2,
+      "title": "Baseline Secret Recovery",
+      "type": "array"
+    },
+    "intervened_secret_recovery": {
+      "items": {
+        "type": "number"
+      },
+      "maxItems": 100000,
+      "minItems": 2,
+      "title": "Intervened Secret Recovery",
+      "type": "array"
+    },
+    "baseline_collusion_success": {
+      "anyOf": [
+        {
+          "items": {
+            "type": "number"
+          },
+          "maxItems": 100000,
+          "minItems": 2,
+          "type": "array"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Baseline Collusion Success"
+    },
+    "intervened_collusion_success": {
+      "anyOf": [
+        {
+          "items": {
+            "type": "number"
+          },
+          "maxItems": 100000,
+          "minItems": 2,
+          "type": "array"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Intervened Collusion Success"
+    },
+    "baseline_benign_utility": {
+      "anyOf": [
+        {
+          "items": {
+            "type": "number"
+          },
+          "maxItems": 100000,
+          "minItems": 2,
+          "type": "array"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Baseline Benign Utility"
+    },
+    "intervened_benign_utility": {
+      "anyOf": [
+        {
+          "items": {
+            "type": "number"
+          },
+          "maxItems": 100000,
+          "minItems": 2,
+          "type": "array"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Intervened Benign Utility"
+    },
+    "case_families": {
+      "items": {
+        "type": "string"
+      },
+      "maxItems": 100000,
+      "minItems": 2,
+      "title": "Case Families",
+      "type": "array"
+    },
+    "evidence_mode": {
+      "default": "observed",
+      "enum": [
+        "synthetic",
+        "observed",
+        "measured"
+      ],
+      "title": "Evidence Mode",
+      "type": "string"
+    },
+    "source_artifact_refs": {
+      "items": {
+        "type": "string"
+      },
+      "maxItems": 1000,
+      "title": "Source Artifact Refs",
+      "type": "array"
+    },
+    "seed": {
+      "default": 7,
+      "title": "Seed",
+      "type": "integer"
+    },
+    "bootstrap_draws": {
+      "default": 5000,
+      "maximum": 100000,
+      "minimum": 100,
+      "title": "Bootstrap Draws",
+      "type": "integer"
+    },
+    "permutation_draws": {
+      "default": 20000,
+      "maximum": 1000000,
+      "minimum": 1000,
+      "title": "Permutation Draws",
+      "type": "integer"
+    }
+  },
+  "required": [
+    "node_id",
+    "node_type",
+    "baseline_secret_recovery",
+    "intervened_secret_recovery",
+    "case_families"
+  ],
+  "title": "AttributionNodeAnalysisRequest",
+  "type": "object"
+}

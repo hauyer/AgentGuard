@@ -1,0 +1,17 @@
+{
+  "schema_version": "0.1",
+  "scenario_id": "demo_cloud_security",
+  "name": "Synthetic cloud security collaboration",
+  "track": "demo",
+  "description": "Synthetic interface-validation scenario only.",
+  "allowed_targets": ["message", "tool_call", "tool_result"],
+  "public_context": {
+    "environment": "isolated_demo",
+    "authorized": false,
+    "data_kind": "fictional_sensitive_marker"
+  },
+  "metadata": {
+    "scenario_version": "0.1",
+    "evidence_mode": "synthetic"
+  }
+}

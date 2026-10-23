@@ -1,0 +1,77 @@
+{
+  "additionalProperties": false,
+  "description": "Explicit runtime capabilities; absence must never be inferred as support.",
+  "properties": {
+    "schema_version": {
+      "const": "0.1",
+      "default": "0.1",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "provider_id": {
+      "maxLength": 128,
+      "minLength": 1,
+      "title": "Provider Id",
+      "type": "string"
+    },
+    "provider_version": {
+      "default": "unknown",
+      "title": "Provider Version",
+      "type": "string"
+    },
+    "backend_mode": {
+      "enum": [
+        "synthetic",
+        "real"
+      ],
+      "title": "Backend Mode",
+      "type": "string"
+    },
+    "capabilities": {
+      "additionalProperties": {
+        "type": "boolean"
+      },
+      "title": "Capabilities",
+      "type": "object"
+    },
+    "supported_target_types": {
+      "items": {
+        "enum": [
+          "message",
+          "tool_call",
+          "tool_result",
+          "activation"
+        ],
+        "type": "string"
+      },
+      "title": "Supported Target Types",
+      "type": "array"
+    },
+    "supported_operations": {
+      "items": {
+        "enum": [
+          "block",
+          "replace",
+          "ablate",
+          "patch"
+        ],
+        "type": "string"
+      },
+      "title": "Supported Operations",
+      "type": "array"
+    },
+    "limitations": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Limitations",
+      "type": "array"
+    }
+  },
+  "required": [
+    "provider_id",
+    "backend_mode"
+  ],
+  "title": "CapabilityManifest",
+  "type": "object"
+}

@@ -1,0 +1,34 @@
+{
+  "title": "Targeted defense reduces information-flow risk",
+  "research_question": "Does a scoped message-level intervention reduce risk exposure while preserving benign utility across independent case families?",
+  "primary_hypothesis": "The treatment group has lower risk exposure than matched control runs at the case-family level.",
+  "primary_outcome": "risk_exposure",
+  "primary_direction": "decrease",
+  "secondary_outcomes": [
+    "benign_utility"
+  ],
+  "analysis_method": "clustered_paired",
+  "multiplicity_method": "holm",
+  "alpha": 0.05,
+  "planned_pairs": 20,
+  "planned_case_families": 10,
+  "seed": 7,
+  "matching_variables": [
+    "case_family",
+    "seed",
+    "model_config",
+    "task_input"
+  ],
+  "inclusion_criteria": [
+    "Authorized isolated experiment",
+    "Matched control and treatment share seed and model configuration"
+  ],
+  "exclusion_criteria": [
+    "Runtime failure before any metric can be collected"
+  ],
+  "stopping_rule": "Stop after 20 planned matched pairs; do not stop early based on observed significance.",
+  "missing_data_rule": "Do not impute missing pairs; report the number and reason for every incomplete pair.",
+  "deviations_policy": "Log each deviation with timestamp, rationale, and whether the decision preceded outcome inspection.",
+  "protocol_version": "1.0",
+  "code_revision": "replace-with-git-commit"
+}

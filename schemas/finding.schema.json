@@ -1,0 +1,94 @@
+{
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {
+      "const": "0.1",
+      "default": "0.1",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "finding_id": {
+      "title": "Finding Id",
+      "type": "string"
+    },
+    "risk_type": {
+      "title": "Risk Type",
+      "type": "string"
+    },
+    "severity": {
+      "enum": [
+        "low",
+        "medium",
+        "high",
+        "critical"
+      ],
+      "title": "Severity",
+      "type": "string"
+    },
+    "target_type": {
+      "enum": [
+        "message",
+        "tool_call",
+        "tool_result",
+        "activation"
+      ],
+      "title": "Target Type",
+      "type": "string"
+    },
+    "target_ref": {
+      "title": "Target Ref",
+      "type": "string"
+    },
+    "score": {
+      "maximum": 1.0,
+      "minimum": 0.0,
+      "title": "Score",
+      "type": "number"
+    },
+    "rationale": {
+      "title": "Rationale",
+      "type": "string"
+    },
+    "evidence_refs": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Evidence Refs",
+      "type": "array"
+    },
+    "detector_version": {
+      "default": "rules-0.2",
+      "title": "Detector Version",
+      "type": "string"
+    },
+    "score_semantics": {
+      "default": "uncalibrated_screening_score",
+      "title": "Score Semantics",
+      "type": "string"
+    },
+    "alternative_explanations": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Alternative Explanations",
+      "type": "array"
+    },
+    "recommended_next_actions": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Recommended Next Actions",
+      "type": "array"
+    }
+  },
+  "required": [
+    "risk_type",
+    "severity",
+    "target_type",
+    "target_ref",
+    "score",
+    "rationale"
+  ],
+  "title": "DetectionFinding",
+  "type": "object"
+}

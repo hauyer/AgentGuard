@@ -1,0 +1,166 @@
+{
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {
+      "const": "0.1",
+      "default": "0.1",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "title": {
+      "maxLength": 240,
+      "minLength": 8,
+      "title": "Title",
+      "type": "string"
+    },
+    "research_question": {
+      "maxLength": 2000,
+      "minLength": 12,
+      "title": "Research Question",
+      "type": "string"
+    },
+    "primary_hypothesis": {
+      "maxLength": 2000,
+      "minLength": 12,
+      "title": "Primary Hypothesis",
+      "type": "string"
+    },
+    "primary_outcome": {
+      "pattern": "^[a-zA-Z][a-zA-Z0-9_.-]{0,79}$",
+      "title": "Primary Outcome",
+      "type": "string"
+    },
+    "primary_direction": {
+      "default": "two_sided",
+      "enum": [
+        "increase",
+        "decrease",
+        "two_sided"
+      ],
+      "title": "Primary Direction",
+      "type": "string"
+    },
+    "secondary_outcomes": {
+      "items": {
+        "type": "string"
+      },
+      "maxItems": 30,
+      "title": "Secondary Outcomes",
+      "type": "array"
+    },
+    "analysis_method": {
+      "default": "clustered_paired",
+      "enum": [
+        "paired",
+        "clustered_paired"
+      ],
+      "title": "Analysis Method",
+      "type": "string"
+    },
+    "multiplicity_method": {
+      "default": "holm",
+      "enum": [
+        "none",
+        "holm",
+        "benjamini_hochberg"
+      ],
+      "title": "Multiplicity Method",
+      "type": "string"
+    },
+    "alpha": {
+      "default": 0.05,
+      "exclusiveMaximum": 0.5,
+      "exclusiveMinimum": 0.0,
+      "title": "Alpha",
+      "type": "number"
+    },
+    "planned_pairs": {
+      "maximum": 100000,
+      "minimum": 2,
+      "title": "Planned Pairs",
+      "type": "integer"
+    },
+    "planned_case_families": {
+      "maximum": 10000,
+      "minimum": 2,
+      "title": "Planned Case Families",
+      "type": "integer"
+    },
+    "seed": {
+      "default": 7,
+      "title": "Seed",
+      "type": "integer"
+    },
+    "matching_variables": {
+      "items": {
+        "type": "string"
+      },
+      "minItems": 1,
+      "title": "Matching Variables",
+      "type": "array"
+    },
+    "inclusion_criteria": {
+      "items": {
+        "type": "string"
+      },
+      "maxItems": 50,
+      "minItems": 1,
+      "title": "Inclusion Criteria",
+      "type": "array"
+    },
+    "exclusion_criteria": {
+      "items": {
+        "type": "string"
+      },
+      "maxItems": 50,
+      "title": "Exclusion Criteria",
+      "type": "array"
+    },
+    "stopping_rule": {
+      "maxLength": 1000,
+      "minLength": 8,
+      "title": "Stopping Rule",
+      "type": "string"
+    },
+    "missing_data_rule": {
+      "maxLength": 1000,
+      "minLength": 8,
+      "title": "Missing Data Rule",
+      "type": "string"
+    },
+    "deviations_policy": {
+      "default": "Any deviation is logged with timestamp, rationale, and whether it was decided before outcome inspection.",
+      "maxLength": 1000,
+      "minLength": 8,
+      "title": "Deviations Policy",
+      "type": "string"
+    },
+    "protocol_version": {
+      "default": "1",
+      "maxLength": 80,
+      "minLength": 1,
+      "title": "Protocol Version",
+      "type": "string"
+    },
+    "code_revision": {
+      "default": "unspecified",
+      "maxLength": 128,
+      "minLength": 1,
+      "title": "Code Revision",
+      "type": "string"
+    }
+  },
+  "required": [
+    "title",
+    "research_question",
+    "primary_hypothesis",
+    "primary_outcome",
+    "planned_pairs",
+    "planned_case_families",
+    "inclusion_criteria",
+    "stopping_rule",
+    "missing_data_rule"
+  ],
+  "title": "StudyRegistrationRequest",
+  "type": "object"
+}

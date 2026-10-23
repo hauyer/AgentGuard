@@ -1,0 +1,98 @@
+{
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {
+      "const": "0.1",
+      "default": "0.1",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "experiment_id": {
+      "title": "Experiment Id",
+      "type": "string"
+    },
+    "intervention_id": {
+      "title": "Intervention Id",
+      "type": "string"
+    },
+    "target_type": {
+      "enum": [
+        "message",
+        "tool_call",
+        "tool_result",
+        "activation"
+      ],
+      "title": "Target Type",
+      "type": "string"
+    },
+    "target_ref": {
+      "maxLength": 256,
+      "minLength": 1,
+      "title": "Target Ref",
+      "type": "string"
+    },
+    "operation": {
+      "enum": [
+        "block",
+        "replace",
+        "ablate",
+        "patch"
+      ],
+      "title": "Operation",
+      "type": "string"
+    },
+    "control_group": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Control Group"
+    },
+    "parameters": {
+      "additionalProperties": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "integer"
+          },
+          {
+            "type": "number"
+          },
+          {
+            "type": "boolean"
+          }
+        ]
+      },
+      "title": "Parameters",
+      "type": "object"
+    },
+    "authorization_ref": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Authorization Ref"
+    }
+  },
+  "required": [
+    "experiment_id",
+    "intervention_id",
+    "target_type",
+    "target_ref",
+    "operation"
+  ],
+  "title": "InterventionRequest",
+  "type": "object"
+}

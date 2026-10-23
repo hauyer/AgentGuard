@@ -1,0 +1,148 @@
+{
+  "additionalProperties": false,
+  "description": "Versioned case memory. Unverified records are advisory only.",
+  "properties": {
+    "schema_version": {
+      "const": "0.1",
+      "default": "0.1",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "experience_id": {
+      "title": "Experience Id",
+      "type": "string"
+    },
+    "scenario_id": {
+      "title": "Scenario Id",
+      "type": "string"
+    },
+    "case_family": {
+      "default": "unspecified",
+      "title": "Case Family",
+      "type": "string"
+    },
+    "risk_type": {
+      "title": "Risk Type",
+      "type": "string"
+    },
+    "hypothesis_summary": {
+      "title": "Hypothesis Summary",
+      "type": "string"
+    },
+    "action_type": {
+      "title": "Action Type",
+      "type": "string"
+    },
+    "action_summary": {
+      "title": "Action Summary",
+      "type": "string"
+    },
+    "outcome": {
+      "enum": [
+        "success",
+        "partial",
+        "failure",
+        "inconclusive"
+      ],
+      "title": "Outcome",
+      "type": "string"
+    },
+    "evidence_grade": {
+      "enum": [
+        "observational",
+        "synthetic",
+        "interventional",
+        "causal_validated"
+      ],
+      "title": "Evidence Grade",
+      "type": "string"
+    },
+    "verification_status": {
+      "default": "unverified",
+      "enum": [
+        "unverified",
+        "reviewed",
+        "verified"
+      ],
+      "title": "Verification Status",
+      "type": "string"
+    },
+    "repetitions": {
+      "default": 1,
+      "minimum": 1,
+      "title": "Repetitions",
+      "type": "integer"
+    },
+    "evidence_refs": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Evidence Refs",
+      "type": "array"
+    },
+    "validation_notes": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Validation Notes",
+      "type": "array"
+    },
+    "metrics": {
+      "additionalProperties": {
+        "type": "number"
+      },
+      "title": "Metrics",
+      "type": "object"
+    },
+    "model_version": {
+      "default": "unknown",
+      "title": "Model Version",
+      "type": "string"
+    },
+    "code_version": {
+      "default": "unknown",
+      "title": "Code Version",
+      "type": "string"
+    },
+    "seed": {
+      "anyOf": [
+        {
+          "type": "integer"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Seed"
+    },
+    "allow_auto_recommendation": {
+      "default": false,
+      "title": "Allow Auto Recommendation",
+      "type": "boolean"
+    },
+    "created_at": {
+      "format": "date-time",
+      "title": "Created At",
+      "type": "string"
+    },
+    "tags": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Tags",
+      "type": "array"
+    }
+  },
+  "required": [
+    "scenario_id",
+    "risk_type",
+    "hypothesis_summary",
+    "action_type",
+    "action_summary",
+    "outcome",
+    "evidence_grade"
+  ],
+  "title": "ExperienceRecord",
+  "type": "object"
+}

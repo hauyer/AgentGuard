@@ -1,0 +1,114 @@
+{
+  "additionalProperties": false,
+  "description": "Reproducible paired treatment/control design metadata.",
+  "properties": {
+    "schema_version": {
+      "const": "0.1",
+      "default": "0.1",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "design_id": {
+      "title": "Design Id",
+      "type": "string"
+    },
+    "experiment_id": {
+      "title": "Experiment Id",
+      "type": "string"
+    },
+    "hypothesis_id": {
+      "title": "Hypothesis Id",
+      "type": "string"
+    },
+    "design_type": {
+      "default": "paired_replay",
+      "enum": [
+        "paired_replay",
+        "negative_control",
+        "factorial"
+      ],
+      "title": "Design Type",
+      "type": "string"
+    },
+    "treatment_operation": {
+      "title": "Treatment Operation",
+      "type": "string"
+    },
+    "control_operation": {
+      "default": "no_intervention",
+      "title": "Control Operation",
+      "type": "string"
+    },
+    "negative_control_operation": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": "sham_intervention",
+      "title": "Negative Control Operation"
+    },
+    "seed": {
+      "title": "Seed",
+      "type": "integer"
+    },
+    "seeds": {
+      "items": {
+        "type": "integer"
+      },
+      "minItems": 2,
+      "title": "Seeds",
+      "type": "array"
+    },
+    "repetitions": {
+      "maximum": 10000,
+      "minimum": 2,
+      "title": "Repetitions",
+      "type": "integer"
+    },
+    "matched_on": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Matched On",
+      "type": "array"
+    },
+    "primary_metric": {
+      "default": "risk_exposure",
+      "title": "Primary Metric",
+      "type": "string"
+    },
+    "secondary_metrics": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Secondary Metrics",
+      "type": "array"
+    },
+    "preregistered": {
+      "default": false,
+      "title": "Preregistered",
+      "type": "boolean"
+    },
+    "notes": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Notes",
+      "type": "array"
+    }
+  },
+  "required": [
+    "experiment_id",
+    "hypothesis_id",
+    "treatment_operation",
+    "seed",
+    "seeds",
+    "repetitions"
+  ],
+  "title": "PairedExperimentDesign",
+  "type": "object"
+}

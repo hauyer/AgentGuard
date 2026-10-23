@@ -1,0 +1,144 @@
+{
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {
+      "const": "0.1",
+      "default": "0.1",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "evidence_id": {
+      "title": "Evidence Id",
+      "type": "string"
+    },
+    "kind": {
+      "enum": [
+        "observation",
+        "finding",
+        "hypothesis",
+        "experiment_design",
+        "intervention",
+        "defense",
+        "evaluation",
+        "note"
+      ],
+      "title": "Kind",
+      "type": "string"
+    },
+    "grade": {
+      "enum": [
+        "observational",
+        "synthetic",
+        "interventional",
+        "causal_validated"
+      ],
+      "title": "Grade",
+      "type": "string"
+    },
+    "source": {
+      "title": "Source",
+      "type": "string"
+    },
+    "summary": {
+      "title": "Summary",
+      "type": "string"
+    },
+    "artifact_refs": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Artifact Refs",
+      "type": "array"
+    },
+    "run_id": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Run Id"
+    },
+    "experiment_id": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Experiment Id"
+    },
+    "scenario_id": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Scenario Id"
+    },
+    "source_version": {
+      "default": "unknown",
+      "title": "Source Version",
+      "type": "string"
+    },
+    "conclusion_scope": {
+      "default": "supports_only_the_summary_and_linked_artifacts",
+      "title": "Conclusion Scope",
+      "type": "string"
+    },
+    "access_level": {
+      "default": "research_only",
+      "enum": [
+        "public",
+        "agent_private",
+        "research_only",
+        "restricted"
+      ],
+      "title": "Access Level",
+      "type": "string"
+    },
+    "created_at": {
+      "format": "date-time",
+      "title": "Created At",
+      "type": "string"
+    },
+    "metadata": {
+      "additionalProperties": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "integer"
+          },
+          {
+            "type": "number"
+          },
+          {
+            "type": "boolean"
+          }
+        ]
+      },
+      "title": "Metadata",
+      "type": "object"
+    }
+  },
+  "required": [
+    "kind",
+    "grade",
+    "source",
+    "summary"
+  ],
+  "title": "EvidenceRecord",
+  "type": "object"
+}

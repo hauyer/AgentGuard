@@ -1,0 +1,95 @@
+{
+  "additionalProperties": false,
+  "description": "Explicit, falsifiable hypothesis tied to observed evidence.",
+  "properties": {
+    "schema_version": {
+      "const": "0.1",
+      "default": "0.1",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "hypothesis_id": {
+      "title": "Hypothesis Id",
+      "type": "string"
+    },
+    "experiment_id": {
+      "title": "Experiment Id",
+      "type": "string"
+    },
+    "finding_id": {
+      "title": "Finding Id",
+      "type": "string"
+    },
+    "target_ref": {
+      "title": "Target Ref",
+      "type": "string"
+    },
+    "statement": {
+      "maxLength": 1024,
+      "minLength": 8,
+      "title": "Statement",
+      "type": "string"
+    },
+    "expected_effect": {
+      "maxLength": 1024,
+      "minLength": 4,
+      "title": "Expected Effect",
+      "type": "string"
+    },
+    "supporting_evidence": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Supporting Evidence",
+      "type": "array"
+    },
+    "contradicting_evidence": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Contradicting Evidence",
+      "type": "array"
+    },
+    "alternative_explanations": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Alternative Explanations",
+      "type": "array"
+    },
+    "confidence": {
+      "maximum": 1.0,
+      "minimum": 0.0,
+      "title": "Confidence",
+      "type": "number"
+    },
+    "status": {
+      "default": "proposed",
+      "enum": [
+        "proposed",
+        "under_test",
+        "supported",
+        "weakened",
+        "rejected",
+        "inconclusive"
+      ],
+      "title": "Status",
+      "type": "string"
+    },
+    "next_test": {
+      "default": "matched_replay",
+      "title": "Next Test",
+      "type": "string"
+    }
+  },
+  "required": [
+    "experiment_id",
+    "finding_id",
+    "target_ref",
+    "statement",
+    "expected_effect",
+    "confidence"
+  ],
+  "title": "InvestigationHypothesis",
+  "type": "object"
+}

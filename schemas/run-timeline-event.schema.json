@@ -1,0 +1,88 @@
+{
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {
+      "const": "0.1",
+      "default": "0.1",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "sequence": {
+      "minimum": 0,
+      "title": "Sequence",
+      "type": "integer"
+    },
+    "stage": {
+      "enum": [
+        "created",
+        "validated",
+        "scenario_loaded",
+        "observed",
+        "detected",
+        "planned",
+        "policy_checked",
+        "intervened",
+        "evaluated",
+        "defense_preview",
+        "verification",
+        "artifact_persisted",
+        "experience_recorded",
+        "cancelled",
+        "completed",
+        "partial",
+        "failed"
+      ],
+      "title": "Stage",
+      "type": "string"
+    },
+    "status": {
+      "enum": [
+        "started",
+        "completed",
+        "skipped",
+        "rejected",
+        "failed",
+        "info"
+      ],
+      "title": "Status",
+      "type": "string"
+    },
+    "message": {
+      "title": "Message",
+      "type": "string"
+    },
+    "timestamp": {
+      "format": "date-time",
+      "title": "Timestamp",
+      "type": "string"
+    },
+    "details": {
+      "additionalProperties": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "integer"
+          },
+          {
+            "type": "number"
+          },
+          {
+            "type": "boolean"
+          }
+        ]
+      },
+      "title": "Details",
+      "type": "object"
+    }
+  },
+  "required": [
+    "sequence",
+    "stage",
+    "status",
+    "message"
+  ],
+  "title": "RunTimelineEvent",
+  "type": "object"
+}

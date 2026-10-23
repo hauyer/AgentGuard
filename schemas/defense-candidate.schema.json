@@ -1,0 +1,101 @@
+{
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {
+      "const": "0.1",
+      "default": "0.1",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "candidate_id": {
+      "title": "Candidate Id",
+      "type": "string"
+    },
+    "finding_id": {
+      "title": "Finding Id",
+      "type": "string"
+    },
+    "target_type": {
+      "enum": [
+        "message",
+        "tool_call",
+        "tool_result",
+        "activation"
+      ],
+      "title": "Target Type",
+      "type": "string"
+    },
+    "target_ref": {
+      "title": "Target Ref",
+      "type": "string"
+    },
+    "operation": {
+      "enum": [
+        "block",
+        "replace",
+        "ablate",
+        "patch"
+      ],
+      "title": "Operation",
+      "type": "string"
+    },
+    "scope": {
+      "default": "isolated_test_environment",
+      "enum": [
+        "isolated_test_environment",
+        "synthetic_demo"
+      ],
+      "title": "Scope",
+      "type": "string"
+    },
+    "expected_risk_reduction": {
+      "maximum": 1.0,
+      "minimum": 0.0,
+      "title": "Expected Risk Reduction",
+      "type": "number"
+    },
+    "estimated_benign_utility_cost": {
+      "maximum": 1.0,
+      "minimum": 0.0,
+      "title": "Estimated Benign Utility Cost",
+      "type": "number"
+    },
+    "reversibility": {
+      "default": "reversible",
+      "enum": [
+        "reversible",
+        "partially_reversible",
+        "irreversible"
+      ],
+      "title": "Reversibility",
+      "type": "string"
+    },
+    "approval_required": {
+      "default": true,
+      "title": "Approval Required",
+      "type": "boolean"
+    },
+    "rationale": {
+      "title": "Rationale",
+      "type": "string"
+    },
+    "limitations": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Limitations",
+      "type": "array"
+    }
+  },
+  "required": [
+    "finding_id",
+    "target_type",
+    "target_ref",
+    "operation",
+    "expected_risk_reduction",
+    "estimated_benign_utility_cost",
+    "rationale"
+  ],
+  "title": "DefenseCandidate",
+  "type": "object"
+}

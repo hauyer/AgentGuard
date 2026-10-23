@@ -1,0 +1,106 @@
+{
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {
+      "const": "0.1",
+      "default": "0.1",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "scenario_id": {
+      "maxLength": 128,
+      "minLength": 1,
+      "title": "Scenario Id",
+      "type": "string"
+    },
+    "name": {
+      "maxLength": 256,
+      "minLength": 1,
+      "title": "Name",
+      "type": "string"
+    },
+    "track": {
+      "default": "demo",
+      "enum": [
+        "core",
+        "transfer",
+        "stego",
+        "application",
+        "demo"
+      ],
+      "title": "Track",
+      "type": "string"
+    },
+    "description": {
+      "title": "Description",
+      "type": "string"
+    },
+    "allowed_targets": {
+      "items": {
+        "enum": [
+          "message",
+          "tool_call",
+          "tool_result",
+          "activation"
+        ],
+        "type": "string"
+      },
+      "title": "Allowed Targets",
+      "type": "array"
+    },
+    "capabilities_required": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Capabilities Required",
+      "type": "array"
+    },
+    "public_context": {
+      "additionalProperties": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "integer"
+          },
+          {
+            "type": "number"
+          },
+          {
+            "type": "boolean"
+          }
+        ]
+      },
+      "title": "Public Context",
+      "type": "object"
+    },
+    "metadata": {
+      "additionalProperties": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "integer"
+          },
+          {
+            "type": "number"
+          },
+          {
+            "type": "boolean"
+          }
+        ]
+      },
+      "title": "Metadata",
+      "type": "object"
+    }
+  },
+  "required": [
+    "scenario_id",
+    "name",
+    "description"
+  ],
+  "title": "ScenarioSpec",
+  "type": "object"
+}

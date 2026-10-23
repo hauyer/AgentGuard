@@ -1,0 +1,35 @@
+{
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {
+      "const": "0.1",
+      "default": "0.1",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "model_artifact_id": {
+      "maxLength": 64,
+      "minLength": 64,
+      "title": "Model Artifact Id",
+      "type": "string"
+    },
+    "features": {
+      "items": {
+        "items": {
+          "type": "number"
+        },
+        "type": "array"
+      },
+      "maxItems": 100000,
+      "minItems": 1,
+      "title": "Features",
+      "type": "array"
+    }
+  },
+  "required": [
+    "model_artifact_id",
+    "features"
+  ],
+  "title": "BinaryProbePredictRequest",
+  "type": "object"
+}

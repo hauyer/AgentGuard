@@ -1,0 +1,43 @@
+{
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {
+      "const": "0.1",
+      "default": "0.1",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "node_id": {
+      "title": "Node Id",
+      "type": "string"
+    },
+    "node_type": {
+      "default": "agent",
+      "enum": [
+        "agent",
+        "tool",
+        "unknown"
+      ],
+      "title": "Node Type",
+      "type": "string"
+    },
+    "event_count": {
+      "default": 0,
+      "minimum": 0,
+      "title": "Event Count",
+      "type": "integer"
+    },
+    "labels": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Labels",
+      "type": "array"
+    }
+  },
+  "required": [
+    "node_id"
+  ],
+  "title": "InteractionNode",
+  "type": "object"
+}

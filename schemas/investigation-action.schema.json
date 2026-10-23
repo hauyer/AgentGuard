@@ -1,0 +1,83 @@
+{
+  "additionalProperties": false,
+  "description": "Rankable experiment action; scores are heuristics, not probabilities.",
+  "properties": {
+    "schema_version": {
+      "const": "0.1",
+      "default": "0.1",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "action_id": {
+      "title": "Action Id",
+      "type": "string"
+    },
+    "hypothesis_id": {
+      "title": "Hypothesis Id",
+      "type": "string"
+    },
+    "target_type": {
+      "enum": [
+        "message",
+        "tool_call",
+        "tool_result",
+        "activation"
+      ],
+      "title": "Target Type",
+      "type": "string"
+    },
+    "target_ref": {
+      "title": "Target Ref",
+      "type": "string"
+    },
+    "operation": {
+      "enum": [
+        "block",
+        "replace",
+        "ablate",
+        "patch"
+      ],
+      "title": "Operation",
+      "type": "string"
+    },
+    "expected_information_gain": {
+      "maximum": 1.0,
+      "minimum": 0.0,
+      "title": "Expected Information Gain",
+      "type": "number"
+    },
+    "estimated_cost": {
+      "exclusiveMinimum": 0.0,
+      "title": "Estimated Cost",
+      "type": "number"
+    },
+    "estimated_risk": {
+      "maximum": 1.0,
+      "minimum": 0.0,
+      "title": "Estimated Risk",
+      "type": "number"
+    },
+    "utility_score": {
+      "minimum": 0.0,
+      "title": "Utility Score",
+      "type": "number"
+    },
+    "rationale": {
+      "title": "Rationale",
+      "type": "string"
+    }
+  },
+  "required": [
+    "hypothesis_id",
+    "target_type",
+    "target_ref",
+    "operation",
+    "expected_information_gain",
+    "estimated_cost",
+    "estimated_risk",
+    "utility_score",
+    "rationale"
+  ],
+  "title": "InvestigationAction",
+  "type": "object"
+}

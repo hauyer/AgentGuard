@@ -1,0 +1,20 @@
+{
+  "model_state_before": "theta0-baseline",
+  "model_state_after": "theta1-optimized",
+  "contributions_before": {
+    "sender.layer.8.resid_post": 0.72,
+    "sender.logits": 0.18,
+    "public_token": 0.1
+  },
+  "contributions_after": {
+    "sender.layer.8.resid_post": 0.12,
+    "sender.logits": 0.13,
+    "public_token": 0.2,
+    "receiver.layer.11.resid_post": 0.55
+  },
+  "top_k": 3,
+  "evidence_mode": "synthetic",
+  "source_artifact_refs": [],
+  "protocol_fingerprint_before": "fixed-secret-task-topology-probe-v1",
+  "protocol_fingerprint_after": "fixed-secret-task-topology-probe-v1"
+}

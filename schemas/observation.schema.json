@@ -1,0 +1,131 @@
+{
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {
+      "const": "0.1",
+      "default": "0.1",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "event_id": {
+      "title": "Event Id",
+      "type": "string"
+    },
+    "experiment_id": {
+      "title": "Experiment Id",
+      "type": "string"
+    },
+    "timestamp": {
+      "format": "date-time",
+      "title": "Timestamp",
+      "type": "string"
+    },
+    "actor_id": {
+      "title": "Actor Id",
+      "type": "string"
+    },
+    "event_type": {
+      "enum": [
+        "message",
+        "tool_call",
+        "tool_result",
+        "decision",
+        "model_activation",
+        "risk_signal",
+        "runtime_status"
+      ],
+      "title": "Event Type",
+      "type": "string"
+    },
+    "source": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Source"
+    },
+    "target": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Target"
+    },
+    "target_ref": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Target Ref"
+    },
+    "summary": {
+      "title": "Summary",
+      "type": "string"
+    },
+    "sensitivity": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Sensitivity",
+      "type": "array"
+    },
+    "features": {
+      "additionalProperties": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "integer"
+          },
+          {
+            "type": "number"
+          },
+          {
+            "type": "boolean"
+          }
+        ]
+      },
+      "title": "Features",
+      "type": "object"
+    },
+    "visibility": {
+      "default": "research_only",
+      "enum": [
+        "public",
+        "agent_private",
+        "research_only"
+      ],
+      "title": "Visibility",
+      "type": "string"
+    },
+    "provenance": {
+      "default": "unknown",
+      "title": "Provenance",
+      "type": "string"
+    }
+  },
+  "required": [
+    "experiment_id",
+    "actor_id",
+    "event_type",
+    "summary"
+  ],
+  "title": "Observation",
+  "type": "object"
+}

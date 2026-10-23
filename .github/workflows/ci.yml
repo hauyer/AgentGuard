@@ -1,0 +1,29 @@
+name: AgentGuard CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.11", "3.12", "3.13"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+      - name: Install package and development tools
+        run: python -m pip install -e ".[dev]"
+      - name: Validate Python syntax
+        run: python -m compileall -q src scripts
+      - name: Lint
+        run: ruff check src tests scripts
+      - name: Run tests
+        run: pytest
+      - name: Verify synthetic demo
+        run: agentguard demo --no-auto-intervene

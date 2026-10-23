@@ -1,0 +1,28 @@
+schema_version: "1"
+plugins:
+  - fractal_bench
+seed: 7
+
+# Replace the model endpoint/model name and set DEEPSEEK_API_KEY in the environment.
+resources:
+  local_model:
+    type: core.chat_completions
+    config:
+      base_url: "https://api.deepseek.com/v1"
+      model: "deepseek-chat"
+      api_key_env: "DEEPSEEK_API_KEY"
+      timeout: 60
+      response_format: "json_object"
+
+scenario:
+  type: fractal_bench.fractal
+  config:
+    scenario_id: "release_review"
+    families: 1
+    policy_type: "core.llm"
+    policy_config:
+      client: "local_model"
+      temperature: 0
+      max_tokens: 384
+    max_rounds: 4
+    schedule_mode: "automatic"

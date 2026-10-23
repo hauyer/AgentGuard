@@ -1,0 +1,1252 @@
+"""REST API for AgentGuard's controlled research workflow.
+
+The default app uses synthetic data. Real-backend write operations require a configured
+operator approval token and an explicitly isolated experiment scope.
+"""
+from __future__ import annotations
+
+from concurrent.futures import Future, ThreadPoolExecutor
+from contextlib import asynccontextmanager
+from datetime import datetime, timezone
+from pathlib import Path
+from threading import Event, RLock
+from typing import Any
+import json
+import os
+import secrets
+import hashlib
+
+from fastapi import FastAPI, Header, HTTPException, Query, Request
+from fastapi.responses import HTMLResponse, JSONResponse, Response
+from pydantic import Field
+
+from agentguard.adapters.mock import MockBackend
+from agentguard.adapters.warden import WardenKernelClient, WardenKernelError, warden_status
+from agentguard.artifacts.local_store import ArtifactNotFoundError, LocalArtifactStore
+from agentguard.contracts.base import ContractModel
+from agentguard.contracts.experience import ExperienceRecord, ExperienceSearchResult
+from agentguard.contracts.experience_bandit import ExperienceBanditRecommendationReport
+from agentguard.contracts.experiment import ExperimentRequest
+from agentguard.contracts.warden import WardenAuditRequest
+from agentguard.contracts.evidence import EvidenceRecord
+from agentguard.contracts.intervention import InterventionRequest
+from agentguard.contracts.lifecycle import RunTimelineEvent
+from agentguard.contracts.report import RunReport
+from agentguard.contracts.paired import PairedExperimentRunRequest
+from agentguard.contracts.probe import BinaryProbeTrainRequest, BinaryProbeTrainingReport, BinaryProbePredictRequest, BinaryProbePredictionReport
+from agentguard.core.linear_probe import BinaryLinearProbe, split_by_group_three_way, select_f1_threshold
+from agentguard.core.paired_runner import PairedExperimentRunner, PairedExecutionUnsupported
+from agentguard.core.classification_metrics import evaluate_binary_classifier
+from agentguard.core.defense import DefensePlannerService
+from agentguard.core.orchestrator import AgentGuardEngine
+from agentguard.core.policy import InterventionPolicyEngine
+from agentguard.memory.store import ExperienceStore
+from agentguard.services.warden_lifecycle import WardenLifecycleService
+from agentguard.services.warden_workflow_store import WardenWorkflowStore, WorkflowConflictError
+from agentguard.core.experience_bandit import recommend_actions
+from agentguard.contracts.research import (
+    StudyRegistrationRequest, RegisteredStudy, StudyAnalysisRequest, StudyAnalysisReport,
+)
+from agentguard.research_registry import ResearchRegistry
+from agentguard.core.study_analysis import analyze_registered_study
+from agentguard.contracts.attribution import (
+    AttributionNodeAnalysisRequest, AttributionNodeAnalysisReport,
+    PathShiftAnalysisRequest, PathShiftAnalysisReport,
+)
+from agentguard.core.attribution import analyze_attribution_node, analyze_path_shift
+from agentguard.agents.coordinator import AgentCoordinator
+from agentguard.agents.llm_advisor import LLMInvestigationAdvisor
+from agentguard.core.graph import MultiLayerDetector
+from agentguard.core.planner import InvestigationPlanner, DefensePlanner
+
+
+class DefenseExecuteRequest(ContractModel):
+    candidate_id: str
+    authorization_ref: str | None = None
+    intervention_id: str | None = None
+
+
+class DefenseVerifyRequest(ContractModel):
+    candidate_id: str
+    baseline_risk: list[float] = Field(min_length=2)
+    post_defense_risk: list[float] = Field(min_length=2)
+    baseline_utility: list[float] | None = None
+    post_defense_utility: list[float] | None = None
+    seed: int = 7
+
+
+def _utcnow() -> str:
+    return datetime.now(timezone.utc).isoformat()
+
+
+def _configured_warden_client() -> WardenKernelClient | None:
+    try:
+        return WardenKernelClient.from_env()
+    except WardenKernelError as exc:
+        raise HTTPException(
+            status_code=500,
+            detail={"error": exc.code, "message": str(exc)},
+        ) from exc
+
+
+def create_app(
+    engine: AgentGuardEngine | None = None,
+    *,
+    data_dir: str | Path | None = None,
+    paired_executor=None,
+) -> FastAPI:
+    @asynccontextmanager
+    async def lifespan(application: FastAPI):
+        yield
+        executor = getattr(application.state, "executor", None)
+        if executor is not None:
+            executor.shutdown(wait=False, cancel_futures=True)
+
+    app = FastAPI(
+        title="AgentGuard API",
+        version="0.9.0",
+        description=(
+            "Controlled research API for multi-agent information-flow investigation. "
+            "WARDEN workflows use a durable idempotency journal; the default research backend remains synthetic. "
+            "A completed workflow is not, by itself, proof of causal validity."
+        ),
+        lifespan=lifespan,
+    )
+    if engine is None:
+        backend = MockBackend()
+        llm_enabled = os.environ.get("AGENTGUARD_LLM_INVESTIGATOR", "").strip().lower() in {"1", "true", "yes"}
+        if llm_enabled:
+            advisor = LLMInvestigationAdvisor.from_env()
+            detector = MultiLayerDetector()
+            investigator = InvestigationPlanner()
+            defense_planner = DefensePlanner()
+            coordinator = AgentCoordinator(
+                detector=detector, investigator=investigator,
+                defense_planner=defense_planner, advisor=advisor,
+            )
+            engine = AgentGuardEngine(
+                backend, backend, backend, detector=detector, investigator=investigator,
+                defense_planner=defense_planner, coordinator=coordinator,
+            )
+        else:
+            engine = AgentGuardEngine(backend, backend, backend)
+    app.state.engine = engine
+    base_dir = Path(data_dir or os.environ.get("AGENTGUARD_DATA_DIR", ".agentguard")).expanduser().resolve()
+    base_dir.mkdir(parents=True, exist_ok=True)
+    app.state.reports: dict[str, RunReport] = {}
+    app.state.jobs: dict[str, dict[str, Any]] = {}
+    app.state.futures: dict[str, Future] = {}
+    app.state.cancel_events: dict[str, Event] = {}
+    app.state.run_artifacts: dict[str, str] = {}
+    app.state.idempotency: dict[str, str] = {}
+    app.state.run_locks: dict[str, RLock] = {}
+    app.state.lock = RLock()
+    app.state.executor = ThreadPoolExecutor(max_workers=4, thread_name_prefix="agentguard-run")
+    app.state.artifacts = LocalArtifactStore(base_dir / "artifacts")
+    app.state.experiences = ExperienceStore(base_dir / "experiences.sqlite3")
+    app.state.warden_workflows = WardenWorkflowStore(base_dir / "warden_workflows.sqlite3")
+    app.state.research_registry = ResearchRegistry(base_dir / "research_registry.sqlite3")
+    app.state.defense_service = DefensePlannerService()
+    app.state.policy_engine = InterventionPolicyEngine()
+    app.state.paired_runner = PairedExperimentRunner(app.state.engine.runtime, paired_executor=paired_executor)
+
+    @app.middleware("http")
+    async def optional_api_auth(request: Request, call_next):
+        expected = os.environ.get("AGENTGUARD_API_TOKEN", "")
+        public_paths = {"/health", "/openapi.json", "/docs", "/redoc", "/console"}
+        if expected and request.url.path not in public_paths:
+            supplied = request.headers.get("X-AgentGuard-Token", "")
+            if not secrets.compare_digest(expected, supplied):
+                return JSONResponse(status_code=401, content={"detail": {"error": "API_TOKEN_REQUIRED"}})
+        return await call_next(request)
+
+    def persist_report(report: RunReport) -> str:
+        payload = report.model_dump_json(indent=2).encode("utf-8")
+        metadata = app.state.artifacts.put(
+            payload,
+            name=f"run-report-{report.run_id}.json",
+            description="Content-addressed AgentGuard run report",
+            tags=["run-report", report.backend_mode, report.status],
+            metadata={
+                "run_id": report.run_id,
+                "experiment_id": report.experiment_id,
+                "scenario_id": report.scenario_id,
+                "status": report.status,
+                "backend_mode": report.backend_mode,
+            },
+            media_type="application/json",
+        )
+        with app.state.lock:
+            app.state.run_artifacts[report.run_id] = metadata.artifact_ref.artifact_id
+        return metadata.artifact_ref.artifact_id
+
+    def store_report(report: RunReport, alias: str | None = None) -> None:
+        persist_report(report)
+        with app.state.lock:
+            app.state.reports[report.run_id] = report
+            if alias:
+                app.state.reports[alias] = report
+
+    def get_report_or_404(run_id: str) -> RunReport:
+        with app.state.lock:
+            report = app.state.reports.get(run_id)
+            job = app.state.jobs.get(run_id)
+        if report is not None:
+            return report
+        if job is not None and job.get("status") in {"queued", "running", "cancel_requested"}:
+            raise HTTPException(status_code=409, detail={"error": "RUN_NOT_FINISHED", "job": job})
+        if job is not None and job.get("status") == "failed":
+            raise HTTPException(status_code=500, detail={"error": "RUN_FAILED", "job_id": run_id})
+        if job is not None and job.get("status") == "cancelled":
+            report = app.state.reports.get(run_id)
+            if report:
+                return report
+        raise HTTPException(status_code=404, detail="run_id not found")
+
+    def _run_job(job_id: str, request: ExperimentRequest, cancel_event: Event) -> None:
+        with app.state.lock:
+            if cancel_event.is_set():
+                app.state.jobs[job_id].update(status="cancelled", updated_at=_utcnow())
+                return
+            app.state.jobs[job_id].update(status="running", updated_at=_utcnow(), started_at=_utcnow())
+        try:
+            report = app.state.engine.run(request, cancel_event=cancel_event)
+            store_report(report, alias=job_id)
+            status = "cancelled" if cancel_event.is_set() and report.status == "partial" else report.status
+            with app.state.lock:
+                app.state.jobs[job_id].update(
+                    status=status,
+                    updated_at=_utcnow(),
+                    completed_at=_utcnow(),
+                    result_run_id=report.run_id,
+                    artifact_id=app.state.run_artifacts.get(report.run_id),
+                    report_status=report.status,
+                )
+        except Exception as exc:  # Do not leak config values or raw exception text to API clients.
+            with app.state.lock:
+                app.state.jobs[job_id].update(
+                    status="failed",
+                    updated_at=_utcnow(),
+                    completed_at=_utcnow(),
+                    error_code=type(exc).__name__,
+                )
+
+    def approval_is_valid(token: str | None) -> bool:
+        expected = os.environ.get("AGENTGUARD_APPROVAL_TOKEN", "")
+        return bool(expected and token and secrets.compare_digest(expected, token))
+
+    def resolve_job_status(run_id: str) -> dict[str, Any] | None:
+        with app.state.lock:
+            job = app.state.jobs.get(run_id)
+            return dict(job) if job is not None else None
+
+    def get_run_lock(run_id: str) -> RLock:
+        with app.state.lock:
+            return app.state.run_locks.setdefault(run_id, RLock())
+
+    @app.get("/health")
+    def health() -> dict:
+        return {"status": "ok", "service": "agentguard", "version": "0.8.0"}
+
+    @app.get("/console", response_class=HTMLResponse)
+    def console() -> str:
+        return CONSOLE_HTML
+
+    @app.get("/v1/agents/status")
+    def get_agent_status() -> dict:
+        configured = bool(os.environ.get("DEEPSEEK_API_KEY") or os.environ.get("OPENAI_API_KEY"))
+        return {
+            "llm_investigator_enabled": os.environ.get("AGENTGUARD_LLM_INVESTIGATOR", "").strip().lower() in {"1", "true", "yes"},
+            "credentials_configured": configured,
+            "provider_base_url": os.environ.get("AGENTGUARD_LLM_BASE_URL", os.environ.get("OPENAI_BASE_URL", "https://api.deepseek.com/v1")),
+            "model": os.environ.get("AGENTGUARD_LLM_MODEL", "deepseek-chat"),
+            "network_call_performed": False,
+            "authority": "candidate prioritization only; no tools, approval authority, or direct execution",
+        }
+
+    @app.get("/v1/capabilities")
+    def get_capabilities() -> dict:
+        manifest = app.state.engine.runtime.capabilities()
+        return manifest.model_dump(mode="json")
+
+    @app.get("/v1/kernel/status")
+    def get_kernel_status() -> dict:
+        """Report WARDEN integration state without treating missing infrastructure as low risk."""
+        return warden_status()
+
+    @app.get("/v1/kernel/capabilities")
+    def get_kernel_capabilities() -> dict:
+        """Proxy WARDEN capability reports; no local capabilities are inferred."""
+        client = _configured_warden_client()
+        if client is None:
+            raise HTTPException(status_code=503, detail={"error": "WARDEN_NOT_CONFIGURED"})
+        try:
+            return {"kernel": "WARDEN", "items": client.capabilities()}
+        except WardenKernelError as exc:
+            raise HTTPException(status_code=502, detail={"error": exc.code, "message": str(exc)}) from exc
+
+    @app.get("/v1/kernel/resources")
+    def get_kernel_resources(kind: str | None = Query(default=None, pattern="^(probe|sae)$")) -> dict:
+        """Proxy authoritative Probe/SAE resource manifests from WARDEN."""
+        client = _configured_warden_client()
+        if client is None:
+            raise HTTPException(status_code=503, detail={"error": "WARDEN_NOT_CONFIGURED"})
+        try:
+            return {"kernel": "WARDEN", "items": client.resources(kind)}
+        except WardenKernelError as exc:
+            raise HTTPException(status_code=502, detail={"error": exc.code, "message": str(exc)}) from exc
+
+    @app.get("/v1/kernel/contracts")
+    def get_kernel_contracts() -> dict:
+        """Proxy threat-contract IDs available to WARDEN."""
+        client = _configured_warden_client()
+        if client is None:
+            raise HTTPException(status_code=503, detail={"error": "WARDEN_NOT_CONFIGURED"})
+        try:
+            return {"kernel": "WARDEN", "items": client.contracts()}
+        except WardenKernelError as exc:
+            raise HTTPException(status_code=502, detail={"error": exc.code, "message": str(exc)}) from exc
+
+    @app.post("/v1/kernel/audits")
+    def submit_kernel_audit(request: WardenAuditRequest) -> dict:
+        """Submit a low-level audit to WARDEN; AgentGuard does not execute local duplicate kernels."""
+        if request.mode == "defense_evaluation" and not approval_is_valid(request.authorization_ref):
+            raise HTTPException(
+                status_code=403,
+                detail={"error": "OPERATOR_APPROVAL_REQUIRED", "message": "defense_evaluation requires a valid AgentGuard approval reference"},
+            )
+        client = _configured_warden_client()
+        if client is None:
+            raise HTTPException(status_code=503, detail={"error": "WARDEN_NOT_CONFIGURED"})
+        try:
+            result = client.submit_audit(request.to_warden_payload(), start_run=request.start_run)
+        except WardenKernelError as exc:
+            status_code = 502 if exc.status_code is None or exc.status_code >= 500 else 400
+            raise HTTPException(
+                status_code=status_code,
+                detail={"error": exc.code, "message": str(exc)},
+            ) from exc
+        plan = result.get("plan") if isinstance(result, dict) else {}
+        run = result.get("run") if isinstance(result, dict) else None
+        state = str((run or {}).get("status") or (plan or {}).get("status") or result.get("submission_status") or "unknown").lower()
+        return {
+            "kernel": "WARDEN",
+            "status": state,
+            "plan": plan,
+            "run": run,
+            "submission_status": result.get("submission_status", state),
+            "causal_claim_status": "not_assessed" if state in {"blocked", "failed", "unavailable", "invalid"} else "awaiting_warden_evidence",
+            "note": "A planned or queued audit is not a causal finding. Read WARDEN's run evidence before making claims.",
+        }
+
+    @app.get("/v1/kernel/audits/{plan_id}")
+    def get_kernel_audit_plan(plan_id: str) -> dict:
+        """Read the authoritative WARDEN audit plan and its blockers."""
+        client = _configured_warden_client()
+        if client is None:
+            raise HTTPException(status_code=503, detail={"error": "WARDEN_NOT_CONFIGURED"})
+        try:
+            return {"kernel": "WARDEN", "plan": client.get_audit_plan(plan_id)}
+        except WardenKernelError as exc:
+            status_code = 404 if exc.status_code == 404 else 502
+            raise HTTPException(status_code=status_code, detail={"error": exc.code, "message": str(exc)}) from exc
+
+    @app.get("/v1/kernel/runs/{run_id}")
+    def get_kernel_run(run_id: str) -> dict:
+        """Read the authoritative WARDEN run status and evidence references."""
+        client = _configured_warden_client()
+        if client is None:
+            raise HTTPException(status_code=503, detail={"error": "WARDEN_NOT_CONFIGURED"})
+        try:
+            return {"kernel": "WARDEN", "run": client.get_run(run_id)}
+        except WardenKernelError as exc:
+            status_code = 404 if exc.status_code == 404 else 502
+            raise HTTPException(status_code=status_code, detail={"error": exc.code, "message": str(exc)}) from exc
+
+    @app.post("/v1/kernel/workflows")
+    def execute_kernel_workflow(request: WardenAuditRequest) -> dict:
+        """Preflight, submit and optionally wait for a WARDEN audit; persist evidence-gated memory."""
+        if request.mode == "defense_evaluation" and not approval_is_valid(request.authorization_ref):
+            raise HTTPException(
+                status_code=403,
+                detail={"error": "OPERATOR_APPROVAL_REQUIRED", "message": "defense_evaluation requires a valid AgentGuard approval reference"},
+            )
+        client = _configured_warden_client()
+        if client is None:
+            raise HTTPException(status_code=503, detail={"error": "WARDEN_NOT_CONFIGURED"})
+        try:
+            service = WardenLifecycleService(
+                client,
+                experiences=app.state.experiences,
+                workflows=app.state.warden_workflows,
+            )
+            result = service.execute(request, approval_valid=True)
+            return result
+        except WorkflowConflictError as exc:
+            raise HTTPException(
+                status_code=409,
+                detail={"error": "IDEMPOTENCY_KEY_CONFLICT", "message": str(exc)},
+            ) from exc
+        except WardenKernelError as exc:
+            status_code = 502 if exc.status_code is None or exc.status_code >= 500 else 400
+            raise HTTPException(
+                status_code=status_code,
+                detail={"error": exc.code, "message": str(exc)},
+            ) from exc
+
+    @app.get("/v1/kernel/workflows")
+    def list_kernel_workflows(status: str | None = None, limit: int = Query(default=50, ge=1, le=500)) -> dict:
+        """List durable AgentGuard workflow summaries for operational reconciliation."""
+        entries = app.state.warden_workflows.list(status=status, limit=limit)
+        return {
+            "items": [
+                {
+                    "request_id": entry["request_id"],
+                    "status": entry["status"],
+                    "revision": entry["revision"],
+                    "created_at": entry["created_at"],
+                    "updated_at": entry["updated_at"],
+                    "plan_id": (entry.get("context") or {}).get("plan", {}).get("plan_id"),
+                    "run_id": (entry.get("context") or {}).get("run", {}).get("run_id"),
+                    "error_code": entry.get("error_code"),
+                }
+                for entry in entries
+            ],
+            "count": len(entries),
+        }
+
+    @app.get("/v1/kernel/workflows/{request_id}")
+    def get_kernel_workflow(request_id: str) -> dict:
+        """Inspect a durable upper-layer workflow record without contacting WARDEN."""
+        entry = app.state.warden_workflows.get(request_id)
+        if entry is None:
+            raise HTTPException(status_code=404, detail={"error": "WORKFLOW_NOT_FOUND"})
+        return {
+            "request_id": entry["request_id"],
+            "status": entry["status"],
+            "revision": entry["revision"],
+            "created_at": entry["created_at"],
+            "updated_at": entry["updated_at"],
+            "plan_id": (entry.get("context") or {}).get("plan", {}).get("plan_id"),
+            "run_id": (entry.get("context") or {}).get("run", {}).get("run_id"),
+            "result": entry.get("result"),
+            "error_code": entry.get("error_code"),
+            "error_message": entry.get("error_message"),
+        }
+
+    @app.get("/v1/kernel/workflows/{request_id}/events")
+    def get_kernel_workflow_events(request_id: str) -> dict:
+        """Return append-only state transition history for an upper-layer workflow."""
+        entry = app.state.warden_workflows.get(request_id)
+        if entry is None:
+            raise HTTPException(status_code=404, detail={"error": "WORKFLOW_NOT_FOUND"})
+        return {"request_id": request_id, "items": app.state.warden_workflows.events(request_id)}
+
+    @app.get("/v1/scenarios")
+    def list_scenarios() -> dict:
+        return {"items": [s.model_dump(mode="json") for s in app.state.engine.scenarios.list_scenarios()]}
+
+    @app.get("/v1/scenarios/{scenario_id}")
+    def get_scenario(scenario_id: str) -> dict:
+        try:
+            scenario = app.state.engine.scenarios.get_scenario(scenario_id)
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail="scenario_id not found") from exc
+        return scenario.model_dump(mode="json")
+
+    @app.post("/v1/runs")
+    def create_run(
+        request: ExperimentRequest,
+        background: bool = Query(default=False),
+        idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
+    ) -> dict:
+        if idempotency_key:
+            with app.state.lock:
+                prior_job_id = app.state.idempotency.get(idempotency_key)
+                prior_job = dict(app.state.jobs.get(prior_job_id, {})) if prior_job_id else None
+                existing = app.state.reports.get(prior_job_id) if prior_job_id else None
+            if prior_job:
+                return prior_job
+            if existing:
+                return existing.model_dump(mode="json")
+        if background:
+            job_id = f"job-{secrets.token_hex(8)}"
+            event = Event()
+            job = {
+                "job_id": job_id,
+                "run_id": job_id,
+                "experiment_id": request.experiment_id,
+                "scenario_id": request.scenario_id,
+                "status": "queued",
+                "created_at": _utcnow(),
+                "updated_at": _utcnow(),
+            }
+            with app.state.lock:
+                app.state.jobs[job_id] = job
+                app.state.cancel_events[job_id] = event
+                if idempotency_key:
+                    app.state.idempotency[idempotency_key] = job_id
+            future = app.state.executor.submit(_run_job, job_id, request, event)
+            with app.state.lock:
+                app.state.futures[job_id] = future
+            return dict(job)
+        try:
+            report = app.state.engine.run(request)
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail="scenario_id not found") from exc
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail={"error": "INVALID_RUN_REQUEST", "message": str(exc)}) from exc
+        except Exception as exc:
+            raise HTTPException(status_code=500, detail={"error": "RUN_FAILED", "message": type(exc).__name__}) from exc
+        store_report(report)
+        if idempotency_key:
+            with app.state.lock:
+                app.state.idempotency[idempotency_key] = report.run_id
+        return report.model_dump(mode="json")
+
+    @app.get("/v1/runs")
+    def list_runs(limit: int = Query(default=50, ge=1, le=500)) -> dict:
+        with app.state.lock:
+            reports = list({report.run_id: report for report in app.state.reports.values()}.values())
+            jobs = [dict(value) for value in app.state.jobs.values()]
+        reports.sort(key=lambda item: item.run_id, reverse=True)
+        jobs.sort(key=lambda item: item.get("created_at", ""), reverse=True)
+        return {
+            "items": [
+                {"run_id": r.run_id, "experiment_id": r.experiment_id, "scenario_id": r.scenario_id,
+                 "status": r.status, "backend_mode": r.backend_mode, "created_at": r.timeline[0].timestamp.isoformat() if r.timeline else None}
+                for r in reports[:limit]
+            ],
+            "jobs": jobs[:limit],
+        }
+
+    @app.get("/v1/runs/{run_id}")
+    def get_run(run_id: str) -> dict:
+        # A background job ID resolves to its lifecycle state; result_run_id resolves to the report.
+        job = resolve_job_status(run_id)
+        if job is not None:
+            return job
+        with app.state.lock:
+            report = app.state.reports.get(run_id)
+        if report is not None:
+            return report.model_dump(mode="json")
+        raise HTTPException(status_code=404, detail="run_id not found")
+
+    @app.post("/v1/runs/{run_id}/cancel")
+    def cancel_run(run_id: str) -> dict:
+        with app.state.lock:
+            job = app.state.jobs.get(run_id)
+            future = app.state.futures.get(run_id)
+            cancel_event = app.state.cancel_events.get(run_id)
+        if job is None or cancel_event is None:
+            raise HTTPException(status_code=404, detail="background job not found")
+        if job.get("status") in {"completed", "partial", "cancelled", "failed"}:
+            return {"job_id": run_id, "status": job.get("status"), "cancelled": job.get("status") == "cancelled"}
+        cancel_event.set()
+        if future is not None and future.cancel():
+            with app.state.lock:
+                app.state.jobs[run_id].update(status="cancelled", updated_at=_utcnow())
+        else:
+            with app.state.lock:
+                app.state.jobs[run_id].update(status="cancel_requested", updated_at=_utcnow())
+        return {"job_id": run_id, "status": resolve_job_status(run_id)["status"], "cancel_requested": True,
+                "note": "Cancellation is cooperative; a synchronous backend call already in flight cannot be forcibly interrupted."}
+
+    @app.get("/v1/runs/{run_id}/observations")
+    def get_observations(run_id: str) -> dict:
+        report = get_report_or_404(run_id)
+        return {"run_id": report.run_id, "items": [o.model_dump(mode="json") for o in report.observations]}
+
+    @app.get("/v1/runs/{run_id}/graph")
+    def get_graph(run_id: str) -> dict:
+        report = get_report_or_404(run_id)
+        if report.graph_analysis is None:
+            return {"run_id": report.run_id, "graph": None, "note": "Graph analysis is unavailable for this partial run."}
+        return {"run_id": report.run_id, "graph": report.graph_analysis.model_dump(mode="json")}
+
+    @app.get("/v1/runs/{run_id}/hypotheses")
+    def get_hypotheses(run_id: str) -> dict:
+        report = get_report_or_404(run_id)
+        return {"run_id": report.run_id, "items": [item.model_dump(mode="json") for item in report.hypotheses]}
+
+    @app.get("/v1/runs/{run_id}/investigation")
+    def get_investigation(run_id: str) -> dict:
+        report = get_report_or_404(run_id)
+        return {
+            "run_id": report.run_id,
+            "hypotheses": [item.model_dump(mode="json") for item in report.hypotheses],
+            "actions": [item.model_dump(mode="json") for item in report.investigation_actions],
+            "experiment_designs": [item.model_dump(mode="json") for item in report.experiment_designs],
+        }
+
+    @app.get("/v1/runs/{run_id}/timeline")
+    def get_timeline(run_id: str) -> dict:
+        report = get_report_or_404(run_id)
+        return {"run_id": report.run_id, "items": [item.model_dump(mode="json") for item in report.timeline]}
+
+    @app.get("/v1/runs/{run_id}/findings")
+    def get_findings(run_id: str) -> dict:
+        report = get_report_or_404(run_id)
+        return {"run_id": report.run_id, "items": [f.model_dump(mode="json") for f in report.findings]}
+
+    @app.get("/v1/runs/{run_id}/evidence")
+    def get_run_evidence(run_id: str) -> dict:
+        report = get_report_or_404(run_id)
+        artifact_id = app.state.run_artifacts.get(report.run_id)
+        return {
+            "run_id": report.run_id,
+            "items": [item.model_dump(mode="json") for item in report.evidence],
+            "report_artifact_id": artifact_id,
+        }
+
+    @app.get("/v1/runs/{run_id}/report")
+    def get_run_report(run_id: str) -> dict:
+        report = get_report_or_404(run_id)
+        return report.model_dump(mode="json")
+
+    def _run_intervention_locked(
+        run_id: str,
+        request: InterventionRequest,
+        x_approval_token: str | None = Header(default=None, alias="X-Approval-Token"),
+    ) -> dict:
+        report = get_report_or_404(run_id)
+        if report.policy_profile == "read_only":
+            raise HTTPException(status_code=403, detail={"error": "READ_ONLY_PROFILE", "message": "This run's policy profile forbids interventions."})
+        if request.experiment_id != report.experiment_id:
+            raise HTTPException(status_code=400, detail="experiment_id does not match run")
+        prior_result = next((item for item in report.intervention_history if item.intervention_id == request.intervention_id), None)
+        if prior_result is not None:
+            return prior_result.model_dump(mode="json")
+        finding = next((item for item in report.findings if item.target_ref == request.target_ref and item.target_type == request.target_type), None)
+        if finding is None:
+            raise HTTPException(status_code=400, detail="target_ref must match an observed finding in this run")
+        if request.authorization_ref is None:
+            raise HTTPException(status_code=400, detail="authorization_ref is required for API intervention requests")
+        scenario = app.state.engine.scenarios.get_scenario(report.scenario_id)
+        capabilities = app.state.engine.runtime.capabilities()
+        approval_granted = approval_is_valid(x_approval_token)
+        if capabilities.backend_mode == "real" and not approval_granted:
+            raise HTTPException(status_code=403, detail={"error": "APPROVAL_REQUIRED", "message": "Configure AGENTGUARD_APPROVAL_TOKEN and provide X-Approval-Token."})
+        used = report.budget_usage.intervention_attempts if report.budget_usage else 0
+        budget = report.budget_usage.max_interventions if report.budget_usage else 0
+        decision = app.state.policy_engine.evaluate(
+            scenario, request, capabilities,
+            max_interventions=budget,
+            interventions_already_attempted=used,
+            approval_granted=approval_granted,
+        )
+        if not decision.allowed:
+            code = 501 if decision.status == "unsupported" else 403
+            raise HTTPException(status_code=code, detail={"error": decision.error_code, "message": decision.reason})
+        result = app.state.engine.runtime.intervene(request)
+        report.selected_intervention = request
+        report.intervention_result = result
+        report.intervention_requests.append(request)
+        report.intervention_history.append(result)
+        if report.budget_usage is not None:
+            report.budget_usage.intervention_attempts += 1
+            report.budget_usage.intervention_requests += 1
+        if result.effect_status == "simulated":
+            report.causal_claim_status = "simulated_only"
+        elif result.effect_status == "measured":
+            report.causal_claim_status = "causal_validation_required"
+        report.evidence.append(EvidenceRecord(
+            kind="intervention", grade="synthetic" if report.backend_mode == "synthetic" else "interventional",
+            source="agentguard.api.intervention", summary=result.message,
+            artifact_refs=result.evidence_refs, run_id=report.run_id, experiment_id=report.experiment_id,
+            scenario_id=report.scenario_id, metadata={"status": result.status, "effect_status": result.effect_status},
+        ))
+        report.timeline.append(RunTimelineEvent(
+            sequence=len(report.timeline), stage="intervened",
+            status="completed" if result.status == "completed" else "rejected",
+            message="API intervention request processed; effectiveness is not inferred.",
+            details={"intervention_id": result.intervention_id, "effect_status": result.effect_status, "status": result.status},
+        ))
+        report.limitations.append("An intervention submitted after the original run was not automatically paired with a fresh baseline/control replay.")
+        store_report(report)
+        return result.model_dump(mode="json")
+
+    @app.post("/v1/runs/{run_id}/interventions")
+    def run_intervention(
+        run_id: str,
+        request: InterventionRequest,
+        x_approval_token: str | None = Header(default=None, alias="X-Approval-Token"),
+    ) -> dict:
+        with get_run_lock(run_id):
+            return _run_intervention_locked(run_id, request, x_approval_token)
+
+    @app.get("/v1/runs/{run_id}/defenses/preview")
+    def get_defense_preview(run_id: str) -> dict:
+        report = get_report_or_404(run_id)
+        preview = report.defense_preview or app.state.defense_service.preview(report)
+        return preview.model_dump(mode="json")
+
+    def _preview_defenses_locked(run_id: str) -> dict:
+        report = get_report_or_404(run_id)
+        preview = app.state.defense_service.preview(report)
+        report.defense_preview = preview
+        store_report(report)
+        return preview.model_dump(mode="json")
+
+    @app.post("/v1/runs/{run_id}/defenses/preview")
+    def preview_defenses(run_id: str) -> dict:
+        with get_run_lock(run_id):
+            return _preview_defenses_locked(run_id)
+
+    def _execute_defense_locked(
+        run_id: str,
+        request: DefenseExecuteRequest,
+        x_approval_token: str | None = Header(default=None, alias="X-Approval-Token"),
+    ) -> dict:
+        report = get_report_or_404(run_id)
+        if report.policy_profile == "read_only":
+            raise HTTPException(status_code=403, detail={"error": "READ_ONLY_PROFILE", "message": "This run's policy profile forbids interventions."})
+        preview = report.defense_preview or app.state.defense_service.preview(report)
+        candidate = next((item for item in preview.candidates if item.candidate_id == request.candidate_id), None)
+        if candidate is None:
+            raise HTTPException(status_code=404, detail="defense candidate not found in preview")
+        manifest = app.state.engine.runtime.capabilities()
+        if manifest.backend_mode == "real" and not approval_is_valid(x_approval_token):
+            raise HTTPException(status_code=403, detail={"error": "APPROVAL_REQUIRED", "message": "Real-backend defense requires a configured operator approval token."})
+        if not request.authorization_ref:
+            raise HTTPException(status_code=400, detail="authorization_ref is required")
+        budget = report.budget_usage.max_interventions if report.budget_usage else 0
+        used = report.budget_usage.intervention_attempts if report.budget_usage else 0
+        intervention_id = request.intervention_id or f"api-{candidate.candidate_id}"
+        prior_result = next((item for item in report.intervention_history if item.intervention_id == intervention_id), None)
+        if prior_result is not None:
+            return {"candidate": candidate.model_dump(mode="json"), "result": prior_result.model_dump(mode="json"), "effectiveness_verified": False, "idempotent_replay": True}
+        intervention = InterventionRequest(
+            experiment_id=report.experiment_id,
+            intervention_id=intervention_id,
+            target_type=candidate.target_type,
+            target_ref=candidate.target_ref,
+            operation=candidate.operation,
+            control_group="matched_control_v1",
+            parameters={"scope": candidate.scope, "approval_required": candidate.approval_required},
+            authorization_ref=request.authorization_ref,
+        )
+        scenario = app.state.engine.scenarios.get_scenario(report.scenario_id)
+        decision = app.state.policy_engine.evaluate(
+            scenario, intervention, manifest, max_interventions=budget,
+            interventions_already_attempted=used,
+            approval_granted=approval_is_valid(x_approval_token),
+        )
+        if not decision.allowed:
+            raise HTTPException(status_code=403, detail={"error": decision.error_code, "message": decision.reason})
+        result = app.state.engine.runtime.intervene(intervention)
+        report.selected_intervention = intervention
+        report.intervention_result = result
+        report.intervention_requests.append(intervention)
+        report.intervention_history.append(result)
+        if report.budget_usage is not None:
+            report.budget_usage.intervention_attempts += 1
+            report.budget_usage.intervention_requests += 1
+        if result.effect_status == "simulated":
+            report.causal_claim_status = "simulated_only"
+        elif result.effect_status == "measured":
+            report.causal_claim_status = "causal_validation_required"
+        report.evidence.append(EvidenceRecord(
+            kind="intervention", grade="synthetic" if report.backend_mode == "synthetic" else "interventional",
+            source="agentguard.api.defense", summary=result.message,
+            artifact_refs=result.evidence_refs, run_id=report.run_id, experiment_id=report.experiment_id,
+            scenario_id=report.scenario_id, metadata={"candidate_id": candidate.candidate_id,
+            "status": result.status, "effect_status": result.effect_status},
+        ))
+        report.timeline.append(RunTimelineEvent(
+            sequence=len(report.timeline), stage="intervened",
+            status="completed" if result.status == "completed" else "rejected",
+            message="Defense candidate executed under policy gate; effectiveness not yet verified.",
+            details={"candidate_id": candidate.candidate_id, "status": result.status, "effect_status": result.effect_status},
+        ))
+        report.limitations.append("Defense execution does not itself establish risk reduction; run matched treatment/control and normal-utility checks.")
+        store_report(report)
+        return {"candidate": candidate.model_dump(mode="json"), "policy_decision": decision.model_dump(mode="json"), "result": result.model_dump(mode="json"), "effectiveness_verified": False}
+
+    @app.post("/v1/runs/{run_id}/defenses/execute")
+    def execute_defense(
+        run_id: str,
+        request: DefenseExecuteRequest,
+        x_approval_token: str | None = Header(default=None, alias="X-Approval-Token"),
+    ) -> dict:
+        with get_run_lock(run_id):
+            return _execute_defense_locked(run_id, request, x_approval_token)
+
+    def _verify_defense_locked(run_id: str, request: DefenseVerifyRequest) -> dict:
+        report = get_report_or_404(run_id)
+        preview = report.defense_preview or app.state.defense_service.preview(report)
+        candidate = next((item for item in preview.candidates if item.candidate_id == request.candidate_id), None)
+        if candidate is None:
+            raise HTTPException(status_code=404, detail="defense candidate not found in preview")
+        try:
+            verification = app.state.defense_service.verify_paired(
+                report, candidate, request.baseline_risk, request.post_defense_risk,
+                request.baseline_utility, request.post_defense_utility, seed=request.seed,
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        # Values submitted via API are not automatically promoted to measured/causal evidence.
+        verification.limitations.append("Metric arrays were supplied by the API caller; attach source artifacts before treating them as reproducible measurements.")
+        report.defense_verification = verification
+        report.limitations.append("Defense verification helper computed paired statistics from caller-supplied arrays; provenance and raw experiment artifacts remain external obligations.")
+        store_report(report)
+        return verification.model_dump(mode="json")
+
+    @app.post("/v1/runs/{run_id}/defenses/verify")
+    def verify_defense(run_id: str, request: DefenseVerifyRequest) -> dict:
+        with get_run_lock(run_id):
+            return _verify_defense_locked(run_id, request)
+
+    @app.get("/v1/runs/{run_id}/defenses/verification")
+    def get_defense_verification(run_id: str) -> dict:
+        report = get_report_or_404(run_id)
+        if report.defense_verification is None:
+            raise HTTPException(status_code=404, detail="defense verification not found")
+        return report.defense_verification.model_dump(mode="json")
+
+    @app.get("/v1/runs/{run_id}/experiments/paired")
+    def list_paired_experiments(run_id: str) -> dict:
+        report = get_report_or_404(run_id)
+        return {"run_id": report.run_id,
+                "items": [item.model_dump(mode="json") for item in report.paired_experiments]}
+
+    @app.post("/v1/runs/{run_id}/experiments/paired")
+    def execute_paired_experiment(
+        run_id: str,
+        request: PairedExperimentRunRequest,
+        x_approval_token: str | None = Header(default=None, alias="X-Approval-Token"),
+    ) -> dict:
+        with get_run_lock(run_id):
+            report = get_report_or_404(run_id)
+            if report.policy_profile == "read_only":
+                raise HTTPException(status_code=403, detail={"error": "READ_ONLY_PROFILE", "message": "This run's policy profile forbids intervention experiments."})
+            if report.request_snapshot is None:
+                raise HTTPException(status_code=409, detail="run report does not contain a reproducible request snapshot")
+            design = next((item for item in report.experiment_designs if request.design_id is None or item.design_id == request.design_id), None)
+            if design is None:
+                raise HTTPException(status_code=404, detail="paired experiment design not found")
+            existing_execution = next((item for item in report.paired_experiments if item.design_id == design.design_id), None)
+            if existing_execution is not None:
+                return existing_execution.model_dump(mode="json")
+            action = next((item for item in report.investigation_actions
+                           if item.hypothesis_id == design.hypothesis_id and
+                           (request.action_id is None or item.action_id == request.action_id)), None)
+            if action is None:
+                raise HTTPException(status_code=404, detail="matching investigation action not found")
+            if action.operation != design.treatment_operation:
+                raise HTTPException(status_code=400, detail="selected action operation does not match the stored design")
+            capabilities = app.state.engine.runtime.capabilities()
+            if capabilities.backend_mode == "real" and app.state.paired_runner.paired_executor is None:
+                raise HTTPException(status_code=501, detail={"error": "PAIRED_REPLAY_UNAVAILABLE", "message": "Real paired replay requires an explicit validated paired_executor; a file-level run API is not enough."})
+            if capabilities.backend_mode == "real" and not approval_is_valid(x_approval_token):
+                raise HTTPException(status_code=403, detail={"error": "APPROVAL_REQUIRED", "message": "Real-backend paired interventions require operator approval."})
+            if not request.authorization_ref:
+                raise HTTPException(status_code=400, detail="authorization_ref is required for paired intervention experiments")
+            budget = report.budget_usage.max_interventions if report.budget_usage else 0
+            used = report.budget_usage.intervention_attempts if report.budget_usage else 0
+            repetitions = design.repetitions
+            if used + repetitions > budget:
+                raise HTTPException(status_code=403, detail={
+                    "error": "BUDGET_EXCEEDED",
+                    "message": f"Paired design requires {repetitions} treatment attempts but only {max(0, budget-used)} remain. Re-run with a larger max_interventions budget.",
+                })
+            scenario = app.state.engine.scenarios.get_scenario(report.scenario_id)
+            scope = "synthetic_demo" if capabilities.backend_mode == "synthetic" else "isolated_test_environment"
+            template = InterventionRequest(
+                experiment_id=report.experiment_id,
+                intervention_id=f"paired-template-{design.design_id}",
+                target_type=action.target_type,
+                target_ref=action.target_ref,
+                operation=action.operation,
+                control_group="matched_control_and_treatment",
+                parameters={"scope": scope, "approval_required": capabilities.backend_mode == "real"},
+                authorization_ref=request.authorization_ref,
+            )
+            decision = app.state.policy_engine.evaluate(
+                scenario, template, capabilities, max_interventions=budget,
+                interventions_already_attempted=used,
+                approval_granted=approval_is_valid(x_approval_token),
+            )
+            if not decision.allowed:
+                code = 501 if decision.status == "unsupported" else 403
+                raise HTTPException(status_code=code, detail={"error": decision.error_code, "message": decision.reason})
+            # Reserve the full declared treatment budget before invoking the runner. This prevents
+            # retries or partial failures from silently freeing already-authorized write capacity.
+            if report.budget_usage is not None:
+                report.budget_usage.intervention_attempts += repetitions
+                report.budget_usage.intervention_requests += repetitions
+            try:
+                execution = app.state.paired_runner.run(
+                    run_id=report.run_id, scenario=scenario, base_request=report.request_snapshot,
+                    design=design, intervention_template=template,
+                    approval_granted=approval_is_valid(x_approval_token),
+                )
+            except PairedExecutionUnsupported as exc:
+                report.limitations.append("Paired executor was unavailable after budget reservation; the reserved intervention budget remains consumed for safety.")
+                store_report(report)
+                raise HTTPException(status_code=501, detail={"error": "PAIRED_REPLAY_UNAVAILABLE", "message": str(exc)}) from exc
+            except ValueError as exc:
+                report.limitations.append("Paired execution failed after budget reservation; the reserved intervention budget remains consumed for safety.")
+                report.timeline.append(RunTimelineEvent(
+                    sequence=len(report.timeline), stage="verification", status="failed",
+                    message="Paired experiment runner rejected or failed the design.",
+                    details={"design_id": design.design_id, "error_code": type(exc).__name__},
+                ))
+                store_report(report)
+                raise HTTPException(status_code=400, detail={"error": "PAIRED_DESIGN_INVALID", "message": str(exc)}) from exc
+            except Exception as exc:
+                report.limitations.append("Paired execution raised after budget reservation; the reserved intervention budget remains consumed for safety.")
+                report.timeline.append(RunTimelineEvent(
+                    sequence=len(report.timeline), stage="verification", status="failed",
+                    message="Paired experiment execution failed; raw exception text was not stored.",
+                    details={"design_id": design.design_id, "error_code": type(exc).__name__},
+                ))
+                store_report(report)
+                raise HTTPException(status_code=502, detail={"error": "PAIRED_EXECUTION_FAILED", "message": "paired experiment failed; inspect the saved run report for its failure code"}) from exc
+            artifact = app.state.artifacts.put(
+                execution.model_dump_json(indent=2).encode("utf-8"),
+                name=f"paired-experiment-{execution.design_id}.json",
+                description="Paired control/treatment/negative-control execution report",
+                tags=["paired-experiment", execution.evidence_mode, execution.status],
+                metadata={"run_id": report.run_id, "experiment_id": report.experiment_id,
+                          "design_id": execution.design_id, "completed_pairs": execution.completed_pairs},
+                media_type="application/json",
+            )
+            execution.artifact_id = artifact.artifact_ref.artifact_id
+            report.paired_experiments.append(execution)
+            for pair in execution.pairs:
+                if pair.intervention_request is not None:
+                    report.intervention_requests.append(pair.intervention_request)
+                if pair.intervention_result is not None:
+                    report.intervention_history.append(pair.intervention_result)
+                    report.intervention_result = pair.intervention_result
+                    report.selected_intervention = pair.intervention_request
+            if report.budget_usage is not None:
+                report.budget_usage.intervention_attempts = min(
+                    report.budget_usage.intervention_attempts, report.budget_usage.max_interventions
+                )
+            report.causal_claim_status = "simulated_only" if execution.evidence_mode == "synthetic" else "causal_validation_required"
+            report.evidence.append(EvidenceRecord(
+                kind="evaluation", grade="synthetic" if execution.evidence_mode == "synthetic" else "observational",
+                source="agentguard.paired_runner", summary=(f"Paired design {execution.design_id} completed {execution.completed_pairs}/{execution.requested_pairs} pairs; "
+                "aggregate statistics are descriptive and not an automatic causal validation."),
+                artifact_refs=[artifact.artifact_ref.artifact_id], run_id=report.run_id,
+                experiment_id=report.experiment_id, scenario_id=report.scenario_id,
+                source_version="paired-runner-0.4", metadata={"design_id": execution.design_id,
+                "status": execution.status, "evidence_mode": execution.evidence_mode},
+            ))
+            report.timeline.append(RunTimelineEvent(
+                sequence=len(report.timeline), stage="verification",
+                status="completed" if execution.status == "completed" else "partial",
+                message="Paired experiment execution report assembled.",
+                details={"design_id": execution.design_id, "completed_pairs": execution.completed_pairs,
+                         "requested_pairs": execution.requested_pairs, "artifact_id": artifact.artifact_ref.artifact_id},
+            ))
+            report.limitations.extend(execution.limitations)
+            store_report(report)
+            return execution.model_dump(mode="json")
+
+    @app.get("/v1/artifacts")
+    def list_artifacts(limit: int = Query(default=100, ge=1, le=500)) -> dict:
+        items = app.state.artifacts.list_metadata()
+        return {"items": [item.model_dump(mode="json") for item in items[-limit:]], "total": len(items)}
+
+    @app.get("/v1/artifacts/{artifact_id}")
+    def get_artifact(artifact_id: str) -> dict:
+        try:
+            return app.state.artifacts.get_metadata(artifact_id).model_dump(mode="json")
+        except (ArtifactNotFoundError, ValueError) as exc:
+            raise HTTPException(status_code=404, detail="artifact not found") from exc
+
+    @app.get("/v1/artifacts/{artifact_id}/content")
+    def get_artifact_content(artifact_id: str) -> Response:
+        try:
+            metadata = app.state.artifacts.get_metadata(artifact_id)
+            data = app.state.artifacts.get_bytes(artifact_id)
+        except (ArtifactNotFoundError, ValueError) as exc:
+            raise HTTPException(status_code=404, detail="artifact not found") from exc
+        return Response(content=data, media_type=metadata.artifact_ref.media_type,
+                        headers={"Content-Disposition": f'attachment; filename="{artifact_id}.bin"'})
+
+    @app.post(
+        "/v1/probes/train",
+        response_model=BinaryProbeTrainingReport,
+        deprecated=True,
+        description=(
+            "Compatibility/offline baseline only. Production Probe resource management and "
+            "causal audits belong to WARDEN; use /v1/kernel/resources and /v1/kernel/audits."
+        ),
+    )
+    def train_binary_probe(request: BinaryProbeTrainRequest) -> BinaryProbeTrainingReport:
+        try:
+            train_idx, validation_idx, test_idx = split_by_group_three_way(
+                request.labels, request.case_families,
+                test_fraction=request.test_fraction,
+                validation_fraction=request.validation_fraction, seed=request.seed,
+            )
+            y_train = [request.labels[i] for i in train_idx]
+            y_validation = [request.labels[i] for i in validation_idx]
+            y_test = [request.labels[i] for i in test_idx]
+            if any(set(labels) != {0, 1} for labels in (y_train, y_validation, y_test)):
+                raise ValueError("group-isolated split did not retain both classes in train, validation and test; provide more balanced case families")
+            train_groups = {request.case_families[i] for i in train_idx}
+            validation_groups = {request.case_families[i] for i in validation_idx}
+            test_groups = {request.case_families[i] for i in test_idx}
+            if not train_groups.isdisjoint(validation_groups) or not train_groups.isdisjoint(test_groups) or not validation_groups.isdisjoint(test_groups):
+                raise RuntimeError("case-family leakage detected by split verifier")
+            model = BinaryLinearProbe(
+                learning_rate=request.learning_rate, epochs=request.epochs,
+                l2=request.l2, threshold=request.threshold if request.threshold is not None else 0.5,
+            ).fit([request.features[i] for i in train_idx], y_train, request.feature_names)
+            validation_scores = model.predict_scores([request.features[i] for i in validation_idx])
+            if request.threshold is None:
+                model.threshold = select_f1_threshold(y_validation, validation_scores)
+            validation_metrics = evaluate_binary_classifier(y_validation, validation_scores, threshold=model.threshold)
+            scores = model.predict_scores([request.features[i] for i in test_idx])
+            metrics = evaluate_binary_classifier(y_test, scores, threshold=model.threshold)
+            dataset_payload = json.dumps({"features": request.features, "labels": request.labels,
+                                          "case_families": request.case_families}, sort_keys=True,
+                                         separators=(",", ":")).encode("utf-8")
+            dataset_hash = hashlib.sha256(dataset_payload).hexdigest()
+            model_payload = model.to_dict()
+            model_payload["dataset_sha256"] = dataset_hash
+            model_payload["seed"] = request.seed
+            model_payload["split_strategy"] = "case_family_group_holdout"
+            model_payload["dataset_name"] = request.dataset_name
+            model_payload["dataset_version"] = request.dataset_version
+            model_payload["label_source"] = request.label_source
+            model_payload["representation_source"] = request.representation_source
+            artifact = app.state.artifacts.put(
+                json.dumps(model_payload, ensure_ascii=False, indent=2).encode("utf-8"),
+                name="binary-linear-probe.json",
+                description="Binary logistic linear probe trained on caller-supplied numeric representations",
+                tags=["linear-probe", "supervised-detector"],
+                metadata={"dataset_sha256": dataset_hash, "dataset_name": request.dataset_name,
+                          "dataset_version": request.dataset_version, "label_source": request.label_source,
+                          "representation_source": request.representation_source, "seed": request.seed,
+                          "train_samples": len(train_idx), "validation_samples": len(validation_idx),
+                          "test_samples": len(test_idx), "train_group_count": len(train_groups),
+                          "validation_group_count": len(validation_groups), "test_group_count": len(test_groups),
+                          "validation_f1": validation_metrics["f1"], "test_f1": metrics["f1"],
+                          "split_strategy": "case_family_group_holdout", "f1": metrics["f1"]},
+                media_type="application/json",
+            )
+            return BinaryProbeTrainingReport(
+                model_artifact_id=artifact.artifact_ref.artifact_id,
+                dataset_sha256=dataset_hash, dataset_name=request.dataset_name,
+                dataset_version=request.dataset_version, label_source=request.label_source,
+                representation_source=request.representation_source, seed=request.seed,
+                train_samples=len(train_idx), validation_samples=len(validation_idx), test_samples=len(test_idx),
+                train_group_count=len(train_groups), validation_group_count=len(validation_groups),
+                test_group_count=len(test_groups), threshold=model.threshold,
+                validation_metrics=validation_metrics, group_split_verified=True, metrics=metrics,
+                notes=[
+                    "The probe was trained only on the supplied numeric vectors and labels; this API does not extract model activations.",
+                    "Train/validation/test isolation is by case_families; verify that family identifiers encode the intended independence unit.",
+                    "If threshold is omitted, it is selected on validation F1 and evaluated once on the held-out test split.",
+                    "Scores and metrics do not establish a causal mechanism or generalize beyond the evaluated data.",
+                    "The source dataset is not stored as an artifact by this endpoint; only a hash and trained model are retained.",
+                ],
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail={"error": "PROBE_TRAINING_INVALID", "message": str(exc)}) from exc
+
+    @app.post(
+        "/v1/probes/predict",
+        response_model=BinaryProbePredictionReport,
+        deprecated=True,
+        description=(
+            "Compatibility/offline baseline only. Use WARDEN-managed Probe resources for "
+            "production audit workflows."
+        ),
+    )
+    def predict_with_probe(request: BinaryProbePredictRequest) -> BinaryProbePredictionReport:
+        try:
+            metadata = app.state.artifacts.get_metadata(request.model_artifact_id)
+            if "linear-probe" not in metadata.tags:
+                raise HTTPException(status_code=400, detail="artifact is not a registered linear-probe model")
+            payload = json.loads(app.state.artifacts.get_bytes(request.model_artifact_id).decode("utf-8"))
+            model = BinaryLinearProbe.from_dict(payload)
+            scores = model.predict_scores(request.features)
+            predictions = model.predict(request.features)
+        except ArtifactNotFoundError as exc:
+            raise HTTPException(status_code=404, detail="probe model artifact not found") from exc
+        except HTTPException:
+            raise
+        except (ValueError, KeyError, json.JSONDecodeError) as exc:
+            raise HTTPException(status_code=400, detail={"error": "PROBE_PREDICTION_INVALID", "message": str(exc)}) from exc
+        return BinaryProbePredictionReport(
+            model_artifact_id=request.model_artifact_id,
+            scores=scores,
+            predictions=predictions,
+            threshold=model.threshold,
+            evidence_mode="observed",
+            limitations=[
+                "Predictions are model outputs for caller-supplied vectors, not ground-truth labels.",
+                "This endpoint does not extract activations from a model or establish a causal mechanism.",
+            ],
+        )
+
+    @app.post("/v1/experiences", response_model=ExperienceRecord)
+    def add_experience(record: ExperienceRecord) -> ExperienceRecord:
+        try:
+            return app.state.experiences.add(record)
+        except Exception as exc:
+            if "UNIQUE constraint failed" in str(exc):
+                raise HTTPException(status_code=409, detail="experience_id already exists") from exc
+            raise HTTPException(status_code=400, detail={"error": "INVALID_EXPERIENCE", "message": type(exc).__name__}) from exc
+
+    @app.get("/v1/experiences", response_model=ExperienceSearchResult)
+    def search_experiences(
+        q: str = "", scenario_id: str | None = None, risk_type: str | None = None,
+        verified_only: bool = False, limit: int = Query(default=50, ge=1, le=500),
+    ) -> ExperienceSearchResult:
+        items = app.state.experiences.search(q, scenario_id=scenario_id, risk_type=risk_type,
+                                             verified_only=verified_only, limit=limit)
+        return ExperienceSearchResult(query=q, items=items, total=len(items))
+
+    @app.get("/v1/experiences/recommendations")
+    def experience_recommendations(scenario_id: str | None = None, risk_type: str | None = None, limit: int = 5) -> dict:
+        items = app.state.experiences.recommendations(scenario_id=scenario_id, risk_type=risk_type, limit=limit)
+        return {"items": [item.model_dump(mode="json") for item in items],
+                "note": "Only verified, explicitly recommendation-enabled records are returned; recommendations do not execute actions."}
+
+    @app.get("/v1/experiences/bandit-recommendations", response_model=ExperienceBanditRecommendationReport)
+    def experience_bandit_recommendations(
+        scenario_id: str | None = None,
+        risk_type: str | None = None,
+        seed: int = 7,
+        limit: int = Query(default=5, ge=1, le=50),
+    ) -> dict:
+        records = app.state.experiences.search(
+            scenario_id=scenario_id, risk_type=risk_type, verified_only=False, limit=500
+        )
+        return recommend_actions(
+            records, scenario_id=scenario_id, risk_type=risk_type, seed=seed, limit=limit
+        )
+
+    @app.get("/v1/experiences/action-statistics")
+    def experience_action_statistics(verified_only: bool = True) -> dict:
+        return {"items": app.state.experiences.action_statistics(verified_only=verified_only)}
+
+    @app.post("/v1/attribution/nodes/analyze", response_model=AttributionNodeAnalysisReport, status_code=201)
+    def analyze_attribution_node_endpoint(request: AttributionNodeAnalysisRequest) -> AttributionNodeAnalysisReport:
+        try:
+            report = analyze_attribution_node(request)
+            artifact = app.state.artifacts.put(
+                report.model_dump_json(indent=2).encode("utf-8"),
+                name=f"attribution-node-{report.analysis_id}.json",
+                description="Secret recovery mediation summary for a candidate information-flow node",
+                tags=["causal-attribution", report.evidence_mode, request.node_type],
+                metadata={"analysis_id": report.analysis_id, "node_id": report.node_id,
+                          "evidence_mode": report.evidence_mode, "causal_claim_status": report.causal_claim_status},
+                media_type="application/json",
+            )
+            return report.model_copy(update={"report_artifact_id": artifact.artifact_ref.artifact_id})
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail={"error": "ATTRIBUTION_INPUT_INVALID", "message": str(exc)}) from exc
+
+    @app.post("/v1/attribution/path-shift", response_model=PathShiftAnalysisReport, status_code=201)
+    def analyze_path_shift_endpoint(request: PathShiftAnalysisRequest) -> PathShiftAnalysisReport:
+        try:
+            report = analyze_path_shift(request)
+            artifact = app.state.artifacts.put(
+                report.model_dump_json(indent=2).encode("utf-8"),
+                name=f"path-shift-{report.analysis_id}.json",
+                description="Descriptive path contribution distribution comparison",
+                tags=["path-shift", report.evidence_mode],
+                metadata={"analysis_id": report.analysis_id, "protocol_fingerprint": report.protocol_fingerprint,
+                          "evidence_mode": report.evidence_mode},
+                media_type="application/json",
+            )
+            return report.model_copy(update={"report_artifact_id": artifact.artifact_ref.artifact_id})
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail={"error": "PATH_SHIFT_INPUT_INVALID", "message": str(exc)}) from exc
+
+    @app.post("/v1/studies", response_model=RegisteredStudy, status_code=201)
+    def register_study(request: StudyRegistrationRequest) -> RegisteredStudy:
+        """Create an immutable preregistration before inspecting study outcomes."""
+        try:
+            return app.state.research_registry.register(request)
+        except Exception as exc:
+            raise HTTPException(status_code=409, detail={"error": "STUDY_REGISTRATION_FAILED", "code": type(exc).__name__}) from exc
+
+    @app.get("/v1/studies")
+    def list_studies(limit: int = Query(default=100, ge=1, le=500)) -> dict:
+        items = app.state.research_registry.list(limit=limit)
+        return {"items": [item.model_dump(mode="json") for item in items], "total": len(items)}
+
+    @app.get("/v1/studies/{study_id}", response_model=RegisteredStudy)
+    def get_study(study_id: str) -> RegisteredStudy:
+        study = app.state.research_registry.get(study_id)
+        if study is None:
+            raise HTTPException(status_code=404, detail="study_id not found")
+        return study
+
+    @app.get("/v1/studies/{study_id}/integrity")
+    def verify_study_integrity(study_id: str) -> dict:
+        study = app.state.research_registry.get(study_id)
+        if study is None:
+            raise HTTPException(status_code=404, detail="study_id not found")
+        return {"study_id": study_id, "registration_sha256": study.registration_sha256,
+                "integrity_valid": app.state.research_registry.verify_registration(study_id),
+                "note": "Hash integrity detects accidental changes; it is not a trusted timestamp or external notarization."}
+
+    @app.post("/v1/studies/{study_id}/analyses", response_model=StudyAnalysisReport, status_code=201)
+    def analyze_study(study_id: str, request: StudyAnalysisRequest) -> StudyAnalysisReport:
+        study = app.state.research_registry.get(study_id)
+        if study is None:
+            raise HTTPException(status_code=404, detail="study_id not found")
+        try:
+            analysis = analyze_registered_study(study, request)
+            artifact = app.state.artifacts.put(
+                analysis.model_dump_json(indent=2).encode("utf-8"),
+                name=f"study-analysis-{analysis.analysis_id}.json",
+                description="Preregistered, case-family-aware statistical analysis report",
+                tags=["study-analysis", analysis.evidence_mode, analysis.multiplicity_method],
+                metadata={"study_id": study_id, "analysis_id": analysis.analysis_id,
+                          "registration_sha256": study.registration_sha256,
+                          "analysis_sha256": analysis.analysis_sha256},
+                media_type="application/json",
+            )
+            analysis = analysis.model_copy(update={"report_artifact_id": artifact.artifact_ref.artifact_id})
+            app.state.research_registry.add_analysis(analysis)
+            return analysis
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail={"error": "STUDY_ANALYSIS_INVALID", "message": str(exc)}) from exc
+
+    @app.get("/v1/studies/{study_id}/analyses")
+    def list_study_analyses(study_id: str) -> dict:
+        if app.state.research_registry.get(study_id) is None:
+            raise HTTPException(status_code=404, detail="study_id not found")
+        items = app.state.research_registry.analyses(study_id)
+        return {"items": [item.model_dump(mode="json") for item in items], "total": len(items)}
+
+    return app
+
+
+CONSOLE_HTML = r'''<!doctype html>
+<html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>AgentGuard 控制台</title><style>
+:root{font-family:system-ui,-apple-system,"Segoe UI",sans-serif;color:#202633;background:#f4f6f9}body{margin:0}header{background:#182334;color:#fff;padding:22px 28px}header h1{margin:0;font-size:23px}header p{margin:7px 0 0;color:#cbd5e1;font-size:13px}.wrap{max-width:1180px;margin:22px auto;padding:0 18px}.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:16px}.card{background:#fff;border:1px solid #e0e5ec;border-radius:12px;padding:18px;box-shadow:0 2px 5px #10182808}.card h2{font-size:16px;margin:0 0 12px}.muted{color:#64748b;font-size:13px}button,select,input{font:inherit;border:1px solid #cbd5e1;border-radius:7px;padding:8px 11px;background:white}button{background:#1d4ed8;color:white;border:0;cursor:pointer}button.secondary{background:#e8edf5;color:#243044}pre{white-space:pre-wrap;overflow-wrap:anywhere;background:#111827;color:#e5e7eb;border-radius:8px;padding:14px;font-size:12px;max-height:440px;overflow:auto}.pill{display:inline-block;padding:3px 8px;background:#e9eef8;border-radius:20px;font-size:12px;margin:2px}.section{margin-top:16px}.actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px}#status{margin-left:10px;font-size:13px;color:#475569}@media(max-width:640px){header{padding:18px}.wrap{padding:0 10px}}
+</style></head><body><header><h1>AgentGuard</h1><p>实验运行 · 风险发现 · 调查假设 · 防御预览 · 证据审计</p></header>
+<div class="wrap"><div class="grid"><section class="card"><h2>启动实验</h2><p class="muted">默认使用合成 Mock 后端；结果不能作为真实模型实验数据。</p><label for="token">API token（仅在服务端启用鉴权时填写）</label><input id="token" type="password" autocomplete="off" placeholder="可留空" style="width:100%;box-sizing:border-box;margin-top:6px;margin-bottom:12px"><label for="scenario">场景</label><br><select id="scenario" style="width:100%;margin-top:6px"></select><div class="actions"><button id="run">运行演示</button><button class="secondary" id="refresh">刷新场景</button><span id="status"></span></div></section>
+<section class="card"><h2>后端能力</h2><div id="capabilities" class="muted">加载中…</div></section><section class="card"><h2>最近运行</h2><div id="runs" class="muted">尚无运行记录</div><div class="actions"><button class="secondary" id="loadRuns">刷新运行</button></div></section></div>
+<section class="card section"><h2>运行详情</h2><div id="summary" class="muted">选择或启动一次运行后查看结果。</div><div class="actions"><button class="secondary" id="preview">生成防御预览</button><button class="secondary" id="evidence">查看证据索引</button></div><pre id="details">尚无报告</pre></section>
+<section class="card section"><h2>交互图与候选路径</h2><p class="muted">仅绘制采集到的事件边；候选路径是调查线索，不代表合谋或因果关系。</p><div id="graph" class="muted">运行一次实验后查看交互图。</div></section>
+<p class="muted">本控制台只调用本服务 API，不提供任意 Shell、Python 或文件系统执行入口。真实后端的高影响操作必须在隔离环境中经授权执行。</p></div>
+<script>
+let currentRun=null;const $=id=>document.getElementById(id);const show=(id,v)=>$(id).textContent=typeof v==='string'?v:JSON.stringify(v,null,2);
+async function api(path,opts={}){const token=$('token')?.value||'';const auth=token?{'X-AgentGuard-Token':token}:{};const r=await fetch(path,{...opts,headers:{'Content-Type':'application/json',...auth,...(opts.headers||{})}});const data=await r.json().catch(()=>({}));if(!r.ok)throw new Error(data.detail?.message||data.detail||r.statusText);return data}
+async function scenarios(){const data=await api('/v1/scenarios');$('scenario').replaceChildren(...data.items.map(s=>{const o=document.createElement('option');o.value=s.scenario_id;o.textContent=s.name+' ('+s.scenario_id+')';return o}));}
+async function loadCaps(){const c=await api('/v1/capabilities');show('capabilities',{provider:c.provider_id,mode:c.backend_mode,capabilities:c.capabilities,limitations:c.limitations});}
+async function loadRuns(){const d=await api('/v1/runs');const box=$('runs');box.replaceChildren();for(const r of [...(d.items||[]),...(d.jobs||[])].slice(0,12)){const b=document.createElement('button');b.className='secondary';b.style.margin='3px';b.textContent=(r.run_id||r.job_id)+' · '+r.status;b.onclick=()=>loadRun(r.run_id||r.job_id);box.appendChild(b)}if(!box.children.length)box.textContent='尚无运行记录'}
+function svgNode(name,attrs={}){const n=document.createElementNS('http://www.w3.org/2000/svg',name);for(const [k,v] of Object.entries(attrs))n.setAttribute(k,String(v));return n}
+async function renderGraph(id){const host=$('graph');host.replaceChildren();try{const response=await api('/v1/runs/'+encodeURIComponent(id)+'/graph');const g=response.graph;if(!g||!g.nodes?.length){host.textContent='当前运行没有可展示的图数据';return}const nodes=g.nodes.slice(0,16),edges=g.edges.slice(0,32),width=920,height=390,cx=width/2,cy=height/2,rx=width*0.39,ry=height*0.35;const positions=new Map();nodes.forEach((n,i)=>{const a=(2*Math.PI*i/Math.max(1,nodes.length))-Math.PI/2;positions.set(n.node_id,{x:cx+rx*Math.cos(a),y:cy+ry*Math.sin(a)})});const svg=svgNode('svg',{viewBox:`0 0 ${width} ${height}`,width:'100%',role:'img','aria-label':'Agent interaction graph'});const defs=svgNode('defs');const marker=svgNode('marker',{id:'arrow',viewBox:'0 0 10 10',refX:8,refY:5,markerWidth:5,markerHeight:5,orient:'auto-start-reverse'});marker.appendChild(svgNode('path',{d:'M 0 0 L 10 5 L 0 10 z',fill:'#64748b'}));defs.appendChild(marker);svg.appendChild(defs);edges.forEach(e=>{const a=positions.get(e.source),b=positions.get(e.target);if(!a||!b)return;const line=svgNode('line',{x1:a.x,y1:a.y,x2:b.x,y2:b.y,stroke:e.risk_reasons?.length?'#dc2626':'#94a3b8','stroke-width':e.risk_reasons?.length?2.5:1.2,'marker-end':'url(#arrow)',opacity:0.85});const title=svgNode('title');title.textContent=`${e.event_type}: ${e.source} → ${e.target}; risk score=${e.risk_score}; ${e.risk_reasons||[]}`;line.appendChild(title);svg.appendChild(line)});nodes.forEach(n=>{const p=positions.get(n.node_id);const group=svgNode('g');const circle=svgNode('circle',{cx:p.x,cy:p.y,r:22,fill:n.node_type==='tool'?'#dbeafe':'#dcfce7',stroke:n.node_type==='tool'?'#2563eb':'#15803d','stroke-width':1.5});const title=svgNode('title');title.textContent=n.node_id;circle.appendChild(title);group.appendChild(circle);const text=svgNode('text',{x:p.x,y:p.y+39,'text-anchor':'middle','font-size':12,fill:'#334155'});text.textContent=n.node_id.length>18?n.node_id.slice(0,16)+'…':n.node_id;group.appendChild(text);svg.appendChild(group)});host.appendChild(svg);const summary=document.createElement('div');summary.className='muted';summary.textContent=`节点 ${g.node_count} · 边 ${g.edge_count} · 可疑边 ${g.suspicious_edge_count} · 候选路径 ${g.candidate_paths?.length||0}`;host.appendChild(summary);if(g.candidate_paths?.length){const list=document.createElement('ol');for(const path of g.candidate_paths.slice(0,5)){const li=document.createElement('li');li.textContent=`${path.nodes.join(' → ')} (score ${path.score.toFixed(2)})`;list.appendChild(li)}host.appendChild(list)}}catch(e){host.textContent=e.message}}
+async function loadRun(id){try{let r=await api('/v1/runs/'+encodeURIComponent(id));if(r.job_id){if(['running','queued','cancel_requested'].includes(r.status)){show('summary',r);return}if(r.result_run_id){r=await api('/v1/runs/'+encodeURIComponent(r.result_run_id)+'/report')}}if(['running','queued','cancel_requested'].includes(r.status)){show('summary',r);return}currentRun=r.run_id;show('summary',{run_id:r.run_id,status:r.status,backend_mode:r.backend_mode,findings:r.findings?.length,hypotheses:r.hypotheses?.length,causal_claim_status:r.causal_claim_status});show('details',r);await renderGraph(currentRun)}catch(e){show('details',e.message)}}
+$('run').onclick=async()=>{try{$('status').textContent='运行中…';const r=await api('/v1/runs',{method:'POST',body:JSON.stringify({scenario_id:$('scenario').value,runtime_backend:'mock',auto_intervene:false,max_interventions:1})});currentRun=r.run_id;show('summary',{run_id:r.run_id,status:r.status,backend_mode:r.backend_mode,findings:r.findings?.length,hypotheses:r.hypotheses?.length,causal_claim_status:r.causal_claim_status});show('details',r);await renderGraph(currentRun);await loadRuns();$('status').textContent='完成'}catch(e){$('status').textContent='失败';show('details',e.message)}};
+$('refresh').onclick=()=>scenarios().catch(e=>show('details',e.message));$('loadRuns').onclick=()=>loadRuns().catch(e=>show('details',e.message));$('preview').onclick=async()=>{if(!currentRun)return;try{const d=await api('/v1/runs/'+currentRun+'/defenses/preview',{method:'POST',body:'{}'});show('details',d)}catch(e){show('details',e.message)}};$('evidence').onclick=async()=>{if(!currentRun)return;try{show('details',await api('/v1/runs/'+currentRun+'/evidence'))}catch(e){show('details',e.message)}};
+Promise.all([scenarios(),loadCaps(),loadRuns()]).catch(e=>show('details',e.message));
+</script></body></html>'''
+
+app = create_app()

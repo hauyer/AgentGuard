@@ -1,0 +1,91 @@
+{
+  "$defs": {
+    "JsonValue": {}
+  },
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {
+      "const": "0.1",
+      "default": "0.1",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "analysis_id": {
+      "title": "Analysis Id",
+      "type": "string"
+    },
+    "protocol_fingerprint": {
+      "title": "Protocol Fingerprint",
+      "type": "string"
+    },
+    "model_state_before": {
+      "title": "Model State Before",
+      "type": "string"
+    },
+    "model_state_after": {
+      "title": "Model State After",
+      "type": "string"
+    },
+    "evidence_mode": {
+      "enum": [
+        "synthetic",
+        "observed",
+        "measured"
+      ],
+      "title": "Evidence Mode",
+      "type": "string"
+    },
+    "metrics": {
+      "additionalProperties": {
+        "$ref": "#/$defs/JsonValue"
+      },
+      "title": "Metrics",
+      "type": "object"
+    },
+    "source_artifact_refs": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Source Artifact Refs",
+      "type": "array"
+    },
+    "report_artifact_id": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Report Artifact Id"
+    },
+    "interpretation": {
+      "title": "Interpretation",
+      "type": "string"
+    },
+    "limitations": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Limitations",
+      "type": "array"
+    },
+    "created_at": {
+      "format": "date-time",
+      "title": "Created At",
+      "type": "string"
+    }
+  },
+  "required": [
+    "protocol_fingerprint",
+    "model_state_before",
+    "model_state_after",
+    "evidence_mode",
+    "metrics",
+    "interpretation"
+  ],
+  "title": "PathShiftAnalysisReport",
+  "type": "object"
+}

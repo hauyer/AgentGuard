@@ -1,0 +1,357 @@
+{
+  "$defs": {
+    "InterventionRequest": {
+      "additionalProperties": false,
+      "properties": {
+        "schema_version": {
+          "const": "0.1",
+          "default": "0.1",
+          "title": "Schema Version",
+          "type": "string"
+        },
+        "experiment_id": {
+          "title": "Experiment Id",
+          "type": "string"
+        },
+        "intervention_id": {
+          "title": "Intervention Id",
+          "type": "string"
+        },
+        "target_type": {
+          "enum": [
+            "message",
+            "tool_call",
+            "tool_result",
+            "activation"
+          ],
+          "title": "Target Type",
+          "type": "string"
+        },
+        "target_ref": {
+          "maxLength": 256,
+          "minLength": 1,
+          "title": "Target Ref",
+          "type": "string"
+        },
+        "operation": {
+          "enum": [
+            "block",
+            "replace",
+            "ablate",
+            "patch"
+          ],
+          "title": "Operation",
+          "type": "string"
+        },
+        "control_group": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Control Group"
+        },
+        "parameters": {
+          "additionalProperties": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "integer"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              }
+            ]
+          },
+          "title": "Parameters",
+          "type": "object"
+        },
+        "authorization_ref": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Authorization Ref"
+        }
+      },
+      "required": [
+        "experiment_id",
+        "intervention_id",
+        "target_type",
+        "target_ref",
+        "operation"
+      ],
+      "title": "InterventionRequest",
+      "type": "object"
+    },
+    "InterventionResult": {
+      "additionalProperties": false,
+      "properties": {
+        "schema_version": {
+          "const": "0.1",
+          "default": "0.1",
+          "title": "Schema Version",
+          "type": "string"
+        },
+        "intervention_id": {
+          "title": "Intervention Id",
+          "type": "string"
+        },
+        "status": {
+          "enum": [
+            "completed",
+            "rejected",
+            "unsupported",
+            "runtime_error"
+          ],
+          "title": "Status",
+          "type": "string"
+        },
+        "changed": {
+          "title": "Changed",
+          "type": "boolean"
+        },
+        "effect_status": {
+          "default": "not_measured",
+          "enum": [
+            "not_measured",
+            "simulated",
+            "measured"
+          ],
+          "title": "Effect Status",
+          "type": "string"
+        },
+        "evidence_refs": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Evidence Refs",
+          "type": "array"
+        },
+        "message": {
+          "default": "",
+          "title": "Message",
+          "type": "string"
+        },
+        "error_code": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Error Code"
+        },
+        "metadata": {
+          "additionalProperties": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "integer"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              }
+            ]
+          },
+          "title": "Metadata",
+          "type": "object"
+        },
+        "before_artifact_ref": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Before Artifact Ref"
+        },
+        "after_artifact_ref": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "After Artifact Ref"
+        },
+        "execution_duration_seconds": {
+          "anyOf": [
+            {
+              "minimum": 0.0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Execution Duration Seconds"
+        },
+        "backend_version": {
+          "default": "unknown",
+          "title": "Backend Version",
+          "type": "string"
+        }
+      },
+      "required": [
+        "intervention_id",
+        "status",
+        "changed"
+      ],
+      "title": "InterventionResult",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {
+      "const": "0.1",
+      "default": "0.1",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "seed": {
+      "title": "Seed",
+      "type": "integer"
+    },
+    "status": {
+      "enum": [
+        "completed",
+        "partial",
+        "failed"
+      ],
+      "title": "Status",
+      "type": "string"
+    },
+    "control_experiment_id": {
+      "title": "Control Experiment Id",
+      "type": "string"
+    },
+    "treatment_experiment_id": {
+      "title": "Treatment Experiment Id",
+      "type": "string"
+    },
+    "negative_control_experiment_id": {
+      "title": "Negative Control Experiment Id",
+      "type": "string"
+    },
+    "control_observation_count": {
+      "default": 0,
+      "minimum": 0,
+      "title": "Control Observation Count",
+      "type": "integer"
+    },
+    "treatment_observation_count": {
+      "default": 0,
+      "minimum": 0,
+      "title": "Treatment Observation Count",
+      "type": "integer"
+    },
+    "negative_control_observation_count": {
+      "default": 0,
+      "minimum": 0,
+      "title": "Negative Control Observation Count",
+      "type": "integer"
+    },
+    "control_metrics": {
+      "additionalProperties": {
+        "type": "number"
+      },
+      "title": "Control Metrics",
+      "type": "object"
+    },
+    "treatment_metrics": {
+      "additionalProperties": {
+        "type": "number"
+      },
+      "title": "Treatment Metrics",
+      "type": "object"
+    },
+    "negative_control_metrics": {
+      "additionalProperties": {
+        "type": "number"
+      },
+      "title": "Negative Control Metrics",
+      "type": "object"
+    },
+    "intervention_request": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/InterventionRequest"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    },
+    "intervention_result": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/InterventionResult"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    },
+    "error_code": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Error Code"
+    },
+    "notes": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Notes",
+      "type": "array"
+    }
+  },
+  "required": [
+    "seed",
+    "status",
+    "control_experiment_id",
+    "treatment_experiment_id",
+    "negative_control_experiment_id"
+  ],
+  "title": "PairedExperimentPairResult",
+  "type": "object"
+}

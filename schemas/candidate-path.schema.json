@@ -1,0 +1,45 @@
+{
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {
+      "const": "0.1",
+      "default": "0.1",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "nodes": {
+      "items": {
+        "type": "string"
+      },
+      "minItems": 2,
+      "title": "Nodes",
+      "type": "array"
+    },
+    "edge_refs": {
+      "items": {
+        "type": "string"
+      },
+      "minItems": 1,
+      "title": "Edge Refs",
+      "type": "array"
+    },
+    "score": {
+      "maximum": 1.0,
+      "minimum": 0.0,
+      "title": "Score",
+      "type": "number"
+    },
+    "rationale": {
+      "title": "Rationale",
+      "type": "string"
+    }
+  },
+  "required": [
+    "nodes",
+    "edge_refs",
+    "score",
+    "rationale"
+  ],
+  "title": "CandidatePath",
+  "type": "object"
+}

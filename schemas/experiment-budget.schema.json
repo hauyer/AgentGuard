@@ -1,0 +1,49 @@
+{
+  "additionalProperties": false,
+  "properties": {
+    "max_interventions": {
+      "default": 1,
+      "maximum": 100,
+      "minimum": 0,
+      "title": "Max Interventions",
+      "type": "integer"
+    },
+    "max_tool_calls": {
+      "default": 40,
+      "maximum": 100000,
+      "minimum": 0,
+      "title": "Max Tool Calls",
+      "type": "integer"
+    },
+    "max_model_calls": {
+      "default": 64,
+      "maximum": 100000,
+      "minimum": 1,
+      "title": "Max Model Calls",
+      "type": "integer"
+    },
+    "max_runtime_seconds": {
+      "default": 120,
+      "maximum": 86400,
+      "minimum": 1,
+      "title": "Max Runtime Seconds",
+      "type": "integer"
+    },
+    "max_model_tokens": {
+      "default": 50000,
+      "maximum": 100000000,
+      "minimum": 0,
+      "title": "Max Model Tokens",
+      "type": "integer"
+    },
+    "max_output_tokens_per_call": {
+      "default": 384,
+      "maximum": 65536,
+      "minimum": 1,
+      "title": "Max Output Tokens Per Call",
+      "type": "integer"
+    }
+  },
+  "title": "ExperimentBudget",
+  "type": "object"
+}

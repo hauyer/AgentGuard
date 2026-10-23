@@ -1,0 +1,129 @@
+{
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {
+      "const": "0.1",
+      "default": "0.1",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "max_interventions": {
+      "minimum": 0,
+      "title": "Max Interventions",
+      "type": "integer"
+    },
+    "intervention_requests": {
+      "default": 0,
+      "minimum": 0,
+      "title": "Intervention Requests",
+      "type": "integer"
+    },
+    "intervention_attempts": {
+      "default": 0,
+      "minimum": 0,
+      "title": "Intervention Attempts",
+      "type": "integer"
+    },
+    "observations_collected": {
+      "default": 0,
+      "minimum": 0,
+      "title": "Observations Collected",
+      "type": "integer"
+    },
+    "findings_generated": {
+      "default": 0,
+      "minimum": 0,
+      "title": "Findings Generated",
+      "type": "integer"
+    },
+    "elapsed_seconds": {
+      "default": 0.0,
+      "minimum": 0,
+      "title": "Elapsed Seconds",
+      "type": "number"
+    },
+    "max_runtime_seconds": {
+      "minimum": 1,
+      "title": "Max Runtime Seconds",
+      "type": "integer"
+    },
+    "runtime_budget_exceeded": {
+      "default": false,
+      "title": "Runtime Budget Exceeded",
+      "type": "boolean"
+    },
+    "max_model_calls": {
+      "default": 64,
+      "minimum": 1,
+      "title": "Max Model Calls",
+      "type": "integer"
+    },
+    "model_calls_used": {
+      "anyOf": [
+        {
+          "minimum": 0,
+          "type": "integer"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Model Calls Used"
+    },
+    "max_model_tokens": {
+      "default": 50000,
+      "minimum": 0,
+      "title": "Max Model Tokens",
+      "type": "integer"
+    },
+    "model_tokens_used": {
+      "anyOf": [
+        {
+          "minimum": 0,
+          "type": "integer"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Model Tokens Used"
+    },
+    "model_token_budget_exceeded": {
+      "default": false,
+      "title": "Model Token Budget Exceeded",
+      "type": "boolean"
+    },
+    "max_tool_calls": {
+      "default": 40,
+      "minimum": 0,
+      "title": "Max Tool Calls",
+      "type": "integer"
+    },
+    "tool_calls_used": {
+      "anyOf": [
+        {
+          "minimum": 0,
+          "type": "integer"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Tool Calls Used"
+    },
+    "tool_call_budget_exceeded": {
+      "default": false,
+      "title": "Tool Call Budget Exceeded",
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "max_interventions",
+    "max_runtime_seconds"
+  ],
+  "title": "BudgetUsage",
+  "type": "object"
+}

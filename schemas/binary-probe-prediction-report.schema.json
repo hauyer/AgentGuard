@@ -1,0 +1,59 @@
+{
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {
+      "const": "0.1",
+      "default": "0.1",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "model_artifact_id": {
+      "title": "Model Artifact Id",
+      "type": "string"
+    },
+    "scores": {
+      "items": {
+        "type": "number"
+      },
+      "title": "Scores",
+      "type": "array"
+    },
+    "predictions": {
+      "items": {
+        "type": "integer"
+      },
+      "title": "Predictions",
+      "type": "array"
+    },
+    "threshold": {
+      "exclusiveMaximum": 1.0,
+      "exclusiveMinimum": 0.0,
+      "title": "Threshold",
+      "type": "number"
+    },
+    "evidence_mode": {
+      "default": "observed",
+      "enum": [
+        "observed",
+        "measured"
+      ],
+      "title": "Evidence Mode",
+      "type": "string"
+    },
+    "limitations": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Limitations",
+      "type": "array"
+    }
+  },
+  "required": [
+    "model_artifact_id",
+    "scores",
+    "predictions",
+    "threshold"
+  ],
+  "title": "BinaryProbePredictionReport",
+  "type": "object"
+}

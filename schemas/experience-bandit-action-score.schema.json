@@ -1,0 +1,96 @@
+{
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {
+      "const": "0.1",
+      "default": "0.1",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "action_type": {
+      "title": "Action Type",
+      "type": "string"
+    },
+    "posterior_alpha": {
+      "minimum": 0,
+      "title": "Posterior Alpha",
+      "type": "number"
+    },
+    "posterior_beta": {
+      "minimum": 0,
+      "title": "Posterior Beta",
+      "type": "number"
+    },
+    "posterior_mean_reward": {
+      "maximum": 1,
+      "minimum": 0,
+      "title": "Posterior Mean Reward",
+      "type": "number"
+    },
+    "thompson_sample": {
+      "maximum": 1,
+      "minimum": 0,
+      "title": "Thompson Sample",
+      "type": "number"
+    },
+    "verified_record_count": {
+      "minimum": 1,
+      "title": "Verified Record Count",
+      "type": "integer"
+    },
+    "success_records": {
+      "minimum": 0,
+      "title": "Success Records",
+      "type": "integer"
+    },
+    "partial_records": {
+      "minimum": 0,
+      "title": "Partial Records",
+      "type": "integer"
+    },
+    "failure_records": {
+      "minimum": 0,
+      "title": "Failure Records",
+      "type": "integer"
+    },
+    "repetition_count": {
+      "minimum": 0,
+      "title": "Repetition Count",
+      "type": "integer"
+    },
+    "evidence_grades": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Evidence Grades",
+      "type": "array"
+    },
+    "evidence_refs": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Evidence Refs",
+      "type": "array"
+    },
+    "execution_authorized": {
+      "const": false,
+      "default": false,
+      "title": "Execution Authorized",
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "action_type",
+    "posterior_alpha",
+    "posterior_beta",
+    "posterior_mean_reward",
+    "thompson_sample",
+    "verified_record_count",
+    "success_records",
+    "partial_records",
+    "failure_records",
+    "repetition_count"
+  ],
+  "title": "ExperienceBanditActionScore",
+  "type": "object"
+}

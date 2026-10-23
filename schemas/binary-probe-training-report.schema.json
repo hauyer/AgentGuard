@@ -1,0 +1,129 @@
+{
+  "$defs": {
+    "JsonValue": {}
+  },
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {
+      "const": "0.1",
+      "default": "0.1",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "model_artifact_id": {
+      "title": "Model Artifact Id",
+      "type": "string"
+    },
+    "model_type": {
+      "default": "binary_logistic_linear_probe",
+      "title": "Model Type",
+      "type": "string"
+    },
+    "dataset_sha256": {
+      "title": "Dataset Sha256",
+      "type": "string"
+    },
+    "dataset_name": {
+      "default": "unspecified",
+      "title": "Dataset Name",
+      "type": "string"
+    },
+    "dataset_version": {
+      "default": "unspecified",
+      "title": "Dataset Version",
+      "type": "string"
+    },
+    "label_source": {
+      "default": "unspecified",
+      "title": "Label Source",
+      "type": "string"
+    },
+    "representation_source": {
+      "default": "caller_supplied_numeric_features",
+      "title": "Representation Source",
+      "type": "string"
+    },
+    "seed": {
+      "title": "Seed",
+      "type": "integer"
+    },
+    "train_samples": {
+      "minimum": 1,
+      "title": "Train Samples",
+      "type": "integer"
+    },
+    "validation_samples": {
+      "minimum": 1,
+      "title": "Validation Samples",
+      "type": "integer"
+    },
+    "test_samples": {
+      "minimum": 1,
+      "title": "Test Samples",
+      "type": "integer"
+    },
+    "train_group_count": {
+      "minimum": 1,
+      "title": "Train Group Count",
+      "type": "integer"
+    },
+    "validation_group_count": {
+      "minimum": 1,
+      "title": "Validation Group Count",
+      "type": "integer"
+    },
+    "test_group_count": {
+      "minimum": 1,
+      "title": "Test Group Count",
+      "type": "integer"
+    },
+    "threshold": {
+      "exclusiveMaximum": 1.0,
+      "exclusiveMinimum": 0.0,
+      "title": "Threshold",
+      "type": "number"
+    },
+    "validation_metrics": {
+      "additionalProperties": {
+        "$ref": "#/$defs/JsonValue"
+      },
+      "title": "Validation Metrics",
+      "type": "object"
+    },
+    "group_split_verified": {
+      "default": true,
+      "title": "Group Split Verified",
+      "type": "boolean"
+    },
+    "metrics": {
+      "additionalProperties": {
+        "$ref": "#/$defs/JsonValue"
+      },
+      "title": "Metrics",
+      "type": "object"
+    },
+    "notes": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Notes",
+      "type": "array"
+    }
+  },
+  "required": [
+    "model_artifact_id",
+    "dataset_sha256",
+    "seed",
+    "train_samples",
+    "validation_samples",
+    "test_samples",
+    "train_group_count",
+    "validation_group_count",
+    "test_group_count",
+    "threshold",
+    "validation_metrics",
+    "metrics"
+  ],
+  "title": "BinaryProbeTrainingReport",
+  "type": "object"
+}

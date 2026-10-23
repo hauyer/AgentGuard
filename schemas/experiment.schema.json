@@ -1,0 +1,180 @@
+{
+  "$defs": {
+    "ExperimentBudget": {
+      "additionalProperties": false,
+      "properties": {
+        "max_interventions": {
+          "default": 1,
+          "maximum": 100,
+          "minimum": 0,
+          "title": "Max Interventions",
+          "type": "integer"
+        },
+        "max_tool_calls": {
+          "default": 40,
+          "maximum": 100000,
+          "minimum": 0,
+          "title": "Max Tool Calls",
+          "type": "integer"
+        },
+        "max_model_calls": {
+          "default": 64,
+          "maximum": 100000,
+          "minimum": 1,
+          "title": "Max Model Calls",
+          "type": "integer"
+        },
+        "max_runtime_seconds": {
+          "default": 120,
+          "maximum": 86400,
+          "minimum": 1,
+          "title": "Max Runtime Seconds",
+          "type": "integer"
+        },
+        "max_model_tokens": {
+          "default": 50000,
+          "maximum": 100000000,
+          "minimum": 0,
+          "title": "Max Model Tokens",
+          "type": "integer"
+        },
+        "max_output_tokens_per_call": {
+          "default": 384,
+          "maximum": 65536,
+          "minimum": 1,
+          "title": "Max Output Tokens Per Call",
+          "type": "integer"
+        }
+      },
+      "title": "ExperimentBudget",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {
+      "const": "0.1",
+      "default": "0.1",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "experiment_id": {
+      "title": "Experiment Id",
+      "type": "string"
+    },
+    "scenario_id": {
+      "maxLength": 128,
+      "minLength": 1,
+      "title": "Scenario Id",
+      "type": "string"
+    },
+    "goal": {
+      "default": "investigate unauthorized information flow",
+      "maxLength": 1024,
+      "title": "Goal",
+      "type": "string"
+    },
+    "max_interventions": {
+      "default": 1,
+      "maximum": 100,
+      "minimum": 0,
+      "title": "Max Interventions",
+      "type": "integer"
+    },
+    "max_runtime_seconds": {
+      "default": 120,
+      "maximum": 86400,
+      "minimum": 1,
+      "title": "Max Runtime Seconds",
+      "type": "integer"
+    },
+    "max_tool_calls": {
+      "default": 40,
+      "maximum": 100000,
+      "minimum": 0,
+      "title": "Max Tool Calls",
+      "type": "integer"
+    },
+    "max_model_calls": {
+      "default": 64,
+      "maximum": 100000,
+      "minimum": 1,
+      "title": "Max Model Calls",
+      "type": "integer"
+    },
+    "max_output_tokens_per_call": {
+      "default": 384,
+      "maximum": 65536,
+      "minimum": 1,
+      "title": "Max Output Tokens Per Call",
+      "type": "integer"
+    },
+    "max_model_tokens": {
+      "default": 50000,
+      "maximum": 100000000,
+      "minimum": 0,
+      "title": "Max Model Tokens",
+      "type": "integer"
+    },
+    "runtime_backend": {
+      "default": "mock",
+      "enum": [
+        "mock",
+        "stegopot",
+        "custom"
+      ],
+      "title": "Runtime Backend",
+      "type": "string"
+    },
+    "auto_intervene": {
+      "default": true,
+      "title": "Auto Intervene",
+      "type": "boolean"
+    },
+    "seed": {
+      "default": 7,
+      "title": "Seed",
+      "type": "integer"
+    },
+    "families": {
+      "default": 1,
+      "maximum": 10000,
+      "minimum": 1,
+      "title": "Families",
+      "type": "integer"
+    },
+    "policy_profile": {
+      "default": "isolated_research",
+      "enum": [
+        "isolated_research",
+        "synthetic_demo",
+        "read_only"
+      ],
+      "title": "Policy Profile",
+      "type": "string"
+    },
+    "budget": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/ExperimentBudget"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    },
+    "tags": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Tags",
+      "type": "array"
+    }
+  },
+  "required": [
+    "scenario_id"
+  ],
+  "title": "ExperimentRequest",
+  "type": "object"
+}

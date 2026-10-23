@@ -1,0 +1,192 @@
+{
+  "$defs": {
+    "ExperienceBanditActionScore": {
+      "additionalProperties": false,
+      "properties": {
+        "schema_version": {
+          "const": "0.1",
+          "default": "0.1",
+          "title": "Schema Version",
+          "type": "string"
+        },
+        "action_type": {
+          "title": "Action Type",
+          "type": "string"
+        },
+        "posterior_alpha": {
+          "minimum": 0,
+          "title": "Posterior Alpha",
+          "type": "number"
+        },
+        "posterior_beta": {
+          "minimum": 0,
+          "title": "Posterior Beta",
+          "type": "number"
+        },
+        "posterior_mean_reward": {
+          "maximum": 1,
+          "minimum": 0,
+          "title": "Posterior Mean Reward",
+          "type": "number"
+        },
+        "thompson_sample": {
+          "maximum": 1,
+          "minimum": 0,
+          "title": "Thompson Sample",
+          "type": "number"
+        },
+        "verified_record_count": {
+          "minimum": 1,
+          "title": "Verified Record Count",
+          "type": "integer"
+        },
+        "success_records": {
+          "minimum": 0,
+          "title": "Success Records",
+          "type": "integer"
+        },
+        "partial_records": {
+          "minimum": 0,
+          "title": "Partial Records",
+          "type": "integer"
+        },
+        "failure_records": {
+          "minimum": 0,
+          "title": "Failure Records",
+          "type": "integer"
+        },
+        "repetition_count": {
+          "minimum": 0,
+          "title": "Repetition Count",
+          "type": "integer"
+        },
+        "evidence_grades": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Evidence Grades",
+          "type": "array"
+        },
+        "evidence_refs": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Evidence Refs",
+          "type": "array"
+        },
+        "execution_authorized": {
+          "const": false,
+          "default": false,
+          "title": "Execution Authorized",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "action_type",
+        "posterior_alpha",
+        "posterior_beta",
+        "posterior_mean_reward",
+        "thompson_sample",
+        "verified_record_count",
+        "success_records",
+        "partial_records",
+        "failure_records",
+        "repetition_count"
+      ],
+      "title": "ExperienceBanditActionScore",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {
+      "const": "0.1",
+      "default": "0.1",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "algorithm": {
+      "const": "beta_bernoulli_thompson_sampling",
+      "default": "beta_bernoulli_thompson_sampling",
+      "title": "Algorithm",
+      "type": "string"
+    },
+    "prior": {
+      "default": "Jeffreys Beta(0.5, 0.5)",
+      "title": "Prior",
+      "type": "string"
+    },
+    "seed": {
+      "title": "Seed",
+      "type": "integer"
+    },
+    "scenario_id": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Scenario Id"
+    },
+    "risk_type": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Risk Type"
+    },
+    "eligible_record_count": {
+      "minimum": 0,
+      "title": "Eligible Record Count",
+      "type": "integer"
+    },
+    "excluded_record_counts": {
+      "additionalProperties": {
+        "type": "integer"
+      },
+      "title": "Excluded Record Counts",
+      "type": "object"
+    },
+    "items": {
+      "items": {
+        "$ref": "#/$defs/ExperienceBanditActionScore"
+      },
+      "title": "Items",
+      "type": "array"
+    },
+    "recommendation_only": {
+      "const": true,
+      "default": true,
+      "title": "Recommendation Only",
+      "type": "boolean"
+    },
+    "execution_authorized": {
+      "const": false,
+      "default": false,
+      "title": "Execution Authorized",
+      "type": "boolean"
+    },
+    "limitations": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Limitations",
+      "type": "array"
+    }
+  },
+  "required": [
+    "seed",
+    "eligible_record_count"
+  ],
+  "title": "ExperienceBanditRecommendationReport",
+  "type": "object"
+}

@@ -1,0 +1,132 @@
+{
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {
+      "const": "0.1",
+      "default": "0.1",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "intervention_id": {
+      "title": "Intervention Id",
+      "type": "string"
+    },
+    "status": {
+      "enum": [
+        "completed",
+        "rejected",
+        "unsupported",
+        "runtime_error"
+      ],
+      "title": "Status",
+      "type": "string"
+    },
+    "changed": {
+      "title": "Changed",
+      "type": "boolean"
+    },
+    "effect_status": {
+      "default": "not_measured",
+      "enum": [
+        "not_measured",
+        "simulated",
+        "measured"
+      ],
+      "title": "Effect Status",
+      "type": "string"
+    },
+    "evidence_refs": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Evidence Refs",
+      "type": "array"
+    },
+    "message": {
+      "default": "",
+      "title": "Message",
+      "type": "string"
+    },
+    "error_code": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Error Code"
+    },
+    "metadata": {
+      "additionalProperties": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "integer"
+          },
+          {
+            "type": "number"
+          },
+          {
+            "type": "boolean"
+          }
+        ]
+      },
+      "title": "Metadata",
+      "type": "object"
+    },
+    "before_artifact_ref": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Before Artifact Ref"
+    },
+    "after_artifact_ref": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "After Artifact Ref"
+    },
+    "execution_duration_seconds": {
+      "anyOf": [
+        {
+          "minimum": 0.0,
+          "type": "number"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Execution Duration Seconds"
+    },
+    "backend_version": {
+      "default": "unknown",
+      "title": "Backend Version",
+      "type": "string"
+    }
+  },
+  "required": [
+    "intervention_id",
+    "status",
+    "changed"
+  ],
+  "title": "InterventionResult",
+  "type": "object"
+}

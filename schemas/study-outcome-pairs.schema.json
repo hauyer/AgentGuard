@@ -1,0 +1,39 @@
+{
+  "additionalProperties": false,
+  "properties": {
+    "control": {
+      "items": {
+        "type": "number"
+      },
+      "maxItems": 100000,
+      "minItems": 2,
+      "title": "Control",
+      "type": "array"
+    },
+    "treatment": {
+      "items": {
+        "type": "number"
+      },
+      "maxItems": 100000,
+      "minItems": 2,
+      "title": "Treatment",
+      "type": "array"
+    },
+    "case_families": {
+      "items": {
+        "type": "string"
+      },
+      "maxItems": 100000,
+      "minItems": 2,
+      "title": "Case Families",
+      "type": "array"
+    }
+  },
+  "required": [
+    "control",
+    "treatment",
+    "case_families"
+  ],
+  "title": "OutcomePairs",
+  "type": "object"
+}

@@ -1,0 +1,87 @@
+{
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {
+      "const": "0.1",
+      "default": "0.1",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "target_module": {
+      "maxLength": 512,
+      "minLength": 1,
+      "title": "Target Module",
+      "type": "string"
+    },
+    "operation": {
+      "enum": [
+        "zero",
+        "replace_from_reference",
+        "add_noise"
+      ],
+      "title": "Operation",
+      "type": "string"
+    },
+    "token_positions": {
+      "items": {
+        "type": "integer"
+      },
+      "maxItems": 512,
+      "minItems": 1,
+      "title": "Token Positions",
+      "type": "array"
+    },
+    "seed": {
+      "default": 7,
+      "title": "Seed",
+      "type": "integer"
+    },
+    "noise_std": {
+      "default": 0.01,
+      "maximum": 10.0,
+      "minimum": 0.0,
+      "title": "Noise Std",
+      "type": "number"
+    },
+    "max_new_tokens": {
+      "default": 64,
+      "maximum": 4096,
+      "minimum": 1,
+      "title": "Max New Tokens",
+      "type": "integer"
+    },
+    "use_cache": {
+      "const": false,
+      "default": false,
+      "title": "Use Cache",
+      "type": "boolean"
+    },
+    "experiment_id": {
+      "maxLength": 256,
+      "minLength": 1,
+      "title": "Experiment Id",
+      "type": "string"
+    },
+    "authorization_ref": {
+      "maxLength": 256,
+      "minLength": 1,
+      "title": "Authorization Ref",
+      "type": "string"
+    },
+    "scope": {
+      "const": "isolated_test_environment",
+      "default": "isolated_test_environment",
+      "title": "Scope",
+      "type": "string"
+    }
+  },
+  "required": [
+    "target_module",
+    "operation",
+    "token_positions",
+    "experiment_id",
+    "authorization_ref"
+  ],
+  "title": "ActivationPatchSpec",
+  "type": "object"
+}

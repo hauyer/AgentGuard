@@ -1,0 +1,24 @@
+{
+  "request_id": "ag-warden-demo-001",
+  "contract_id": "replace-with-a-contract-id-from-GET-v1-kernel-contracts",
+  "model_id": "local-model-id",
+  "runtime_id": "local-whitebox-runtime",
+  "mode": "causal_audit",
+  "probe_id": null,
+  "sae_id": null,
+  "capture_targets": [
+    {
+      "target_id": "receiver-resid-layer-12",
+      "agent_ids": ["receiver"],
+      "layer": 12,
+      "component": "resid_post",
+      "token_policy": "last_token",
+      "retain_gradient": true
+    }
+  ],
+  "metadata": {
+    "source": "AgentGuard",
+    "purpose": "authorized isolated research experiment"
+  },
+  "start_run": false
+}

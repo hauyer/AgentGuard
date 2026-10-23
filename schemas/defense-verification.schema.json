@@ -1,0 +1,165 @@
+{
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {
+      "const": "0.1",
+      "default": "0.1",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "run_id": {
+      "title": "Run Id",
+      "type": "string"
+    },
+    "candidate_id": {
+      "title": "Candidate Id",
+      "type": "string"
+    },
+    "status": {
+      "default": "not_run",
+      "enum": [
+        "not_run",
+        "passed",
+        "failed",
+        "inconclusive"
+      ],
+      "title": "Status",
+      "type": "string"
+    },
+    "baseline_risk": {
+      "anyOf": [
+        {
+          "maximum": 1.0,
+          "minimum": 0.0,
+          "type": "number"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Baseline Risk"
+    },
+    "post_defense_risk": {
+      "anyOf": [
+        {
+          "maximum": 1.0,
+          "minimum": 0.0,
+          "type": "number"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Post Defense Risk"
+    },
+    "risk_reduction": {
+      "anyOf": [
+        {
+          "type": "number"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Risk Reduction"
+    },
+    "benign_utility_before": {
+      "anyOf": [
+        {
+          "maximum": 1.0,
+          "minimum": 0.0,
+          "type": "number"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Benign Utility Before"
+    },
+    "benign_utility_after": {
+      "anyOf": [
+        {
+          "maximum": 1.0,
+          "minimum": 0.0,
+          "type": "number"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Benign Utility After"
+    },
+    "false_block_rate": {
+      "anyOf": [
+        {
+          "maximum": 1.0,
+          "minimum": 0.0,
+          "type": "number"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "False Block Rate"
+    },
+    "risk_transfer_checked": {
+      "default": false,
+      "title": "Risk Transfer Checked",
+      "type": "boolean"
+    },
+    "rollback_tested": {
+      "default": false,
+      "title": "Rollback Tested",
+      "type": "boolean"
+    },
+    "evidence_mode": {
+      "default": "observed",
+      "enum": [
+        "synthetic",
+        "observed",
+        "measured"
+      ],
+      "title": "Evidence Mode",
+      "type": "string"
+    },
+    "repetitions": {
+      "default": 0,
+      "minimum": 0,
+      "title": "Repetitions",
+      "type": "integer"
+    },
+    "source_artifact_refs": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Source Artifact Refs",
+      "type": "array"
+    },
+    "evidence_refs": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Evidence Refs",
+      "type": "array"
+    },
+    "limitations": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Limitations",
+      "type": "array"
+    }
+  },
+  "required": [
+    "run_id",
+    "candidate_id"
+  ],
+  "title": "DefenseVerification",
+  "type": "object"
+}

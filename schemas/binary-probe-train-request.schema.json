@@ -1,0 +1,138 @@
+{
+  "additionalProperties": false,
+  "description": "Train/test a binary linear probe with case-family-isolated splitting.",
+  "properties": {
+    "schema_version": {
+      "const": "0.1",
+      "default": "0.1",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "features": {
+      "items": {
+        "items": {
+          "type": "number"
+        },
+        "type": "array"
+      },
+      "maxItems": 100000,
+      "minItems": 4,
+      "title": "Features",
+      "type": "array"
+    },
+    "labels": {
+      "items": {
+        "type": "integer"
+      },
+      "maxItems": 100000,
+      "minItems": 4,
+      "title": "Labels",
+      "type": "array"
+    },
+    "case_families": {
+      "items": {
+        "type": "string"
+      },
+      "maxItems": 100000,
+      "minItems": 4,
+      "title": "Case Families",
+      "type": "array"
+    },
+    "feature_names": {
+      "anyOf": [
+        {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Feature Names"
+    },
+    "dataset_name": {
+      "default": "unspecified",
+      "title": "Dataset Name",
+      "type": "string"
+    },
+    "dataset_version": {
+      "default": "unspecified",
+      "title": "Dataset Version",
+      "type": "string"
+    },
+    "label_source": {
+      "default": "unspecified",
+      "title": "Label Source",
+      "type": "string"
+    },
+    "representation_source": {
+      "default": "caller_supplied_numeric_features",
+      "title": "Representation Source",
+      "type": "string"
+    },
+    "test_fraction": {
+      "default": 0.2,
+      "maximum": 0.5,
+      "minimum": 0.05,
+      "title": "Test Fraction",
+      "type": "number"
+    },
+    "validation_fraction": {
+      "default": 0.15,
+      "maximum": 0.3,
+      "minimum": 0.05,
+      "title": "Validation Fraction",
+      "type": "number"
+    },
+    "seed": {
+      "default": 7,
+      "title": "Seed",
+      "type": "integer"
+    },
+    "learning_rate": {
+      "default": 0.1,
+      "exclusiveMinimum": 0.0,
+      "maximum": 10.0,
+      "title": "Learning Rate",
+      "type": "number"
+    },
+    "epochs": {
+      "default": 800,
+      "maximum": 10000,
+      "minimum": 1,
+      "title": "Epochs",
+      "type": "integer"
+    },
+    "l2": {
+      "default": 0.01,
+      "maximum": 100.0,
+      "minimum": 0.0,
+      "title": "L2",
+      "type": "number"
+    },
+    "threshold": {
+      "anyOf": [
+        {
+          "exclusiveMaximum": 1.0,
+          "exclusiveMinimum": 0.0,
+          "type": "number"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Threshold"
+    }
+  },
+  "required": [
+    "features",
+    "labels",
+    "case_families"
+  ],
+  "title": "BinaryProbeTrainRequest",
+  "type": "object"
+}

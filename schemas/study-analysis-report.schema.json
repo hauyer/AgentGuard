@@ -1,0 +1,133 @@
+{
+  "$defs": {
+    "JsonValue": {}
+  },
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {
+      "const": "0.1",
+      "default": "0.1",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "analysis_id": {
+      "title": "Analysis Id",
+      "type": "string"
+    },
+    "study_id": {
+      "title": "Study Id",
+      "type": "string"
+    },
+    "registration_sha256": {
+      "title": "Registration Sha256",
+      "type": "string"
+    },
+    "analysis_sha256": {
+      "title": "Analysis Sha256",
+      "type": "string"
+    },
+    "evidence_mode": {
+      "enum": [
+        "synthetic",
+        "observed",
+        "measured"
+      ],
+      "title": "Evidence Mode",
+      "type": "string"
+    },
+    "analyzed_at": {
+      "format": "date-time",
+      "title": "Analyzed At",
+      "type": "string"
+    },
+    "primary_outcome": {
+      "title": "Primary Outcome",
+      "type": "string"
+    },
+    "outcomes": {
+      "additionalProperties": {
+        "additionalProperties": {
+          "$ref": "#/$defs/JsonValue"
+        },
+        "type": "object"
+      },
+      "title": "Outcomes",
+      "type": "object"
+    },
+    "multiplicity_method": {
+      "enum": [
+        "none",
+        "holm",
+        "benjamini_hochberg"
+      ],
+      "title": "Multiplicity Method",
+      "type": "string"
+    },
+    "alpha": {
+      "title": "Alpha",
+      "type": "number"
+    },
+    "confirmatory_primary_result": {
+      "title": "Confirmatory Primary Result",
+      "type": "boolean"
+    },
+    "source_artifact_refs": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Source Artifact Refs",
+      "type": "array"
+    },
+    "data_sha256": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Data Sha256"
+    },
+    "report_artifact_id": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Report Artifact Id"
+    },
+    "deviations": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Deviations",
+      "type": "array"
+    },
+    "limitations": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Limitations",
+      "type": "array"
+    }
+  },
+  "required": [
+    "study_id",
+    "registration_sha256",
+    "analysis_sha256",
+    "evidence_mode",
+    "primary_outcome",
+    "outcomes",
+    "multiplicity_method",
+    "alpha",
+    "confirmatory_primary_result"
+  ],
+  "title": "StudyAnalysisReport",
+  "type": "object"
+}
