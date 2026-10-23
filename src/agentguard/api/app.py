@@ -10,7 +10,7 @@ from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 from pathlib import Path
 from threading import Event, RLock
-from typing import Any
+from typing import Any, Literal
 import json
 import os
 import secrets
@@ -281,12 +281,16 @@ def create_app(
         contract_id: str | None = None,
         probe_id: str | None = None,
         sae_id: str | None = None,
+        mode: Literal[
+            "observation", "capture_only", "detection", "causal_audit", "defense_evaluation"
+        ] = "causal_audit",
     ) -> dict:
         return diagnose_kernel(
             _configured_warden_client(),
             contract_id=contract_id,
             probe_id=probe_id,
             sae_id=sae_id,
+            mode=mode,
         )
 
     @app.get("/v1/kernel/capabilities")

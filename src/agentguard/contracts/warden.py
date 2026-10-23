@@ -2,7 +2,9 @@
 from __future__ import annotations
 
 from typing import Any, Literal
+
 from pydantic import Field, field_validator
+
 from agentguard.contracts.base import ContractModel
 
 
@@ -32,7 +34,9 @@ class WardenAuditRequest(ContractModel):
     contract_id: str = Field(min_length=1, max_length=256)
     model_id: str = Field(min_length=1, max_length=512)
     runtime_id: str = Field(min_length=1, max_length=256)
-    mode: Literal["capture_only", "detection", "causal_audit", "defense_evaluation"] = "causal_audit"
+    mode: Literal[
+        "observation", "capture_only", "detection", "causal_audit", "defense_evaluation"
+    ] = "causal_audit"
     probe_id: str | None = None
     sae_id: str | None = None
     capture_targets: list[WardenCaptureTarget] = Field(default_factory=list, max_length=128)

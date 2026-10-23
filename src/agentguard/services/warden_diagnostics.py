@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Literal
 
 from agentguard.adapters.warden import WardenKernelClient, WardenKernelError
 
@@ -13,6 +13,9 @@ def diagnose_kernel(
     contract_id: str | None = None,
     probe_id: str | None = None,
     sae_id: str | None = None,
+    mode: Literal[
+        "observation", "capture_only", "detection", "causal_audit", "defense_evaluation"
+    ] = "causal_audit",
 ) -> dict[str, Any]:
     """Inspect live API and execution prerequisites without creating a plan or run."""
     if client is None:
@@ -22,7 +25,7 @@ def diagnose_kernel(
             "blockers": ["WARDEN_URL_NOT_CONFIGURED"],
         }
 
-    result: dict[str, Any] = {"base_url": client.base_url, "blockers": []}
+    result: dict[str, Any] = {"base_url": client.base_url, "mode": mode, "blockers": []}
     try:
         health = client.health()
         result["health"] = health
@@ -50,7 +53,10 @@ def diagnose_kernel(
     if not contracts:
         result["blockers"].append("NO_THREAT_CONTRACTS")
     by_component = {item.get("component_id"): item for item in capabilities}
-    for component in ("agent.runtime", "activation.backend", "run.dispatcher"):
+    required_components = ["agent.runtime", "run.dispatcher"]
+    if mode != "observation":
+        required_components.append("activation.backend")
+    for component in required_components:
         report = by_component.get(component)
         if report is None or report.get("available") is not True:
             result["blockers"].append(f"COMPONENT_UNAVAILABLE:{component}")

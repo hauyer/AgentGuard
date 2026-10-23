@@ -49,6 +49,15 @@ def test_warden_request_matches_kernel_contract_and_excludes_local_control_field
     assert payload["capture_targets"][0]["agent_ids"] == ["receiver"]
 
 
+def test_observation_request_requires_no_capture_target():
+    request = WardenAuditRequest.model_validate(
+        _payload(mode="observation", capture_targets=[])
+    )
+    payload = request.to_warden_payload()
+    assert payload["mode"] == "observation"
+    assert payload["capture_targets"] == []
+
+
 def test_warden_client_does_not_start_blocked_plan():
     transport = FakeTransport([
         (200, {"plan_id": "plan-1", "status": "blocked", "blockers": ["Probe missing"]}),

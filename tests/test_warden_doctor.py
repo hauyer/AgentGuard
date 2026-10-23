@@ -52,3 +52,18 @@ def test_kernel_doctor_reports_ready_only_when_prerequisites_are_present():
     report = diagnose_kernel(Kernel(), contract_id="contract-1", probe_id="probe-1")
     assert report["status"] == "ready"
     assert report["blockers"] == []
+
+
+def test_observation_doctor_does_not_require_activation_backend():
+    class BehavioralKernel(Kernel):
+        def capabilities(self):
+            return [
+                {**item, "available": False}
+                if item["component_id"] == "activation.backend" else item
+                for item in super().capabilities()
+            ]
+
+    report = diagnose_kernel(BehavioralKernel(), mode="observation")
+    assert report["status"] == "ready"
+    assert report["mode"] == "observation"
+    assert diagnose_kernel(BehavioralKernel())["status"] == "blocked"
