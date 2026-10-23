@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased — Real-model observation integration
+
+- Added `observation` mode to WARDEN requests and diagnostics. Local model runs now return `queued` promptly and can be polled through the existing durable AgentGuard workflow.
+- Kept completed observation evidence at `causal_claim_status=not_assessed`; no causal claim is inferred from a message trace.
+- Recorded a real local 7B model run and its failed aggregate experiment in `docs/migration/OBSERVATION_RUN.md`.
+
 ## Unreleased — 1.0.0 migration, stage 0 audit
 
 - Stage 1: added live WARDEN diagnostics, API-version preflight, real `evidence.artifacts` reference extraction, an opt-in HTTP integration test, and defense-in-depth redaction of benchmark truth in plan responses.

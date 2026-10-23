@@ -1,6 +1,6 @@
 # AgentGuard
 
-> **1.0.0 迁移进度：** 阶段 0 审计与阶段 1 真实 WARDEN HTTP 联调已完成；默认 WARDEN 因缺少运行时、Probe 与调度器明确阻塞模型审计。查看[阶段 1 实测报告](docs/migration/STAGE1_REPORT.md)、[迁移基线](docs/migration/BASELINE.md)、[重复能力与调用点](docs/migration/DUPLICATION_MAP.md)、[接口兼容性](docs/migration/API_COMPATIBILITY.md)和[迁移顺序](docs/migration/MIGRATION_PLAN.md)。
+> **1.0.0 迁移进度：** 阶段 0 审计和阶段 1 HTTP 联调已完成；额外打通了 WARDEN → StegoPot → 本地 7B 模型的观察性运行，并由 AgentGuard 接收证据。该运行没有因果干预，8 个实验条件中 2 个失败。阶段 2 的重复底层代码尚未删除。查看[真实模型联调记录](docs/migration/OBSERVATION_RUN.md)、[阶段 1 实测报告](docs/migration/STAGE1_REPORT.md)、[重复能力与调用点](docs/migration/DUPLICATION_MAP.md)和[迁移顺序](docs/migration/MIGRATION_PLAN.md)。
 
 **AgentGuard 0.9.0** 是一个面向多 Agent 信息流风险研究的上层工程框架，目标是连接 FRACTAL-Bench 的场景/独立评价能力与 StegoPot 的运行时能力，并提供检测、主动调查、受控干预、定向防御和证据审计。
 

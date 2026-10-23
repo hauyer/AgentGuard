@@ -184,7 +184,11 @@ class WardenLifecycleService:
 
         experience = self._record_experience(request, run) if run_status == "completed" else None
         if run_status == "completed":
-            claim_status = "awaiting_review" if self._evidence_refs(run) else "not_assessed"
+            claim_status = (
+                "awaiting_review"
+                if request.mode != "observation" and self._evidence_refs(run)
+                else "not_assessed"
+            )
         else:
             claim_status = "not_assessed"
         note = {
@@ -255,7 +259,13 @@ class WardenLifecycleService:
                     self.workflows.update(request_id, "timed_out", context={"stage": "timed_out", "preflight": preflight, "plan": plan, "run": run}, result=result, detail={"recovered": True})
                     return {**result, "workflow_id": request_id, "recovered": True}
             experience = self._record_experience(request, run) if run_status == "completed" else None
-            claim_status = "awaiting_review" if run_status == "completed" and self._evidence_refs(run) else "not_assessed"
+            claim_status = (
+                "awaiting_review"
+                if request.mode != "observation"
+                and run_status == "completed"
+                and self._evidence_refs(run)
+                else "not_assessed"
+            )
             note = {
                 "completed": "Recovered WARDEN run completed; causal claims still require evidence and methodological review.",
                 "blocked": "WARDEN blocked the recovered run; this is not a negative detection result.",

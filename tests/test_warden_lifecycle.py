@@ -153,6 +153,14 @@ def test_completed_run_without_refs_does_not_create_experience(tmp_path):
     assert store.count() == 0
 
 
+def test_observation_with_artifact_does_not_open_causal_claim_review():
+    result = WardenLifecycleService(FakeKernel()).execute(
+        request(mode="observation", probe_id=None)
+    )
+    assert result["status"] == "completed"
+    assert result["causal_claim_status"] == "not_assessed"
+
+
 def test_failed_run_does_not_create_experience(tmp_path):
     store = ExperienceStore(tmp_path / "experiences.sqlite3")
     kernel = FakeKernel(run={"run_id": "run-fail", "plan_id": "plan-1", "status": "failed", "evidence_refs": ["artifact://x"]})
