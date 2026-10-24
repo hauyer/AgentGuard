@@ -230,6 +230,31 @@
         }
       ],
       "default": null
+    },
+    "metadata_available": {
+      "default": true,
+      "title": "Metadata Available",
+      "type": "boolean"
+    },
+    "content_access_supported": {
+      "default": false,
+      "title": "Content Access Supported",
+      "type": "boolean"
+    },
+    "integrity_verified": {
+      "default": false,
+      "title": "Integrity Verified",
+      "type": "boolean"
+    },
+    "access_restriction": {
+      "default": "read_only_reference",
+      "enum": [
+        "read_only_reference",
+        "local_verified_read",
+        "operator_only"
+      ],
+      "title": "Access Restriction",
+      "type": "string"
     }
   },
   "required": [

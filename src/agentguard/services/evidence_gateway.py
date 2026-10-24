@@ -97,6 +97,9 @@ class EvidenceGateway:
                 scenario_version=str(item.metadata.get("scenario_version", "unknown")),
                 created_at=item.created_at,
                 causal_validation=criteria if level == "causal_validated" else None,
+                content_access_supported=bool(verified_refs),
+                integrity_verified=bool(verified_refs),
+                access_restriction="local_verified_read" if verified_refs else "read_only_reference",
             ))
         return output
 
@@ -206,6 +209,9 @@ class EvidenceGateway:
                 scenario_version=str((request.get("metadata") or {}).get("scenario_version", "unknown")) if isinstance(request.get("metadata"), Mapping) else "unknown",
                 created_at=self._timestamp(raw.get("created_at") or run.get("completed_at") or run.get("updated_at")),
                 causal_validation=criteria if level == "causal_validated" else None,
+                content_access_supported=bool(item_verified),
+                integrity_verified=bool(item_verified),
+                access_restriction="local_verified_read" if item_verified else "read_only_reference",
             ))
         return {
             "request_id": entry.get("request_id"),

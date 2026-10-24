@@ -78,6 +78,14 @@ class GovernedEvidence(ContractModel):
     scenario_version: str = "unknown"
     created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
     causal_validation: CausalValidationCriteria | None = None
+    # Artifact access capability (C5). Defaults keep existing consumers unchanged:
+    # metadata is present, but content access/integrity are never implied.
+    metadata_available: bool = True
+    content_access_supported: bool = False
+    integrity_verified: bool = False
+    access_restriction: Literal[
+        "read_only_reference", "local_verified_read", "operator_only"
+    ] = "read_only_reference"
 
     @field_validator("artifact_refs")
     @classmethod

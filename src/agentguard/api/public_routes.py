@@ -32,6 +32,7 @@ def create_public_router(
     get_system_readiness_handler: Callable[..., dict[str, Any]],
     get_investigation_options_handler: Callable[..., dict[str, Any]],
     get_investigation_timeline_handler: Callable[..., dict[str, Any]],
+    list_reports_handler: Callable[..., dict[str, Any]],
 ) -> APIRouter:
     """Build stable aliases while keeping route definitions out of the app factory."""
     router = APIRouter()
@@ -114,6 +115,18 @@ def create_public_router(
         x_approval_token: str | None = Header(default=None, alias="X-Approval-Token"),
     ) -> dict[str, Any]:
         return execute_defense_handler(request_id, request, x_approval_token)
+
+    @router.get("/v1/reports")
+    def list_public_reports(
+        status: str | None = None,
+        scenario_id: str | None = None,
+        limit: int = Query(default=50, ge=1, le=500),
+        offset: int = Query(default=0, ge=0),
+    ) -> dict[str, Any]:
+        """Paginated index of persisted run reports with safe metadata."""
+        return list_reports_handler(
+            status=status, scenario_id=scenario_id, limit=limit, offset=offset,
+        )
 
     @router.get("/v1/reports/{run_id}")
     def get_public_report(run_id: str) -> dict[str, Any]:

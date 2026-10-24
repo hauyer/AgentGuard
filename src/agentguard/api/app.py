@@ -91,6 +91,7 @@ from agentguard.services.evidence_gateway import EvidenceGateway
 from agentguard.services.experiment_index import ExperimentIndexService
 from agentguard.services.interaction_graph import InteractionGraphService
 from agentguard.services.investigation_timeline import InvestigationTimelineService
+from agentguard.services.report_index import ReportIndexService
 from agentguard.services.system_readiness import SystemReadinessService
 from agentguard.services.warden_diagnostics import diagnose_kernel
 from agentguard.services.warden_lifecycle import WardenLifecycleService
@@ -236,6 +237,7 @@ def create_app(
     app.state.investigation_timeline = InvestigationTimelineService(
         app.state.warden_workflows
     )
+    app.state.report_index = ReportIndexService(app.state.artifacts)
     app.state.policy_engine = InterventionPolicyEngine()
     app.state.paired_runner = PairedExperimentRunner(app.state.engine.runtime, paired_executor=paired_executor)
 
@@ -391,7 +393,28 @@ def create_app(
             report = app.state.reports.get(run_id)
             if report:
                 return report
+        # Reports survive restarts as content-addressed artifacts; rehydrate a
+        # validated copy instead of 404-ing a report the index still lists.
+        rehydrated = _rehydrate_report(run_id)
+        if rehydrated is not None:
+            return rehydrated
         raise HTTPException(status_code=404, detail="run_id not found")
+
+    def _rehydrate_report(run_id: str) -> RunReport | None:
+        metadata = app.state.report_index.load_report_artifact(run_id)
+        if metadata is None:
+            return None
+        try:
+            payload = json.loads(app.state.artifacts.get_bytes(metadata.artifact_ref.artifact_id).decode("utf-8"))
+            report = RunReport.model_validate(payload)
+        except (ValueError, UnicodeDecodeError, OSError):
+            return None
+        if report.run_id != run_id:
+            return None
+        with app.state.lock:
+            app.state.reports[run_id] = report
+            app.state.run_artifacts[run_id] = metadata.artifact_ref.artifact_id
+        return report
 
     def _run_job(job_id: str, request: ExperimentRequest, cancel_event: Event) -> None:
         with app.state.lock:
@@ -757,6 +780,17 @@ def create_app(
         if timeline is None:
             raise HTTPException(status_code=404, detail={"error": "WORKFLOW_NOT_FOUND"})
         return timeline.model_dump(mode="json")
+
+    def list_reports(
+        status: str | None = None,
+        scenario_id: str | None = None,
+        limit: int = Query(default=50, ge=1, le=500),
+        offset: int = Query(default=0, ge=0),
+    ) -> dict:
+        """Index persisted run-report artifacts; artifact ids only, never paths."""
+        return app.state.report_index.list_reports(
+            status=status, scenario_id=scenario_id, limit=limit, offset=offset,
+        )
 
 
     def _build_warden_defense_preview(request_id: str, *, persist: bool) -> DefensePreview:
@@ -1939,6 +1973,7 @@ def create_app(
         get_system_readiness_handler=get_system_readiness,
         get_investigation_options_handler=get_investigation_options,
         get_investigation_timeline_handler=get_investigation_timeline,
+        list_reports_handler=list_reports,
     ))
     return app
 
