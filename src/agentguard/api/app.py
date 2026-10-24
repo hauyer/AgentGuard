@@ -5,16 +5,16 @@ WARDEN client so this API does not become a second low-level model runtime.
 """
 from __future__ import annotations
 
-from concurrent.futures import Future, ThreadPoolExecutor
-from contextlib import asynccontextmanager
-from datetime import datetime, timezone
-from pathlib import Path
-from threading import Event, RLock
-from typing import Any, Literal
+import hashlib
 import json
 import os
 import secrets
-import hashlib
+from concurrent.futures import Future, ThreadPoolExecutor
+from contextlib import asynccontextmanager
+from datetime import UTC, datetime
+from pathlib import Path
+from threading import Event, RLock
+from typing import Any, Literal
 
 from fastapi import FastAPI, Header, HTTPException, Query, Request
 from fastapi.responses import HTMLResponse, JSONResponse, Response
@@ -23,43 +23,57 @@ from pydantic import Field
 from agentguard import __version__
 from agentguard.adapters.mock import MockBackend
 from agentguard.adapters.warden import WardenKernelClient, WardenKernelError, warden_status
+from agentguard.agents.coordinator import AgentCoordinator
+from agentguard.agents.llm_advisor import LLMInvestigationAdvisor
 from agentguard.artifacts.local_store import ArtifactNotFoundError, LocalArtifactStore
+from agentguard.compat.linear_probe import (
+    BinaryLinearProbe,
+    select_f1_threshold,
+    split_by_group_three_way,
+)
+from agentguard.compat.paired_runner import PairedExecutionUnsupported, PairedExperimentRunner
+from agentguard.contracts.attribution import (
+    AttributionNodeAnalysisReport,
+    AttributionNodeAnalysisRequest,
+    PathShiftAnalysisReport,
+    PathShiftAnalysisRequest,
+)
 from agentguard.contracts.base import ContractModel
+from agentguard.contracts.evidence import EvidenceRecord
 from agentguard.contracts.experience import ExperienceRecord, ExperienceSearchResult
 from agentguard.contracts.experience_bandit import ExperienceBanditRecommendationReport
 from agentguard.contracts.experiment import ExperimentRequest
-from agentguard.contracts.warden import WardenAuditRequest
-from agentguard.contracts.evidence import EvidenceRecord
 from agentguard.contracts.intervention import InterventionRequest
 from agentguard.contracts.lifecycle import RunTimelineEvent
-from agentguard.contracts.report import RunReport
 from agentguard.contracts.paired import PairedExperimentRunRequest
-from agentguard.contracts.probe import BinaryProbeTrainRequest, BinaryProbeTrainingReport, BinaryProbePredictRequest, BinaryProbePredictionReport
-from agentguard.core.linear_probe import BinaryLinearProbe, split_by_group_three_way, select_f1_threshold
-from agentguard.core.paired_runner import PairedExperimentRunner, PairedExecutionUnsupported
+from agentguard.contracts.probe import (
+    BinaryProbePredictionReport,
+    BinaryProbePredictRequest,
+    BinaryProbeTrainingReport,
+    BinaryProbeTrainRequest,
+)
+from agentguard.contracts.report import RunReport
+from agentguard.contracts.research import (
+    RegisteredStudy,
+    StudyAnalysisReport,
+    StudyAnalysisRequest,
+    StudyRegistrationRequest,
+)
+from agentguard.contracts.warden import WardenAuditRequest
+from agentguard.core.attribution import analyze_attribution_node, analyze_path_shift
 from agentguard.core.classification_metrics import evaluate_binary_classifier
 from agentguard.core.defense import DefensePlannerService
-from agentguard.core.orchestrator import AgentGuardEngine
-from agentguard.core.policy import InterventionPolicyEngine
-from agentguard.memory.store import ExperienceStore
-from agentguard.services.warden_lifecycle import WardenLifecycleService
-from agentguard.services.warden_diagnostics import diagnose_kernel
-from agentguard.services.warden_workflow_store import WardenWorkflowStore, WorkflowConflictError
 from agentguard.core.experience_bandit import recommend_actions
-from agentguard.contracts.research import (
-    StudyRegistrationRequest, RegisteredStudy, StudyAnalysisRequest, StudyAnalysisReport,
-)
-from agentguard.research_registry import ResearchRegistry
-from agentguard.core.study_analysis import analyze_registered_study
-from agentguard.contracts.attribution import (
-    AttributionNodeAnalysisRequest, AttributionNodeAnalysisReport,
-    PathShiftAnalysisRequest, PathShiftAnalysisReport,
-)
-from agentguard.core.attribution import analyze_attribution_node, analyze_path_shift
-from agentguard.agents.coordinator import AgentCoordinator
-from agentguard.agents.llm_advisor import LLMInvestigationAdvisor
 from agentguard.core.graph import MultiLayerDetector
-from agentguard.core.planner import InvestigationPlanner, DefensePlanner
+from agentguard.core.orchestrator import AgentGuardEngine
+from agentguard.core.planner import DefensePlanner, InvestigationPlanner
+from agentguard.core.policy import InterventionPolicyEngine
+from agentguard.core.study_analysis import analyze_registered_study
+from agentguard.memory.store import ExperienceStore
+from agentguard.research_registry import ResearchRegistry
+from agentguard.services.warden_diagnostics import diagnose_kernel
+from agentguard.services.warden_lifecycle import WardenLifecycleService
+from agentguard.services.warden_workflow_store import WardenWorkflowStore, WorkflowConflictError
 
 
 class DefenseExecuteRequest(ContractModel):
@@ -78,7 +92,7 @@ class DefenseVerifyRequest(ContractModel):
 
 
 def _utcnow() -> str:
-    return datetime.now(timezone.utc).isoformat()
+    return datetime.now(UTC).isoformat()
 
 
 def _configured_warden_client() -> WardenKernelClient | None:
@@ -235,7 +249,7 @@ def create_app(
                     artifact_id=app.state.run_artifacts.get(report.run_id),
                     report_status=report.status,
                 )
-        except Exception as exc:  # Do not leak config values or raw exception text to API clients.
+        except Exception as exc:  # noqa: BLE001 - do not leak config values or raw exception text
             with app.state.lock:
                 app.state.jobs[job_id].update(
                     status="failed",
@@ -988,8 +1002,10 @@ def create_app(
         response_model=BinaryProbeTrainingReport,
         deprecated=True,
         description=(
-            "Compatibility/offline baseline only. Production Probe resource management and "
-            "causal audits belong to WARDEN; use /v1/kernel/resources and /v1/kernel/audits."
+            "Deprecated AgentGuard compatibility baseline for caller-supplied vectors only. "
+            "It does not extract model activations or call WARDEN. WARDEN owns production "
+            "Probe resources and causal audits; its current public API has no equivalent "
+            "Probe training endpoint."
         ),
     )
     def train_binary_probe(request: BinaryProbeTrainRequest) -> BinaryProbeTrainingReport:
@@ -1071,8 +1087,10 @@ def create_app(
         response_model=BinaryProbePredictionReport,
         deprecated=True,
         description=(
-            "Compatibility/offline baseline only. Use WARDEN-managed Probe resources for "
-            "production audit workflows."
+            "Deprecated AgentGuard compatibility prediction for caller-supplied vectors only. "
+            "It does not extract model activations or call WARDEN. WARDEN owns production "
+            "Probe resources and causal audits; its current public API has no equivalent "
+            "Probe prediction endpoint."
         ),
     )
     def predict_with_probe(request: BinaryProbePredictRequest) -> BinaryProbePredictionReport:

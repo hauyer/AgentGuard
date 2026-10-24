@@ -1,6 +1,7 @@
-from pathlib import Path
 import importlib.util
 import zipfile
+from pathlib import Path
+
 from agentguard import __version__
 
 _SCRIPT = Path(__file__).resolve().parents[1] / "scripts" / "package_release.py"
@@ -26,6 +27,11 @@ def test_release_packager_includes_design_docs_and_excludes_transient_files(tmp_
             assert "AgentGuard/docs/AgentGuard_最终版总体设计与开发规范.md" in names
             assert "AgentGuard/docs/IMPLEMENTATION_STATUS.md" in names
             assert "AgentGuard/src/agentguard/core/linear_probe.py" in names
+            assert "AgentGuard/src/agentguard/compat/linear_probe.py" in names
+            assert "AgentGuard/src/agentguard/compat/paired_runner.py" in names
+            assert "AgentGuard/src/agentguard/compat/stegopot.py" in names
+            assert "AgentGuard/src/agentguard/compat/fractal_bench.py" in names
+            assert "AgentGuard/src/agentguard/compat/whitebox_activation.py" in names
             assert "AgentGuard/docs/RESEARCH_WORKFLOW.md" in names
             assert "AgentGuard/docs/WHITEBOX_INSTRUMENTATION.md" in names
             assert "AgentGuard/src/agentguard/whitebox/activation.py" in names

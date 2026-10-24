@@ -7,6 +7,12 @@
 - Unified API audit aliases and CLI submit/run behind the existing lifecycle journal; preserved uncertainty for malformed submission responses and checked current defense approval on resume.
 - Added local pending cancellation while reporting external cancellation as unsupported; validated 195 tests and a live blocked-workflow replay.
 
+## Unreleased — Upper-layer platform A3
+
+- Moved the five legacy Probe, paired-runner, white-box, FRACTAL-Bench, and StegoPot implementations into an explicit `agentguard.compat` namespace while preserving their 0.9 Python import paths as shims.
+- Kept Probe HTTP routes deprecated and clarified that they train or score caller-supplied vectors locally, without invoking WARDEN; current WARDEN REST has no equivalent Probe training/prediction routes.
+- Kept attribution as upper-layer statistics, made optional integration exports lazy, and documented compatibility conditions and the actual no-deletion list.
+
 ## Unreleased — Upper-layer platform A1
 
 - Hardened the existing WARDEN client with credential-safe URL validation, redirect rejection, bounded JSON responses, strict response checks, and optional GET-only retries.

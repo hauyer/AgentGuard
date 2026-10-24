@@ -4,20 +4,21 @@ Install with ``pip install -e '.[mcp]'``. The bundled server intentionally uses 
 synthetic MockBackend until a separately reviewed runtime configuration is supplied.
 """
 from __future__ import annotations
+
 import json
 import os
 from pathlib import Path
 
 from agentguard.adapters.mock import MockBackend
+from agentguard.artifacts.local_store import LocalArtifactStore
+from agentguard.compat.paired_runner import PairedExecutionUnsupported, PairedExperimentRunner
+from agentguard.contracts.evidence import EvidenceRecord
 from agentguard.contracts.experience import ExperienceRecord
 from agentguard.contracts.experiment import ExperimentRequest
-from agentguard.core.orchestrator import AgentGuardEngine
-from agentguard.core.paired_runner import PairedExperimentRunner, PairedExecutionUnsupported
 from agentguard.contracts.intervention import InterventionRequest
-from agentguard.memory.store import ExperienceStore
-from agentguard.artifacts.local_store import LocalArtifactStore
-from agentguard.contracts.evidence import EvidenceRecord
+from agentguard.core.orchestrator import AgentGuardEngine
 from agentguard.core.policy import InterventionPolicyEngine
+from agentguard.memory.store import ExperienceStore
 
 
 def create_mcp_server():

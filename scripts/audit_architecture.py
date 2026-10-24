@@ -12,6 +12,11 @@ from typing import Any
 
 LOWER_PACKAGES = frozenset({"warden", "stegopot", "fractal_bench", "torch", "transformers"})
 LEGACY_MODULES = frozenset({
+    "agentguard.compat.linear_probe",
+    "agentguard.compat.paired_runner",
+    "agentguard.compat.whitebox_activation",
+    "agentguard.compat.fractal_bench",
+    "agentguard.compat.stegopot",
     "agentguard.core.linear_probe",
     "agentguard.core.attribution",
     "agentguard.core.paired_runner",

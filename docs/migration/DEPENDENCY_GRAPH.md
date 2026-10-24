@@ -15,37 +15,37 @@ flowchart TD
   API --> Coordinator[agents.coordinator / llm_advisor]
   API --> Policy[core.policy / core.defense]
   API --> Research[core.attribution / statistics / study_analysis]
-  MCP[mcp_server] --> Synthetic[合成研究 engine / paired_runner]
-  API -. 弃用旧接口 .-> Probe[core.linear_probe]
-  API -. 合成兼容研究 .-> Synthetic
-  Legacy[旧 Python 兼容入口] -.-> OldAdapters[adapters.stegopot / fractal_bench]
-  Legacy -.-> Hooks[whitebox.activation]
+  API -. 弃用离线兼容路由 .-> CompatProbe[compat.linear_probe]
+  API -. 仅合成研究 .-> CompatPaired[compat.paired_runner]
+  MCP[mcp_server] -. 仅合成研究 .-> CompatPaired
+  Legacy[0.9 Python 导入垫片] -.-> Compatibility[agentguard.compat]
+  Compatibility -. 旧离线/研究能力 .-> OldAdapters[FRACTAL-Bench / StegoPot 适配器]
+  Compatibility -. 旧本地 Python 能力 .-> Hooks[PyTorch Hook / Probe]
 ```
 
 复现静态模块图：
 
 ```powershell
-python scripts/audit_architecture.py --check --output .agentguard/architecture-a0.json
+python scripts/audit_architecture.py --check --output .agentguard/architecture-a3.json
 ```
 
-当前 67 个模块、431 条导入。报告列出每条内部导入的源码相对路径和行号、
-六个重点模块的直接调用者、底层依赖及直接依赖环。它只解析 Python AST，
-不会导入模型运行时或读取底层工件。条件导入也计入；计算生成的动态导入与
-Python 隐式包初始化仍需要人工审查。
+源码调用者按兼容边界划分：
 
-| 兼容模块 | 当前源码调用者 |
-| --- | --- |
-| `core.linear_probe` | `api.app:38`，弃用的训练/预测路由 |
-| `core.attribution` | `api.app:58`、`cli:25`，上层离线统计 |
-| `core.paired_runner` | `api.app:39`、`mcp_server:15`，合成配对研究 |
-| `whitebox.activation` | `whitebox.__init__:2`，公开 Python 导出 |
-| `adapters.fractal_bench` | `adapters.__init__:2`，公开 Python 导出 |
-| `adapters.stegopot` | `adapters.__init__:3`，公开 Python 导出 |
+| 兼容能力 | 生产/公开调用者 | 旧导入路径 |
+| --- | --- | --- |
+| `compat.linear_probe` | `api.app` 中 OpenAPI 标记 deprecated 的离线训练/预测端点 | `core.linear_probe` |
+| `compat.paired_runner` | `api.app` 和 MCP 的合成研究工作流 | `core.paired_runner` |
+| `compat.whitebox_activation` | 旧 Python 导出 | `whitebox.activation` 和 `whitebox` 包级导出 |
+| `compat.fractal_bench` | 按需调用的旧 Python 场景适配 | `adapters.fractal_bench` 和包级惰性导出 |
+| `compat.stegopot` | 按需调用的旧 Python 文件级实验适配 | `adapters.stegopot` 和包级惰性导出 |
+| `core.attribution` | CLI、API 的上层描述性统计 | 同一上层模块 |
 
-三个直接底层导入位于 `adapters/fractal_bench.py:26`、
-`adapters/stegopot.py:381`、`whitebox/activation.py:58`。允许清单仅登记兼容
-债务，不授予新的生产用途。新生产模块不得直接导入这些底层包；真实运行
-仍经 `WardenKernelClient`。API 已拒绝注入真实旧运行时与直接配对执行器。
+五份重复低层/直连实现位于 `agentguard.compat`。旧路径保留为兼容垫片；新
+WARDEN 工作流与诊断不依赖这些实现，所有底层 API 调用经过
+`WardenKernelClient`。`adapters` 包现在按需导入旧 FRACTAL-Bench/StegoPot
+适配器，普通 WARDEN/Mock 导入不会初始化它们。
 
-A3 要处理的剩余边界是默认 API 内的旧 Probe 研究路由，以及旧模块的
-明确弃用策略。它们不能因为静态越界清单为空就被认定已迁移完毕。
+静态检查当前将旧兼容路径和 `agentguard.compat` 单独列为兼容债务；白盒和
+StegoPot/FRACTAL-Bench 的三个底层导入只允许出现在兼容实现中。AST 检查包括
+函数内导入和字面动态导入，不判断代码运行时可达性，也不扫描 Python 隐式
+包初始化以外的打包行为。
