@@ -269,7 +269,7 @@ def test_real_client_boundary_full_lifecycle_uses_only_documented_warden_v1_rout
                 (200, {"status": "ok", "version": "0.2.0", "api_version": "v1"}),
                 (200, [{"component_id": "activation.backend", "available": True}]),
                 (200, ["contract-1"]),
-                (200, [{"resource_id": "probe-1", "state": "ready", "version": "v1"}]),
+                (200, [{"resource_id": "probe-1", "kind": "probe", "state": "ready", "version": "v1"}]),
                 (200, {"plan_id": "plan-1", "status": "planned", "blockers": []}),
                 (200, {"run_id": "run-1", "plan_id": "plan-1", "status": "running"}),
                 (200, {"run_id": "run-1", "plan_id": "plan-1", "status": "completed", "evidence_refs": ["artifact://trace-1"]}),

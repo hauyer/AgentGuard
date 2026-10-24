@@ -52,6 +52,14 @@ def test_kernel_doctor_reports_ready_only_when_prerequisites_are_present():
     report = diagnose_kernel(Kernel(), contract_id="contract-1", probe_id="probe-1")
     assert report["status"] == "ready"
     assert report["blockers"] == []
+    assert report["api_compatible"] is True
+    assert report["runtime_available"] is True
+    assert report["activation_available"] is True
+    assert report["execution_available"] is True
+    assert report["contract_source_available"] is True
+    assert report["available_contracts"] == ["contract-1"]
+    assert report["ready_probes"] == ["probe-1"]
+    assert report["ready_saes"] == []
 
 
 def test_observation_doctor_does_not_require_activation_backend():
@@ -67,3 +75,20 @@ def test_observation_doctor_does_not_require_activation_backend():
     assert report["status"] == "ready"
     assert report["mode"] == "observation"
     assert diagnose_kernel(BehavioralKernel())["status"] == "blocked"
+
+
+def test_unobserved_capabilities_remain_unknown():
+    class IncompleteKernel(Kernel):
+        def capabilities(self):
+            return []
+
+        def contracts(self):
+            return []
+
+    report = diagnose_kernel(IncompleteKernel())
+    assert report["status"] == "blocked"
+    assert report["runtime_available"] == "unknown"
+    assert report["activation_available"] == "unknown"
+    assert report["execution_available"] == "unknown"
+    assert report["contract_source_available"] == "unknown"
+    assert diagnose_kernel(None)["ready_probes"] == "unknown"

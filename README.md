@@ -2,7 +2,8 @@
 
 > **当前开发边界（2026-10-24）：** 在 `feature/agentguard-upper-layer-v1`
 > 完成上层平台 A0–A8；WARDEN、FRACTAL-Bench、StegoPot 只读。
-> A0 已完成，见[阶段报告](docs/migration/UPPER_LAYER_A0.md)、
+> A0、A1 已完成，见[A0 报告](docs/migration/UPPER_LAYER_A0.md)、
+> [A1 报告](docs/migration/UPPER_LAYER_A1.md)、
 > [模块依赖图](docs/migration/DEPENDENCY_GRAPH.md)和
 > [依赖阻塞](docs/DEPENDENCY_BLOCKERS.md)。通过候选验收后才建立独立
 > `AgentGuard-QWB-App`，比赛应用只调用 AgentGuard 公共接口。
@@ -13,7 +14,7 @@
 
 **AgentGuard 0.9.0** 是一个面向多 Agent 信息流风险研究的上层工程框架，目标是连接 FRACTAL-Bench 的场景/独立评价能力与 StegoPot 的运行时能力，并提供检测、主动调查、受控干预、定向防御和证据审计。
 
-> **重要边界：** 默认运行使用 `MockBackend`，只用于软件与接口验证。当前版本实现了主动调查计划、配对统计工具和防御预览/验证接口，但尚未在本环境完成真实 FRACTAL-Bench/StegoPot 的端到端运行。任何合成指标都不能作为真实模型行为、真实防御效果或因果结论。
+> **重要边界：** 默认运行使用 `MockBackend`，只用于软件与接口验证。历史实测已完成本地 7B 观察运行，但完整条件组有失败，尚未验证真实因果干预或防御效果。任何合成指标都不能作为真实模型行为、真实防御效果或因果结论。
 
 ## 0.5.0 本轮主要开发
 
@@ -35,7 +36,7 @@
 - **外部接口**：扩展 REST API、后台运行与协作式取消、CLI、最小 Web 控制台，以及可选 MCP Server。
 - **审计和权限**：可选 API token；真实后端写操作要求操作员审批 token 和授权引用。
 
-逐项验收见 [`docs/IMPLEMENTATION_STATUS.md`](docs/IMPLEMENTATION_STATUS.md)。总体目标仍以 [`docs/AgentGuard_最终版总体设计与开发规范.md`](docs/AgentGuard_最终版总体设计与开发规范.md) 为准。
+逐项验收见 [`docs/IMPLEMENTATION_STATUS.md`](docs/IMPLEMENTATION_STATUS.md)，当前执行顺序以 [A0–A8 迁移计划](docs/migration/MIGRATION_PLAN.md)为准；旧总体设计保留为历史目标参考。
 
 ## WARDEN 内核集成（0.9.0）
 
@@ -46,7 +47,13 @@ AgentGuard 将 **WARDEN** 作为低层因果审计内核的唯一权威来源：
 ```bash
 AGENTGUARD_WARDEN_URL=http://127.0.0.1:8765
 AGENTGUARD_WARDEN_TIMEOUT=15
+AGENTGUARD_WARDEN_READ_RETRIES=0
 ```
+
+内核连接拒绝 URL 中的凭证、查询参数、片段、相对路径和 HTTP 重定向。
+`AGENTGUARD_WARDEN_READ_RETRIES` 可设为 0–3，只重试 GET 的临时网络错误或
+408/429/502/503/504；提交类请求始终只发送一次。单次连接/读取使用上述超时，
+单个 JSON 响应最多 2 MiB。写请求使用已核对的 API v1；每次工作流预检刷新健康状态。
 
 新增接口：
 

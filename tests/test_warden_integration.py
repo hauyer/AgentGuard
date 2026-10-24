@@ -19,6 +19,9 @@ class FakeTransport:
         return status, json.dumps(payload).encode("utf-8")
 
 
+HEALTH = (200, {"status": "ok", "version": "0.2.0", "api_version": "v1"})
+
+
 def _payload(**overrides):
     value = {
         "request_id": "req-1",
@@ -60,18 +63,20 @@ def test_observation_request_requires_no_capture_target():
 
 def test_warden_client_does_not_start_blocked_plan():
     transport = FakeTransport([
+        HEALTH,
         (200, {"plan_id": "plan-1", "status": "blocked", "blockers": ["Probe missing"]}),
     ])
     client = WardenKernelClient("https://warden.local", transport=transport)
     result = client.submit_audit(_payload(), start_run=True)
     assert result["submission_status"] == "blocked"
     assert result["run"] is None
-    assert len(transport.calls) == 1
-    assert transport.calls[0][1].endswith("/v1/audit-plans")
+    assert len(transport.calls) == 2
+    assert transport.calls[1][1].endswith("/v1/audit-plans")
 
 
 def test_warden_client_submits_only_after_nonblocked_plan():
     transport = FakeTransport([
+        HEALTH,
         (200, {"plan_id": "plan-1", "status": "planned", "blockers": []}),
         (200, {"run_id": "run-1", "plan_id": "plan-1", "status": "blocked", "blockers": ["No dispatcher"]}),
     ])
@@ -79,8 +84,8 @@ def test_warden_client_submits_only_after_nonblocked_plan():
     result = client.submit_audit(_payload(), start_run=True)
     assert result["run"]["run_id"] == "run-1"
     assert result["submission_status"] == "blocked"
-    assert [call[0] for call in transport.calls] == ["POST", "POST"]
-    assert json.loads(transport.calls[1][3]) == {"plan_id": "plan-1"}
+    assert [call[0] for call in transport.calls] == ["GET", "POST", "POST"]
+    assert json.loads(transport.calls[2][3]) == {"plan_id": "plan-1"}
 
 
 def test_warden_client_removes_hidden_truth_from_old_kernel_plan_responses():
@@ -89,7 +94,7 @@ def test_warden_client_removes_hidden_truth_from_old_kernel_plan_responses():
         "harmful_objective": "hidden-sentinel target",
         "truth": {"secret": "hidden-sentinel"},
     }}
-    transport = FakeTransport([(200, plan), (200, plan)])
+    transport = FakeTransport([HEALTH, (200, plan), (200, plan)])
     client = WardenKernelClient("https://warden.local", transport=transport)
     created = client.create_audit_plan(_payload())
     fetched = client.get_audit_plan("plan-1")
@@ -100,12 +105,12 @@ def test_warden_client_removes_hidden_truth_from_old_kernel_plan_responses():
 
 
 def test_warden_client_fails_closed_on_unknown_plan_status():
-    transport = FakeTransport([(200, {"plan_id": "plan-unknown", "status": "new-status"})])
+    transport = FakeTransport([HEALTH, (200, {"plan_id": "plan-unknown", "status": "new-status"})])
     client = WardenKernelClient("https://warden.local", transport=transport)
     result = client.submit_audit(_payload(), start_run=True)
     assert result["submission_status"] == "new-status"
     assert result["run"] is None
-    assert len(transport.calls) == 1
+    assert len(transport.calls) == 2
 
 
 def test_warden_client_rejects_non_loopback_plain_http():
@@ -170,6 +175,7 @@ def test_defense_evaluation_requires_agentguard_approval(tmp_path, monkeypatch):
 
 def test_kernel_audit_endpoint_forwards_request_and_preserves_blocked_status(tmp_path, monkeypatch):
     transport = FakeTransport([
+        HEALTH,
         (200, {"plan_id": "plan-9", "status": "blocked", "blockers": ["Probe not found"]}),
     ])
     kernel = WardenKernelClient("https://warden.local", transport=transport)
@@ -182,6 +188,6 @@ def test_kernel_audit_endpoint_forwards_request_and_preserves_blocked_status(tmp
     assert body["status"] == "blocked"
     assert body["run"] is None
     assert body["causal_claim_status"] == "not_assessed"
-    sent = json.loads(transport.calls[0][3])
+    sent = json.loads(transport.calls[1][3])
     assert "start_run" not in sent
     assert sent["request_id"] == "req-1"

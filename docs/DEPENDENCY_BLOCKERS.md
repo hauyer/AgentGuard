@@ -3,8 +3,9 @@
 日期：2026-10-24。WARDEN、FRACTAL-Bench、StegoPot 均为只读依赖。
 本文件描述接口需求与缺失能力，不授权修改这些仓库。
 
-核对目标为 WARDEN `077f540` 的公开 `/v1` 接口及组合入口。当前没有运行的
-内核服务；历史真实 7B 观察链路与失败条件见 `migration/OBSERVATION_RUN.md`。
+核对目标为 WARDEN `077f540` 的公开 `/v1` 接口及组合入口。A1 通过只读运行
+的真实服务核对 API v1、8 个合同与缺失运行能力，结果明确 blocked；没有新
+模型实验。历史真实 7B 观察链路与失败条件见 `migration/OBSERVATION_RUN.md`。
 以前保留的未提交底层草稿不作为可用能力。
 
 | ID | 缺失能力与依据 | AgentGuard 行为 | 不受阻塞的上层工作 |

@@ -109,6 +109,7 @@
     "mode": {
       "default": "causal_audit",
       "enum": [
+        "observation",
         "capture_only",
         "detection",
         "causal_audit",

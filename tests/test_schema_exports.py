@@ -1,6 +1,16 @@
 import json
 from pathlib import Path
 
+from scripts.export_schemas import SCHEMAS
+
+
+def test_exported_schemas_match_current_public_contracts():
+    schema_dir = Path(__file__).resolve().parents[1] / "schemas"
+    for name, model in SCHEMAS.items():
+        assert json.loads((schema_dir / name).read_text(encoding="utf-8")) == (
+            model.model_json_schema()
+        ), name
+
 
 def test_checked_in_schemas_exist_and_are_valid_json():
     root = Path(__file__).resolve().parents[1]

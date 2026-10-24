@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased — Upper-layer platform A1
+
+- Hardened the existing WARDEN client with credential-safe URL validation, redirect rejection, bounded JSON responses, strict response checks, and optional GET-only retries.
+- Checked API compatibility before mutations and removed raw upstream error details from boundary exceptions.
+- Added unified diagnostic availability fields with explicit unknown values and a checked-in schema parity test; refreshed the observation request schema.
+- Validated against a read-only WARDEN service with eight contracts and an explicitly blocked model runtime.
+
 ## Unreleased — Upper-layer platform A0
 
 - Established `feature/agentguard-upper-layer-v1` from the tested current code and adopted read-only boundaries for WARDEN, FRACTAL-Bench, and StegoPot.
