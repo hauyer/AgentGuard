@@ -1,6 +1,6 @@
 # AgentGuard 上层平台依赖图
 
-日期：2026-10-24；分支 `feature/agentguard-upper-layer-v1`。
+日期：2026-10-24；分支 `feature/agentguard-upper-layer-v1`；A5。
 
 ```mermaid
 flowchart TD
@@ -10,6 +10,11 @@ flowchart TD
   API --> Lifecycle
   Lifecycle --> Client[adapters.warden]
   Lifecycle --> Journal[services.warden_workflow_store / SQLite]
+  API --> EvidenceGateway[services.evidence_gateway]
+  EvidenceGateway --> WardenJournal[已记录的 WARDEN plan/run/evidence refs]
+  EvidenceGateway --> ArtifactStore[AgentGuard 内容寻址工件 / SHA-256 校验]
+  EvidenceGateway --> WardenDefense[WARDEN 证据目标引用 → 策略候选]
+  WardenDefense --> JournalDefense[同一 WARDEN SQLite / append-only 防御事件]
   Lifecycle --> Memory[memory.store]
   Client --> WARDEN[只读依赖 WARDEN /v1 API]
   API --> Coordinator[agents.coordinator / llm_advisor]
@@ -17,7 +22,10 @@ flowchart TD
   Strategies --> Trace[类型化决策与证据引用轨迹]
   Coordinator --> RolePolicy[角色消息和工具白名单]
   Coordinator --> Budget[候选步数 / 模型调用 / token 预算]
-  API --> Policy[core.policy / core.defense]
+  API --> Policy[core.policy]
+  API --> DefenseSvc[core.defense]
+  DefenseSvc --> DefenseState[提议 / 审批 / 提交 / 执行 / 验证状态历史]
+  DefenseSvc --> VerifiedMemory[仅匹配的验证经验参与候选排序]
   API --> Research[core.attribution / statistics / study_analysis]
   API -. 弃用离线兼容路由 .-> CompatProbe[compat.linear_probe]
   API -. 仅合成研究 .-> CompatPaired[compat.paired_runner]

@@ -77,6 +77,85 @@
           "title": "Approval Required",
           "type": "boolean"
         },
+        "risk_type": {
+          "default": "unknown",
+          "title": "Risk Type",
+          "type": "string"
+        },
+        "evidence_level": {
+          "default": "observational",
+          "enum": [
+            "synthetic",
+            "observational",
+            "interventional",
+            "causal_validated"
+          ],
+          "title": "Evidence Level",
+          "type": "string"
+        },
+        "evidence_reliability": {
+          "default": 0.0,
+          "maximum": 1.0,
+          "minimum": 0.0,
+          "title": "Evidence Reliability",
+          "type": "number"
+        },
+        "experience_refs": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Experience Refs",
+          "type": "array"
+        },
+        "evidence_refs": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Evidence Refs",
+          "type": "array"
+        },
+        "execution_supported": {
+          "default": false,
+          "title": "Execution Supported",
+          "type": "boolean"
+        },
+        "execution_provider": {
+          "default": "unknown",
+          "title": "Execution Provider",
+          "type": "string"
+        },
+        "priority_score": {
+          "default": 0.0,
+          "maximum": 1.0,
+          "minimum": 0.0,
+          "title": "Priority Score",
+          "type": "number"
+        },
+        "priority_reasons": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Priority Reasons",
+          "type": "array"
+        },
+        "status": {
+          "default": "proposed",
+          "enum": [
+            "proposed",
+            "awaiting_approval",
+            "approved",
+            "submitted",
+            "executed",
+            "verification_pending",
+            "verified",
+            "rejected",
+            "unsupported",
+            "failed",
+            "rolled_back"
+          ],
+          "title": "Status",
+          "type": "string"
+        },
         "rationale": {
           "title": "Rationale",
           "type": "string"

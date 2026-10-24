@@ -39,7 +39,8 @@ from agentguard.contracts.attribution import (
     PathShiftAnalysisRequest,
 )
 from agentguard.contracts.base import ContractModel
-from agentguard.contracts.evidence import EvidenceRecord
+from agentguard.contracts.defense import DefenseCandidate, DefenseLifecycleRecord, DefensePreview
+from agentguard.contracts.evidence import EvidenceRecord, GovernedEvidence
 from agentguard.contracts.experience import ExperienceRecord, ExperienceSearchResult
 from agentguard.contracts.experience_bandit import ExperienceBanditRecommendationReport
 from agentguard.contracts.experiment import ExperimentRequest
@@ -71,6 +72,7 @@ from agentguard.core.policy import InterventionPolicyEngine
 from agentguard.core.study_analysis import analyze_registered_study
 from agentguard.memory.store import ExperienceStore
 from agentguard.research_registry import ResearchRegistry
+from agentguard.services.evidence_gateway import EvidenceGateway
 from agentguard.services.warden_diagnostics import diagnose_kernel
 from agentguard.services.warden_lifecycle import WardenLifecycleService
 from agentguard.services.warden_workflow_store import WardenWorkflowStore, WorkflowConflictError
@@ -82,12 +84,18 @@ class DefenseExecuteRequest(ContractModel):
     intervention_id: str | None = None
 
 
+class WardenDefenseExecuteRequest(ContractModel):
+    candidate_id: str = Field(min_length=1, max_length=256)
+    authorization_ref: str | None = Field(default=None, max_length=256)
+
+
 class DefenseVerifyRequest(ContractModel):
     candidate_id: str
     baseline_risk: list[float] = Field(min_length=2)
     post_defense_risk: list[float] = Field(min_length=2)
     baseline_utility: list[float] | None = None
     post_defense_utility: list[float] | None = None
+    source_artifact_refs: list[str] = Field(default_factory=list, max_length=32)
     seed: int = 7
 
 
@@ -174,6 +182,7 @@ def create_app(
     app.state.warden_workflows = WardenWorkflowStore(base_dir / "warden_workflows.sqlite3")
     app.state.research_registry = ResearchRegistry(base_dir / "research_registry.sqlite3")
     app.state.defense_service = DefensePlannerService()
+    app.state.evidence_gateway = EvidenceGateway()
     app.state.policy_engine = InterventionPolicyEngine()
     app.state.paired_runner = PairedExperimentRunner(app.state.engine.runtime, paired_executor=paired_executor)
 
@@ -477,6 +486,132 @@ def create_app(
             "error_message": entry.get("error_message"),
         }
 
+    @app.get("/v1/kernel/workflows/{request_id}/evidence")
+    def get_kernel_workflow_evidence(request_id: str) -> dict:
+        """Return a governed summary of journaled WARDEN evidence without opening its URIs."""
+        entry = app.state.warden_workflows.get(request_id)
+        if entry is None:
+            raise HTTPException(status_code=404, detail={"error": "WORKFLOW_NOT_FOUND"})
+        return app.state.evidence_gateway.for_warden_workflow(
+            entry,
+            artifacts=app.state.artifacts,
+        )
+
+    def _build_warden_defense_preview(request_id: str, *, persist: bool) -> DefensePreview:
+        entry = app.state.warden_workflows.get(request_id)
+        if entry is None:
+            raise HTTPException(status_code=404, detail={"error": "WORKFLOW_NOT_FOUND"})
+        governed = app.state.evidence_gateway.for_warden_workflow(
+            entry,
+            artifacts=app.state.artifacts,
+        )
+        items = [GovernedEvidence.model_validate(item) for item in governed["items"]]
+        experience_records: dict[str, ExperienceRecord] = {}
+        for item in items:
+            if item.scenario_id == "unknown" or item.risk_type == "unknown":
+                continue
+            for record in app.state.experiences.recommendations(
+                scenario_id=item.scenario_id,
+                risk_type=item.risk_type,
+                limit=500,
+            ):
+                experience_records[record.experience_id] = record
+        preview = app.state.defense_service.preview_from_evidence(
+            run_id=str(entry.get("run_id") or request_id),
+            evidence=items,
+            run_status=governed["run_status"],
+            experiences=experience_records.values(),
+        )
+        if persist and preview.candidates:
+            app.state.warden_workflows.save_defense_candidates(
+                request_id,
+                [
+                    (
+                        candidate.model_dump(mode="json"),
+                        app.state.defense_service.initial_lifecycle(candidate).model_dump(mode="json"),
+                    )
+                    for candidate in preview.candidates
+                ],
+            )
+        for candidate in preview.candidates:
+            saved = app.state.warden_workflows.get_defense_candidate(request_id, candidate.candidate_id)
+            if saved is not None:
+                candidate.status = saved["lifecycle"]["status"]
+        return preview
+
+    @app.get("/v1/kernel/workflows/{request_id}/defenses/preview")
+    def get_warden_defense_preview(request_id: str) -> dict:
+        return _build_warden_defense_preview(request_id, persist=False).model_dump(mode="json")
+
+    @app.post("/v1/kernel/workflows/{request_id}/defenses/preview")
+    def create_warden_defense_preview(request_id: str) -> dict:
+        return _build_warden_defense_preview(request_id, persist=True).model_dump(mode="json")
+
+    @app.post("/v1/kernel/workflows/{request_id}/defenses/execute")
+    def execute_warden_defense_proposal(
+        request_id: str,
+        request: WardenDefenseExecuteRequest,
+        x_approval_token: str | None = Header(default=None, alias="X-Approval-Token"),
+    ) -> dict:
+        if not request.authorization_ref:
+            raise HTTPException(status_code=400, detail={"error": "AUTHORIZATION_REFERENCE_REQUIRED"})
+        saved = app.state.warden_workflows.get_defense_candidate(request_id, request.candidate_id)
+        if saved is None:
+            raise HTTPException(status_code=404, detail={"error": "DEFENSE_CANDIDATE_NOT_FOUND"})
+        candidate = DefenseCandidate.model_validate(saved["candidate"])
+        lifecycle = DefenseLifecycleRecord.model_validate(saved["lifecycle"])
+        if lifecycle.status == "unsupported":
+            raise HTTPException(status_code=501, detail={
+                "error": "WARDEN_DEFENSE_EXECUTOR_UNSUPPORTED",
+                "defense_status": lifecycle.status,
+                "message": "No declared external policy executor is available; no defense action was submitted.",
+            })
+        if not approval_is_valid(x_approval_token):
+            if lifecycle.status == "proposed":
+                lifecycle = app.state.defense_service.transition(
+                    lifecycle,
+                    "awaiting_approval",
+                    "An operator approval token is required before requesting execution.",
+                )
+                saved = app.state.warden_workflows.update_defense_candidate(
+                    request_id,
+                    candidate.candidate_id,
+                    candidate.model_dump(mode="json"),
+                    lifecycle.model_dump(mode="json"),
+                )
+            raise HTTPException(status_code=403, detail={
+                "error": "APPROVAL_REQUIRED",
+                "defense_status": saved["lifecycle"]["status"],
+                "message": "No defense action was submitted; provide the configured operator approval token to continue.",
+            })
+        lifecycle = app.state.defense_service.transition(
+            lifecycle,
+            "approved",
+            "The configured operator approval token was accepted for this proposal.",
+        )
+        saved = app.state.warden_workflows.update_defense_candidate(
+            request_id,
+            candidate.candidate_id,
+            candidate.model_dump(mode="json"),
+            lifecycle.model_dump(mode="json"),
+        )
+        lifecycle = app.state.defense_service.transition(
+            lifecycle,
+            "unsupported",
+            "Approval was recorded, but no supported WARDEN or external policy executor is declared.",
+        )
+        saved = app.state.warden_workflows.update_defense_candidate(
+            request_id,
+            candidate.candidate_id,
+            candidate.model_dump(mode="json"),
+            lifecycle.model_dump(mode="json"),
+        )
+        raise HTTPException(status_code=501, detail={
+            "error": "WARDEN_DEFENSE_EXECUTOR_UNSUPPORTED",
+            "defense_status": saved["lifecycle"]["status"],
+            "message": "The proposal and approval were recorded. No defense action was submitted or executed.",
+        })
+
     @app.get("/v1/kernel/workflows/{request_id}/events")
     def get_kernel_workflow_events(request_id: str) -> dict:
         """Return append-only state transition history for an upper-layer workflow."""
@@ -638,7 +773,11 @@ def create_app(
         artifact_id = app.state.run_artifacts.get(report.run_id)
         return {
             "run_id": report.run_id,
-            "items": [item.model_dump(mode="json") for item in report.evidence],
+            "items": [item.model_dump(mode="json") for item in app.state.evidence_gateway.for_report(
+                report,
+                report_artifact_id=artifact_id,
+                artifacts=app.state.artifacts,
+            )],
             "report_artifact_id": artifact_id,
         }
 
@@ -722,11 +861,61 @@ def create_app(
     def get_defense_preview(run_id: str) -> dict:
         report = get_report_or_404(run_id)
         preview = report.defense_preview or app.state.defense_service.preview(report)
+        lifecycle_by_id = {item.candidate_id: item for item in report.defense_lifecycle}
+        for candidate in preview.candidates:
+            if candidate.candidate_id in lifecycle_by_id:
+                candidate.status = lifecycle_by_id[candidate.candidate_id].status
         return preview.model_dump(mode="json")
+
+    def _transition_defense(
+        report: RunReport,
+        candidate,
+        status: str,
+        reason: str,
+    ) -> DefenseLifecycleRecord:
+        existing = next((item for item in report.defense_lifecycle if item.candidate_id == candidate.candidate_id), None)
+        if existing is None:
+            existing = app.state.defense_service.initial_lifecycle(candidate)
+        try:
+            updated = app.state.defense_service.transition(existing, status, reason)
+        except ValueError as exc:
+            raise HTTPException(status_code=409, detail={
+                "error": "INVALID_DEFENSE_STATE_TRANSITION",
+                "message": str(exc),
+                "current_status": existing.status,
+                "requested_status": status,
+            }) from exc
+        if existing in report.defense_lifecycle:
+            report.defense_lifecycle[report.defense_lifecycle.index(existing)] = updated
+        else:
+            report.defense_lifecycle.append(updated)
+        candidate.status = updated.status
+        return updated
+
+    def _verified_defense_experiences(report: RunReport) -> list[ExperienceRecord]:
+        records: dict[str, ExperienceRecord] = {}
+        for finding in report.findings:
+            for item in app.state.experiences.recommendations(
+                scenario_id=report.scenario_id,
+                risk_type=finding.risk_type,
+                limit=500,
+            ):
+                records[item.experience_id] = item
+        return list(records.values())
 
     def _preview_defenses_locked(run_id: str) -> dict:
         report = get_report_or_404(run_id)
-        preview = app.state.defense_service.preview(report)
+        preview = app.state.defense_service.preview(
+            report,
+            experiences=_verified_defense_experiences(report),
+        )
+        current_states = {item.candidate_id: item for item in report.defense_lifecycle}
+        for candidate in preview.candidates:
+            lifecycle = current_states.get(candidate.candidate_id)
+            if lifecycle is None:
+                lifecycle = app.state.defense_service.initial_lifecycle(candidate)
+                report.defense_lifecycle.append(lifecycle)
+            candidate.status = lifecycle.status
         report.defense_preview = preview
         store_report(report)
         return preview.model_dump(mode="json")
@@ -749,16 +938,30 @@ def create_app(
         if candidate is None:
             raise HTTPException(status_code=404, detail="defense candidate not found in preview")
         manifest = app.state.engine.runtime.capabilities()
-        if manifest.backend_mode == "real" and not approval_is_valid(x_approval_token):
-            raise HTTPException(status_code=403, detail={"error": "APPROVAL_REQUIRED", "message": "Real-backend defense requires a configured operator approval token."})
         if not request.authorization_ref:
             raise HTTPException(status_code=400, detail="authorization_ref is required")
-        budget = report.budget_usage.max_interventions if report.budget_usage else 0
-        used = report.budget_usage.intervention_attempts if report.budget_usage else 0
         intervention_id = request.intervention_id or f"api-{candidate.candidate_id}"
         prior_result = next((item for item in report.intervention_history if item.intervention_id == intervention_id), None)
         if prior_result is not None:
-            return {"candidate": candidate.model_dump(mode="json"), "result": prior_result.model_dump(mode="json"), "effectiveness_verified": False, "idempotent_replay": True}
+            lifecycle = next((item for item in report.defense_lifecycle if item.candidate_id == candidate.candidate_id), None)
+            return {
+                "candidate": candidate.model_dump(mode="json"),
+                "result": prior_result.model_dump(mode="json"),
+                "defense_status": lifecycle.status if lifecycle else "unknown",
+                "execution_mode": report.backend_mode,
+                "effectiveness_verified": False,
+                "idempotent_replay": True,
+            }
+        if manifest.backend_mode == "real" and not approval_is_valid(x_approval_token):
+            _transition_defense(report, candidate, "awaiting_approval", "A real-backend defense requires a valid operator approval token.")
+            store_report(report)
+            raise HTTPException(status_code=403, detail={
+                "error": "APPROVAL_REQUIRED",
+                "message": "Real-backend defense requires a configured operator approval token.",
+                "defense_status": "awaiting_approval",
+            })
+        budget = report.budget_usage.max_interventions if report.budget_usage else 0
+        used = report.budget_usage.intervention_attempts if report.budget_usage else 0
         intervention = InterventionRequest(
             experiment_id=report.experiment_id,
             intervention_id=intervention_id,
@@ -776,8 +979,29 @@ def create_app(
             approval_granted=approval_is_valid(x_approval_token),
         )
         if not decision.allowed:
-            raise HTTPException(status_code=403, detail={"error": decision.error_code, "message": decision.reason})
-        result = app.state.engine.runtime.intervene(intervention)
+            if decision.status == "approval_required":
+                target_status = "awaiting_approval"
+            elif decision.status == "unsupported":
+                target_status = "unsupported"
+            else:
+                target_status = "rejected"
+            _transition_defense(report, candidate, target_status, decision.reason)
+            store_report(report)
+            code = 501 if decision.status == "unsupported" else 403
+            raise HTTPException(status_code=code, detail={
+                "error": decision.error_code,
+                "message": decision.reason,
+                "defense_status": target_status,
+            })
+        if candidate.approval_required:
+            _transition_defense(report, candidate, "approved", "The configured operator approval gate and policy checks passed.")
+        _transition_defense(report, candidate, "submitted", "The candidate passed policy checks and was submitted to the declared runtime.")
+        try:
+            result = app.state.engine.runtime.intervene(intervention)
+        except Exception:
+            _transition_defense(report, candidate, "failed", "The declared runtime raised an exception during defense execution.")
+            store_report(report)
+            raise
         report.selected_intervention = intervention
         report.intervention_result = result
         report.intervention_requests.append(intervention)
@@ -794,17 +1018,35 @@ def create_app(
             source="agentguard.api.defense", summary=result.message,
             artifact_refs=result.evidence_refs, run_id=report.run_id, experiment_id=report.experiment_id,
             scenario_id=report.scenario_id, metadata={"candidate_id": candidate.candidate_id,
-            "status": result.status, "effect_status": result.effect_status},
+            "status": result.status, "effect_status": result.effect_status,
+            "risk_type": candidate.risk_type},
         ))
+        if result.status == "completed":
+            _transition_defense(report, candidate, "executed", "Runtime returned a completed intervention result; effectiveness remains unverified.")
+            _transition_defense(report, candidate, "verification_pending", "Independent matched-run, benign-utility and provenance checks have not been completed.")
+        elif result.status == "unsupported":
+            _transition_defense(report, candidate, "unsupported", result.message or "Runtime does not support this defense operation.")
+        elif result.status == "rejected":
+            _transition_defense(report, candidate, "rejected", result.message or "Runtime rejected the defense operation.")
+        else:
+            _transition_defense(report, candidate, "failed", result.message or "Runtime defense operation failed.")
         report.timeline.append(RunTimelineEvent(
             sequence=len(report.timeline), stage="intervened",
-            status="completed" if result.status == "completed" else "rejected",
-            message="Defense candidate executed under policy gate; effectiveness not yet verified.",
+            status="completed" if result.status == "completed" else "failed" if result.status == "runtime_error" else "rejected",
+            message="Defense operation was recorded; completion does not imply effectiveness verification.",
             details={"candidate_id": candidate.candidate_id, "status": result.status, "effect_status": result.effect_status},
         ))
         report.limitations.append("Defense execution does not itself establish risk reduction; run matched treatment/control and normal-utility checks.")
         store_report(report)
-        return {"candidate": candidate.model_dump(mode="json"), "policy_decision": decision.model_dump(mode="json"), "result": result.model_dump(mode="json"), "effectiveness_verified": False}
+        lifecycle = next(item for item in report.defense_lifecycle if item.candidate_id == candidate.candidate_id)
+        return {
+            "candidate": candidate.model_dump(mode="json"),
+            "policy_decision": decision.model_dump(mode="json"),
+            "result": result.model_dump(mode="json"),
+            "defense_status": lifecycle.status,
+            "execution_mode": report.backend_mode,
+            "effectiveness_verified": False,
+        }
 
     @app.post("/v1/runs/{run_id}/defenses/execute")
     def execute_defense(
@@ -828,12 +1070,58 @@ def create_app(
             )
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
-        # Values submitted via API are not automatically promoted to measured/causal evidence.
-        verification.limitations.append("Metric arrays were supplied by the API caller; attach source artifacts before treating them as reproducible measurements.")
+        lifecycle = next((item for item in report.defense_lifecycle if item.candidate_id == candidate.candidate_id), None)
+        if lifecycle is None or lifecycle.status not in {"executed", "verification_pending"}:
+            raise HTTPException(status_code=409, detail={
+                "error": "DEFENSE_NOT_EXECUTED",
+                "message": "A defense candidate must be executed before its outcome can be evaluated.",
+                "defense_status": lifecycle.status if lifecycle else "proposed",
+            })
+        arrays = {
+            "baseline_risk": request.baseline_risk,
+            "post_defense_risk": request.post_defense_risk,
+            "baseline_utility": request.baseline_utility,
+            "post_defense_utility": request.post_defense_utility,
+        }
+        verified_refs = app.state.evidence_gateway.verify_defense_artifacts(
+            request.source_artifact_refs,
+            run_id=report.run_id,
+            candidate_id=candidate.candidate_id,
+            artifacts=app.state.artifacts,
+            arrays=arrays,
+        )
+        verification.source_artifact_refs = verified_refs
+        verification.provenance_verified = bool(verified_refs) and report.backend_mode == "real"
+        verification.verification_status = "verified" if verification.provenance_verified else "unverified"
+        verification.evidence_mode = "measured" if verification.provenance_verified else "synthetic" if report.backend_mode == "synthetic" else "observed"
+        verification.risk_transfer_checked = verification.provenance_verified
+        verification.rollback_tested = verification.provenance_verified
+        if not verification.provenance_verified:
+            verification.limitations.append("Caller-supplied metric arrays are statistical input only; no matching hash-checked AgentGuard artifact proved their provenance and controls.")
+        if report.backend_mode == "synthetic":
+            verification.limitations.append("Synthetic execution cannot establish real defense effectiveness.")
+        if verification.provenance_verified and verification.status == "passed":
+            lifecycle = app.state.defense_service.transition(lifecycle, "verified", "Paired result passed and matching real-run artifacts verified provenance, controls, utility, and rollback evidence.")
+        elif verification.provenance_verified and verification.status == "failed":
+            lifecycle = app.state.defense_service.transition(lifecycle, "failed", "Hash-checked paired evidence did not meet defense outcome criteria.")
+        report.defense_lifecycle[report.defense_lifecycle.index(next(item for item in report.defense_lifecycle if item.candidate_id == candidate.candidate_id))] = lifecycle
+        candidate.status = lifecycle.status
         report.defense_verification = verification
-        report.limitations.append("Defense verification helper computed paired statistics from caller-supplied arrays; provenance and raw experiment artifacts remain external obligations.")
+        report.evidence.append(EvidenceRecord(
+            kind="evaluation",
+            grade="synthetic" if report.backend_mode == "synthetic" else "interventional" if verification.provenance_verified else "observational",
+            source="agentguard.api.defense_verification",
+            summary=f"Paired defense summary status: {verification.status}; provenance status: {verification.verification_status}.",
+            artifact_refs=verified_refs,
+            run_id=report.run_id,
+            experiment_id=report.experiment_id,
+            scenario_id=report.scenario_id,
+            metadata={"candidate_id": candidate.candidate_id, "status": verification.status,
+                      "risk_type": candidate.risk_type, "methodology_reviewed": verification.provenance_verified},
+        ))
+        report.limitations.append("A statistical result is not a verified defense outcome unless the lifecycle reaches verified with provenance-backed controls and utility evidence.")
         store_report(report)
-        return verification.model_dump(mode="json")
+        return {**verification.model_dump(mode="json"), "defense_status": lifecycle.status}
 
     @app.post("/v1/runs/{run_id}/defenses/verify")
     def verify_defense(run_id: str, request: DefenseVerifyRequest) -> dict:

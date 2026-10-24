@@ -32,7 +32,7 @@ class WorkflowConflictError(ValueError):
 
 
 class WardenWorkflowStore:
-    SCHEMA_VERSION = 1
+    SCHEMA_VERSION = 2
 
     def __init__(self, path: str | Path = ".agentguard/warden_workflows.sqlite3") -> None:
         self.path = Path(path).expanduser().resolve()
@@ -121,6 +121,28 @@ class WardenWorkflowStore:
                 FOREIGN KEY(request_id) REFERENCES warden_workflows(request_id)
             )""")
             db.execute("CREATE INDEX IF NOT EXISTS idx_warden_workflow_events_request ON warden_workflow_events(request_id, event_id)")
+            db.execute("""CREATE TABLE IF NOT EXISTS warden_defense_candidates (
+                candidate_id TEXT PRIMARY KEY,
+                request_id TEXT NOT NULL,
+                candidate_json TEXT NOT NULL,
+                lifecycle_json TEXT NOT NULL,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL,
+                FOREIGN KEY(request_id) REFERENCES warden_workflows(request_id)
+            )""")
+            db.execute("CREATE INDEX IF NOT EXISTS idx_warden_defense_request ON warden_defense_candidates(request_id, created_at)")
+            db.execute("""CREATE TABLE IF NOT EXISTS warden_defense_events (
+                event_id INTEGER PRIMARY KEY AUTOINCREMENT,
+                request_id TEXT NOT NULL,
+                candidate_id TEXT NOT NULL,
+                from_status TEXT,
+                to_status TEXT NOT NULL,
+                reason TEXT NOT NULL,
+                occurred_at TEXT NOT NULL,
+                FOREIGN KEY(request_id) REFERENCES warden_workflows(request_id),
+                FOREIGN KEY(candidate_id) REFERENCES warden_defense_candidates(candidate_id)
+            )""")
+            db.execute("CREATE INDEX IF NOT EXISTS idx_warden_defense_events_candidate ON warden_defense_events(candidate_id, event_id)")
 
     @staticmethod
     def canonical_hash(payload: Mapping[str, Any]) -> str:
@@ -272,3 +294,120 @@ class WardenWorkflowStore:
             ),
             "legacy_attempt_history": not attempts or all(item.get("is_retry") for item in attempts),
         }
+
+    def save_defense_candidates(
+        self,
+        request_id: str,
+        records: list[tuple[Mapping[str, Any], Mapping[str, Any]]],
+    ) -> None:
+        """Persist candidate proposals in the existing workflow database.
+
+        Existing lifecycle state is retained when a preview is regenerated.
+        """
+        now = self._now()
+        with self._lock, self._connect() as db:
+            db.execute("BEGIN IMMEDIATE")
+            if db.execute("SELECT 1 FROM warden_workflows WHERE request_id=?", (request_id,)).fetchone() is None:
+                raise KeyError(request_id)
+            for candidate, lifecycle in records:
+                candidate_data = dict(candidate)
+                lifecycle_data = dict(lifecycle)
+                candidate_id = str(candidate_data["candidate_id"])
+                row = db.execute(
+                    "SELECT lifecycle_json FROM warden_defense_candidates WHERE request_id=? AND candidate_id=?",
+                    (request_id, candidate_id),
+                ).fetchone()
+                if row:
+                    current_lifecycle = json.loads(row["lifecycle_json"])
+                    candidate_data["status"] = current_lifecycle["status"]
+                    db.execute(
+                        "UPDATE warden_defense_candidates SET candidate_json=?, updated_at=? WHERE request_id=? AND candidate_id=?",
+                        (json.dumps(candidate_data, ensure_ascii=False, sort_keys=True), now, request_id, candidate_id),
+                    )
+                    continue
+                candidate_json = json.dumps(candidate_data, ensure_ascii=False, sort_keys=True)
+                lifecycle_json = json.dumps(lifecycle_data, ensure_ascii=False, sort_keys=True)
+                db.execute(
+                    "INSERT INTO warden_defense_candidates(candidate_id, request_id, candidate_json, lifecycle_json, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)",
+                    (candidate_id, request_id, candidate_json, lifecycle_json, now, now),
+                )
+                for event in lifecycle_data.get("history", []):
+                    db.execute(
+                        "INSERT INTO warden_defense_events(request_id, candidate_id, from_status, to_status, reason, occurred_at) VALUES (?, ?, ?, ?, ?, ?)",
+                        (request_id, candidate_id, event.get("from_status"), event["to_status"], event["reason"], event["occurred_at"]),
+                    )
+
+    def get_defense_candidate(self, request_id: str, candidate_id: str) -> dict[str, Any] | None:
+        with self._connect() as db:
+            row = db.execute(
+                "SELECT * FROM warden_defense_candidates WHERE request_id=? AND candidate_id=?",
+                (request_id, candidate_id),
+            ).fetchone()
+            if row is None:
+                return None
+            events = db.execute(
+                "SELECT event_id, from_status, to_status, reason, occurred_at FROM warden_defense_events WHERE candidate_id=? ORDER BY event_id",
+                (candidate_id,),
+            ).fetchall()
+        return {
+            "candidate": json.loads(row["candidate_json"]),
+            "lifecycle": json.loads(row["lifecycle_json"]),
+            "events": [dict(event) for event in events],
+        }
+
+    def list_defense_candidates(self, request_id: str) -> list[dict[str, Any]]:
+        with self._connect() as db:
+            rows = db.execute(
+                "SELECT candidate_id FROM warden_defense_candidates WHERE request_id=? ORDER BY created_at, candidate_id",
+                (request_id,),
+            ).fetchall()
+        return [
+            item for row in rows
+            if (item := self.get_defense_candidate(request_id, row["candidate_id"])) is not None
+        ]
+
+    def update_defense_candidate(
+        self,
+        request_id: str,
+        candidate_id: str,
+        candidate: Mapping[str, Any],
+        lifecycle: Mapping[str, Any],
+    ) -> dict[str, Any]:
+        now = self._now()
+        with self._lock, self._connect() as db:
+            db.execute("BEGIN IMMEDIATE")
+            row = db.execute(
+                "SELECT lifecycle_json FROM warden_defense_candidates WHERE request_id=? AND candidate_id=?",
+                (request_id, candidate_id),
+            ).fetchone()
+            if row is None:
+                raise KeyError(candidate_id)
+            old_lifecycle = json.loads(row["lifecycle_json"])
+            new_lifecycle = dict(lifecycle)
+            old_history = old_lifecycle.get("history", [])
+            new_history = new_lifecycle.get("history", [])
+            if new_history[:len(old_history)] != old_history or len(new_history) != len(old_history) + 1:
+                raise ValueError("defense lifecycle updates must append exactly one immutable event")
+            event = new_history[-1]
+            if event.get("from_status") != old_lifecycle.get("status") or event.get("to_status") != new_lifecycle.get("status"):
+                raise ValueError("defense lifecycle event does not match the stored state")
+            candidate_data = dict(candidate)
+            candidate_data["status"] = new_lifecycle["status"]
+            db.execute(
+                "UPDATE warden_defense_candidates SET candidate_json=?, lifecycle_json=?, updated_at=? WHERE request_id=? AND candidate_id=?",
+                (
+                    json.dumps(candidate_data, ensure_ascii=False, sort_keys=True),
+                    json.dumps(new_lifecycle, ensure_ascii=False, sort_keys=True),
+                    now,
+                    request_id,
+                    candidate_id,
+                ),
+            )
+            db.execute(
+                "INSERT INTO warden_defense_events(request_id, candidate_id, from_status, to_status, reason, occurred_at) VALUES (?, ?, ?, ?, ?, ?)",
+                (request_id, candidate_id, event.get("from_status"), event["to_status"], event["reason"], event["occurred_at"]),
+            )
+            db.commit()
+        item = self.get_defense_candidate(request_id, candidate_id)
+        assert item is not None
+        return item

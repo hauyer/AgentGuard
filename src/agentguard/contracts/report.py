@@ -1,19 +1,24 @@
 from typing import Literal
+
 from pydantic import Field
+
+from agentguard.contracts.agent_message import AgentMessage
 from agentguard.contracts.base import ContractModel
-from agentguard.contracts.observation import DetectionFinding
-from agentguard.contracts.intervention import InterventionRequest, InterventionResult
+from agentguard.contracts.capabilities import CapabilityManifest
+from agentguard.contracts.defense import DefenseLifecycleRecord, DefensePreview, DefenseVerification
 from agentguard.contracts.evaluation import EvaluationReport
 from agentguard.contracts.evidence import EvidenceRecord
-from agentguard.contracts.capabilities import CapabilityManifest
-from agentguard.contracts.lifecycle import RunTimelineEvent, BudgetUsage
-from agentguard.contracts.agent_message import AgentMessage
-from agentguard.contracts.observation import Observation
-from agentguard.contracts.hypothesis import InvestigationHypothesis, InvestigationAction, PairedExperimentDesign
-from agentguard.contracts.defense import DefensePreview, DefenseVerification
-from agentguard.contracts.graph import InteractionGraphReport
-from agentguard.contracts.paired import PairedExperimentExecutionReport
 from agentguard.contracts.experiment import ExperimentRequest
+from agentguard.contracts.graph import InteractionGraphReport
+from agentguard.contracts.hypothesis import (
+    InvestigationAction,
+    InvestigationHypothesis,
+    PairedExperimentDesign,
+)
+from agentguard.contracts.intervention import InterventionRequest, InterventionResult
+from agentguard.contracts.lifecycle import BudgetUsage, RunTimelineEvent
+from agentguard.contracts.observation import DetectionFinding, Observation
+from agentguard.contracts.paired import PairedExperimentExecutionReport
 
 
 class RunReport(ContractModel):
@@ -34,6 +39,7 @@ class RunReport(ContractModel):
     experiment_designs: list[PairedExperimentDesign] = Field(default_factory=list)
     defense_preview: DefensePreview | None = None
     defense_verification: DefenseVerification | None = None
+    defense_lifecycle: list[DefenseLifecycleRecord] = Field(default_factory=list)
     selected_intervention: InterventionRequest | None = None
     intervention_result: InterventionResult | None = None
     intervention_requests: list[InterventionRequest] = Field(default_factory=list)

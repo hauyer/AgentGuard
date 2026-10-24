@@ -1,0 +1,133 @@
+{
+  "$defs": {
+    "DefenseStatusEvent": {
+      "additionalProperties": false,
+      "properties": {
+        "schema_version": {
+          "const": "0.1",
+          "default": "0.1",
+          "title": "Schema Version",
+          "type": "string"
+        },
+        "from_status": {
+          "anyOf": [
+            {
+              "enum": [
+                "proposed",
+                "awaiting_approval",
+                "approved",
+                "submitted",
+                "executed",
+                "verification_pending",
+                "verified",
+                "rejected",
+                "unsupported",
+                "failed",
+                "rolled_back"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "From Status"
+        },
+        "to_status": {
+          "enum": [
+            "proposed",
+            "awaiting_approval",
+            "approved",
+            "submitted",
+            "executed",
+            "verification_pending",
+            "verified",
+            "rejected",
+            "unsupported",
+            "failed",
+            "rolled_back"
+          ],
+          "title": "To Status",
+          "type": "string"
+        },
+        "reason": {
+          "maxLength": 1000,
+          "minLength": 1,
+          "title": "Reason",
+          "type": "string"
+        },
+        "occurred_at": {
+          "format": "date-time",
+          "title": "Occurred At",
+          "type": "string"
+        }
+      },
+      "required": [
+        "to_status",
+        "reason"
+      ],
+      "title": "DefenseStatusEvent",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {
+      "const": "0.1",
+      "default": "0.1",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "candidate_id": {
+      "title": "Candidate Id",
+      "type": "string"
+    },
+    "status": {
+      "default": "proposed",
+      "enum": [
+        "proposed",
+        "awaiting_approval",
+        "approved",
+        "submitted",
+        "executed",
+        "verification_pending",
+        "verified",
+        "rejected",
+        "unsupported",
+        "failed",
+        "rolled_back"
+      ],
+      "title": "Status",
+      "type": "string"
+    },
+    "execution_scope": {
+      "anyOf": [
+        {
+          "enum": [
+            "isolated_test_environment",
+            "synthetic_demo"
+          ],
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Execution Scope"
+    },
+    "history": {
+      "items": {
+        "$ref": "#/$defs/DefenseStatusEvent"
+      },
+      "title": "History",
+      "type": "array"
+    }
+  },
+  "required": [
+    "candidate_id"
+  ],
+  "title": "DefenseLifecycleRecord",
+  "type": "object"
+}

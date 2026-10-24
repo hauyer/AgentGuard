@@ -1,5 +1,7 @@
 import time
+
 from fastapi.testclient import TestClient
+
 from agentguard.api.app import create_app
 
 
@@ -28,6 +30,8 @@ def test_api_exposes_scenario_observations_findings_report_artifacts_and_preview
     })
     assert executed.status_code == 200, executed.text
     assert executed.json()["result"]["status"] == "completed"
+    assert executed.json()["defense_status"] == "verification_pending"
+    assert executed.json()["execution_mode"] == "synthetic"
     repeated = client.post(f"/v1/runs/{run_id}/defenses/execute", json={
         "candidate_id": candidate["candidate_id"], "authorization_ref": "test-ticket-1"
     })
@@ -56,8 +60,15 @@ def test_api_exposes_scenario_observations_findings_report_artifacts_and_preview
     })
     assert verification.status_code == 200, verification.text
     assert verification.json()["risk_reduction"] > 0
+    assert verification.json()["status"] == "passed"
+    assert verification.json()["verification_status"] == "unverified"
+    assert verification.json()["defense_status"] == "verification_pending"
     assert client.get(f"/v1/runs/{run_id}/defenses/verification").status_code == 200
     evidence = client.get(f"/v1/runs/{run_id}/evidence").json()
+    assert evidence["items"]
+    assert evidence["items"][0]["source_system"] == "agentguard"
+    assert evidence["items"][0]["evidence_level"] == "synthetic"
+    assert evidence["items"][0]["verification_status"] == "unverified"
     artifact_id = evidence["report_artifact_id"]
     assert client.get(f"/v1/artifacts/{artifact_id}").status_code == 200
     assert client.get(f"/v1/artifacts/{artifact_id}/content").status_code == 200
@@ -141,6 +152,7 @@ def test_api_token_middleware_protects_non_public_routes(tmp_path, monkeypatch):
 
 def test_background_run_supports_cooperative_cancellation(tmp_path):
     import time
+
     from agentguard.adapters.mock import MockBackend
     from agentguard.core.orchestrator import AgentGuardEngine
 

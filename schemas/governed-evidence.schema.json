@@ -1,0 +1,243 @@
+{
+  "$defs": {
+    "CausalValidationCriteria": {
+      "additionalProperties": false,
+      "description": "Explicit method checks required before evidence can be called causal.",
+      "properties": {
+        "independent_repetitions": {
+          "minimum": 2,
+          "title": "Independent Repetitions",
+          "type": "integer"
+        },
+        "matched_control_passed": {
+          "title": "Matched Control Passed",
+          "type": "boolean"
+        },
+        "negative_control_passed": {
+          "title": "Negative Control Passed",
+          "type": "boolean"
+        },
+        "benign_utility_measured": {
+          "title": "Benign Utility Measured",
+          "type": "boolean"
+        },
+        "artifact_hashes_verified": {
+          "title": "Artifact Hashes Verified",
+          "type": "boolean"
+        },
+        "alternative_explanations_reviewed": {
+          "title": "Alternative Explanations Reviewed",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "independent_repetitions",
+        "matched_control_passed",
+        "negative_control_passed",
+        "benign_utility_measured",
+        "artifact_hashes_verified",
+        "alternative_explanations_reviewed"
+      ],
+      "title": "CausalValidationCriteria",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "description": "Evidence Gateway view with source, execution and method status kept distinct.",
+  "properties": {
+    "schema_version": {
+      "const": "0.1",
+      "default": "0.1",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "evidence_id": {
+      "maxLength": 256,
+      "minLength": 1,
+      "title": "Evidence Id",
+      "type": "string"
+    },
+    "source_system": {
+      "maxLength": 128,
+      "minLength": 1,
+      "title": "Source System",
+      "type": "string"
+    },
+    "warden_run_id": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Warden Run Id"
+    },
+    "warden_plan_id": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Warden Plan Id"
+    },
+    "target_type": {
+      "anyOf": [
+        {
+          "enum": [
+            "message",
+            "tool_call",
+            "tool_result",
+            "activation"
+          ],
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Target Type"
+    },
+    "target_ref": {
+      "anyOf": [
+        {
+          "maxLength": 256,
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Target Ref"
+    },
+    "scenario_id": {
+      "default": "unknown",
+      "title": "Scenario Id",
+      "type": "string"
+    },
+    "artifact_refs": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Artifact Refs",
+      "type": "array"
+    },
+    "evidence_type": {
+      "enum": [
+        "observation",
+        "finding",
+        "hypothesis",
+        "experiment_design",
+        "intervention",
+        "defense",
+        "evaluation",
+        "run_summary",
+        "note"
+      ],
+      "title": "Evidence Type",
+      "type": "string"
+    },
+    "evidence_level": {
+      "enum": [
+        "synthetic",
+        "observational",
+        "interventional",
+        "causal_validated"
+      ],
+      "title": "Evidence Level",
+      "type": "string"
+    },
+    "risk_type": {
+      "default": "unknown",
+      "title": "Risk Type",
+      "type": "string"
+    },
+    "confidence": {
+      "anyOf": [
+        {
+          "maximum": 1.0,
+          "minimum": 0.0,
+          "type": "number"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Confidence"
+    },
+    "limitations": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Limitations",
+      "type": "array"
+    },
+    "verification_status": {
+      "default": "unverified",
+      "enum": [
+        "verified",
+        "unverified",
+        "blocked",
+        "failed",
+        "unsupported"
+      ],
+      "title": "Verification Status",
+      "type": "string"
+    },
+    "run_status": {
+      "default": "unknown",
+      "enum": [
+        "completed",
+        "partial",
+        "failed",
+        "blocked",
+        "unknown"
+      ],
+      "title": "Run Status",
+      "type": "string"
+    },
+    "model_version": {
+      "default": "unknown",
+      "title": "Model Version",
+      "type": "string"
+    },
+    "scenario_version": {
+      "default": "unknown",
+      "title": "Scenario Version",
+      "type": "string"
+    },
+    "created_at": {
+      "format": "date-time",
+      "title": "Created At",
+      "type": "string"
+    },
+    "causal_validation": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/CausalValidationCriteria"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    }
+  },
+  "required": [
+    "evidence_id",
+    "source_system",
+    "evidence_type",
+    "evidence_level"
+  ],
+  "title": "GovernedEvidence",
+  "type": "object"
+}

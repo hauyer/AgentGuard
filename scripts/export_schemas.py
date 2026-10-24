@@ -1,34 +1,72 @@
 """Export public Pydantic contracts to checked-in JSON Schema files."""
 
-from pathlib import Path
 import json
 import sys
+from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(PROJECT_ROOT / "src"))
 
-from agentguard.contracts.capabilities import CapabilityManifest
-from agentguard.contracts.evidence import EvidenceRecord
-from agentguard.contracts.evaluation import EvaluationReport
-from agentguard.contracts.experiment import ExperimentRequest, ExperimentBudget
-from agentguard.contracts.intervention import InterventionRequest, InterventionResult
-from agentguard.contracts.observation import Observation, DetectionFinding
-from agentguard.contracts.report import RunReport
-from agentguard.contracts.scenario import ScenarioSpec
 from agentguard.contracts.agent_message import AgentMessage
-from agentguard.contracts.hypothesis import InvestigationHypothesis, InvestigationAction, PairedExperimentDesign
-from agentguard.contracts.defense import DefenseCandidate, DefensePreview, DefenseVerification
+from agentguard.contracts.artifacts import ArtifactMetadata, ArtifactRef
+from agentguard.contracts.attribution import (
+    AttributionNodeAnalysisReport,
+    AttributionNodeAnalysisRequest,
+    PathShiftAnalysisReport,
+    PathShiftAnalysisRequest,
+)
+from agentguard.contracts.capabilities import CapabilityManifest
+from agentguard.contracts.defense import (
+    DefenseCandidate,
+    DefenseLifecycleRecord,
+    DefensePreview,
+    DefenseStatusEvent,
+    DefenseVerification,
+)
+from agentguard.contracts.evaluation import EvaluationReport
+from agentguard.contracts.evidence import CausalValidationCriteria, EvidenceRecord, GovernedEvidence
 from agentguard.contracts.experience import ExperienceRecord, ExperienceSearchResult
-from agentguard.contracts.experience_bandit import ExperienceBanditActionScore, ExperienceBanditRecommendationReport
-from agentguard.contracts.artifacts import ArtifactRef, ArtifactMetadata
-from agentguard.contracts.lifecycle import RunTimelineEvent, BudgetUsage
-from agentguard.contracts.graph import InteractionNode, InteractionEdge, CandidatePath, InteractionGraphReport
-from agentguard.contracts.probe import BinaryProbeTrainRequest, BinaryProbeTrainingReport, BinaryProbePredictRequest, BinaryProbePredictionReport
-from agentguard.contracts.paired import PairedExperimentRunRequest, PairedExperimentPairResult, PairedExperimentExecutionReport
-from agentguard.contracts.research import StudyRegistrationRequest, RegisteredStudy, OutcomePairs, StudyAnalysisRequest, StudyAnalysisReport
-from agentguard.contracts.attribution import AttributionNodeAnalysisRequest, AttributionNodeAnalysisReport, PathShiftAnalysisRequest, PathShiftAnalysisReport
-from agentguard.contracts.whitebox import ActivationPatchSpec
+from agentguard.contracts.experience_bandit import (
+    ExperienceBanditActionScore,
+    ExperienceBanditRecommendationReport,
+)
+from agentguard.contracts.experiment import ExperimentBudget, ExperimentRequest
+from agentguard.contracts.graph import (
+    CandidatePath,
+    InteractionEdge,
+    InteractionGraphReport,
+    InteractionNode,
+)
+from agentguard.contracts.hypothesis import (
+    InvestigationAction,
+    InvestigationHypothesis,
+    PairedExperimentDesign,
+)
+from agentguard.contracts.intervention import InterventionRequest, InterventionResult
+from agentguard.contracts.lifecycle import BudgetUsage, RunTimelineEvent
+from agentguard.contracts.observation import DetectionFinding, Observation
+from agentguard.contracts.paired import (
+    PairedExperimentExecutionReport,
+    PairedExperimentPairResult,
+    PairedExperimentRunRequest,
+)
+from agentguard.contracts.probe import (
+    BinaryProbePredictionReport,
+    BinaryProbePredictRequest,
+    BinaryProbeTrainingReport,
+    BinaryProbeTrainRequest,
+)
+from agentguard.contracts.report import RunReport
+from agentguard.contracts.research import (
+    OutcomePairs,
+    RegisteredStudy,
+    StudyAnalysisReport,
+    StudyAnalysisRequest,
+    StudyRegistrationRequest,
+)
+from agentguard.contracts.scenario import ScenarioSpec
 from agentguard.contracts.warden import WardenAuditRequest
+from agentguard.contracts.whitebox import ActivationPatchSpec
 
 SCHEMAS = {
     "scenario.schema.json": ScenarioSpec,
@@ -40,6 +78,8 @@ SCHEMAS = {
     "intervention-result.schema.json": InterventionResult,
     "evaluation.schema.json": EvaluationReport,
     "evidence.schema.json": EvidenceRecord,
+    "governed-evidence.schema.json": GovernedEvidence,
+    "causal-validation-criteria.schema.json": CausalValidationCriteria,
     "capabilities.schema.json": CapabilityManifest,
     "agent-message.schema.json": AgentMessage,
     "run-report.schema.json": RunReport,
@@ -49,6 +89,8 @@ SCHEMAS = {
     "defense-candidate.schema.json": DefenseCandidate,
     "defense-preview.schema.json": DefensePreview,
     "defense-verification.schema.json": DefenseVerification,
+    "defense-lifecycle-record.schema.json": DefenseLifecycleRecord,
+    "defense-status-event.schema.json": DefenseStatusEvent,
     "experience-record.schema.json": ExperienceRecord,
     "experience-search-result.schema.json": ExperienceSearchResult,
     "experience-bandit-action-score.schema.json": ExperienceBanditActionScore,

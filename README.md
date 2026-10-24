@@ -2,9 +2,12 @@
 
 > **当前开发边界（2026-10-24）：** 在 `feature/agentguard-upper-layer-v1`
 > 完成上层平台 A0–A8；WARDEN、FRACTAL-Bench、StegoPot 只读。
-> A0–A2 已完成，见[A0 报告](docs/migration/UPPER_LAYER_A0.md)、
+> A0–A5 已完成，A6–A8 尚待实现，见[A0 报告](docs/migration/UPPER_LAYER_A0.md)、
 > [A1 报告](docs/migration/UPPER_LAYER_A1.md)、
 > [A2 报告](docs/migration/UPPER_LAYER_A2.md)、
+> [A3 兼容隔离](docs/migration/UPPER_LAYER_A3.md)、
+> [A4 调查编排](docs/migration/UPPER_LAYER_A4.md)、
+> [A5 证据治理](docs/migration/UPPER_LAYER_A5.md)、
 > [模块依赖图](docs/migration/DEPENDENCY_GRAPH.md)和
 > [依赖阻塞](docs/DEPENDENCY_BLOCKERS.md)。通过候选验收后才建立独立
 > `AgentGuard-QWB-App`，比赛应用只调用 AgentGuard 公共接口。
@@ -30,8 +33,8 @@
 - **本地白盒激活干预**：新增 PyTorch hook 适配器，支持采集激活、按 token 位置置零、参考激活替换和加噪，并记录输入/输出哈希。该模块接受调用者已加载的模型，不负责下载权重或自动证明因果作用；使用方法见 [`docs/WHITEBOX_INSTRUMENTATION.md`](docs/WHITEBOX_INSTRUMENTATION.md)。方法与限制见 [`docs/STATISTICAL_METHODS.md`](docs/STATISTICAL_METHODS.md) 和 [`docs/PROBE_AND_DETECTION.md`](docs/PROBE_AND_DETECTION.md)。
 - **预注册研究工作流**：将主要假设、主要/次要终点、匹配变量、样本量、停止/缺失规则和统计方法写入不可原位更新的注册表；分析只能确认性使用已登记终点，并输出偏离说明与分析工件。
 - **可选 LLM 调查建议**：通过 OpenAI-compatible API（默认 DeepSeek）为既有 Finding 排序；模型无工具权限，不能授权或执行干预；无效输出或调用失败时回退到确定性策略。
-- **定向防御**：生成最小范围防御候选；预览与执行分离；API 执行前检查目标、能力、范围、预算、授权引用和真实后端审批；支持对配对数组进行风险/效用验证。
-- **证据与工件**：报告包含观测、Finding、假设、实验设计和防御预览；工件采用 SHA-256 内容寻址并在读取时校验哈希。
+- **定向防御**：候选预览与执行分离，状态明确记录提议、审批、提交、执行和待验证；候选排序因素是可审查的启发式。caller-supplied 配对数组的统计通过不等于防御已验证。
+- **证据与工件**：证据 Gateway 检查 WARDEN run/plan 身份，区分合成、观察、干预和因果验证等级；对本地内容寻址工件核验 SHA-256，忽略 WARDEN 本地文件 URI且不读取它们。外部/opaque refs 默认未验证。
 - **经验库**：SQLite 版本化经验存储、搜索和动作统计；未验证经验不能开启自动推荐。
 - **证据门控 Thompson Sampling**：按场景/风险过滤，只用已验证且明确允许推荐的干预记录排序候选动作；仅提供建议，不执行动作。
 - **外部接口**：扩展 REST API、后台运行与协作式取消、CLI、最小 Web 控制台，以及可选 MCP Server。
@@ -71,6 +74,9 @@ AGENTGUARD_WARDEN_READ_RETRIES=0
 - `POST /v1/kernel/audits`：创建计划并可选提交运行；阻塞计划保留为 `blocked`。
 - `POST /v1/kernel/workflows`：执行能力/资源/契约预检、提交计划、可选有界轮询，并在证据引用充分时写入未验证经验记录；`defense_evaluation` 需要有效审批。
 - `GET /v1/kernel/audits/{plan_id}`、`GET /v1/kernel/runs/{run_id}`：查询内核状态与证据引用。
+- `GET /v1/kernel/workflows/{request_id}/evidence`：返回有来源、运行状态、等级和限制的治理后摘要；不返回原始 EvidenceBundle，也不打开 WARDEN 工件 URI。
+- `GET/POST /v1/kernel/workflows/{request_id}/defenses/preview`：从 completed WARDEN 证据中的安全目标引用生成有解释的上层策略候选，并保存在同一 SQLite 工作流库。
+- `POST /v1/kernel/workflows/{request_id}/defenses/execute`：记录审批状态；当前没有可验证的外部策略执行器，因此经审批后明确返回 `unsupported`，不会提交或执行防御。
 
 CLI 示例：
 
@@ -191,7 +197,7 @@ agentguard serve --host 127.0.0.1 --port 8000
 - `GET /v1/scenarios`, `/v1/scenarios/{scenario_id}`
 - `POST /v1/runs`，支持 `?background=true`；`GET /v1/runs` 和 `GET /v1/runs/{run_id}`
 - `POST /v1/runs/{run_id}/cancel`
-- `GET /observations`, `/findings`, `/hypotheses`, `/investigation`, `/timeline`, `/evidence`, `/report`
+- `GET /observations`, `/findings`, `/hypotheses`, `/investigation`, `/timeline`, `/evidence`, `/report`；`/evidence` 使用治理后的合同视图。
 - `GET /v1/runs/{run_id}/graph` 获取交互图和候选路径。
 - `GET/POST /v1/runs/{run_id}/experiments/paired` 查看或执行匹配的对照/处理/负对照实验；默认 Mock 可实际跑通合成闭环，真实后端必须注入经过验证的 paired executor。
 - `POST /v1/probes/train` 训练家族级隔离的二元线性探针、`POST /v1/probes/predict` 使用已保存模型预测并保存模型工件；示例输入见 `examples/probe_training_request.example.json`。

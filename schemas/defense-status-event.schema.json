@@ -1,0 +1,70 @@
+{
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {
+      "const": "0.1",
+      "default": "0.1",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "from_status": {
+      "anyOf": [
+        {
+          "enum": [
+            "proposed",
+            "awaiting_approval",
+            "approved",
+            "submitted",
+            "executed",
+            "verification_pending",
+            "verified",
+            "rejected",
+            "unsupported",
+            "failed",
+            "rolled_back"
+          ],
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "From Status"
+    },
+    "to_status": {
+      "enum": [
+        "proposed",
+        "awaiting_approval",
+        "approved",
+        "submitted",
+        "executed",
+        "verification_pending",
+        "verified",
+        "rejected",
+        "unsupported",
+        "failed",
+        "rolled_back"
+      ],
+      "title": "To Status",
+      "type": "string"
+    },
+    "reason": {
+      "maxLength": 1000,
+      "minLength": 1,
+      "title": "Reason",
+      "type": "string"
+    },
+    "occurred_at": {
+      "format": "date-time",
+      "title": "Occurred At",
+      "type": "string"
+    }
+  },
+  "required": [
+    "to_status",
+    "reason"
+  ],
+  "title": "DefenseStatusEvent",
+  "type": "object"
+}

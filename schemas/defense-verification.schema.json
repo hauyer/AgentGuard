@@ -26,6 +26,20 @@
       "title": "Status",
       "type": "string"
     },
+    "verification_status": {
+      "default": "unverified",
+      "enum": [
+        "unverified",
+        "verified"
+      ],
+      "title": "Verification Status",
+      "type": "string"
+    },
+    "provenance_verified": {
+      "default": false,
+      "title": "Provenance Verified",
+      "type": "boolean"
+    },
     "baseline_risk": {
       "anyOf": [
         {

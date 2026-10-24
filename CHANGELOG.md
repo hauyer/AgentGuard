@@ -1,5 +1,14 @@
 # Changelog
 
+## Unreleased — Upper-layer platform A5
+
+- Added a governed Evidence Gateway for AgentGuard reports and journaled WARDEN runs, including run/plan identity checks, safe artifact-reference filtering, local content-hash validation, and source/method limitations.
+- Kept `synthetic`, `observational`, `interventional`, and `causal_validated` evidence distinct; causal validation now requires explicit repeated, matched-control, negative-control, benign-utility, artifact-integrity, and alternative-explanation checks.
+- Added the defense lifecycle from proposal and approval through submission, execution, and pending or completed verification; statistical passes from caller-supplied arrays remain explicitly unverified.
+- Ranked defense candidates with disclosed impact, evidence, utility-cost, reversibility, approval, and verified-experience factors; generated candidates remain proposals and synthetic execution remains labeled synthetic.
+- Added WARDEN-evidence-based policy proposals persisted in the existing workflow SQLite database; after approval, absent external execution capability is recorded as `unsupported` with no submission or simulated success.
+- Added public evidence/lifecycle schemas and targeted API, provenance, filtering, and transition tests.
+
 ## Unreleased — Upper-layer platform A2
 
 - Serialized durable workflow execution across local threads/processes and closed SQLite connections deterministically.

@@ -1,0 +1,41 @@
+{
+  "additionalProperties": false,
+  "description": "Explicit method checks required before evidence can be called causal.",
+  "properties": {
+    "independent_repetitions": {
+      "minimum": 2,
+      "title": "Independent Repetitions",
+      "type": "integer"
+    },
+    "matched_control_passed": {
+      "title": "Matched Control Passed",
+      "type": "boolean"
+    },
+    "negative_control_passed": {
+      "title": "Negative Control Passed",
+      "type": "boolean"
+    },
+    "benign_utility_measured": {
+      "title": "Benign Utility Measured",
+      "type": "boolean"
+    },
+    "artifact_hashes_verified": {
+      "title": "Artifact Hashes Verified",
+      "type": "boolean"
+    },
+    "alternative_explanations_reviewed": {
+      "title": "Alternative Explanations Reviewed",
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "independent_repetitions",
+    "matched_control_passed",
+    "negative_control_passed",
+    "benign_utility_measured",
+    "artifact_hashes_verified",
+    "alternative_explanations_reviewed"
+  ],
+  "title": "CausalValidationCriteria",
+  "type": "object"
+}
