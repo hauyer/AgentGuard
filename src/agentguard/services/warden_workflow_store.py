@@ -150,8 +150,13 @@ class WardenWorkflowStore:
                 path TEXT NOT NULL,
                 status_code INTEGER NOT NULL,
                 actor_role TEXT NOT NULL,
-                created_at TEXT NOT NULL
+                created_at TEXT NOT NULL,
+                completed INTEGER NOT NULL DEFAULT 0
             )""")
+            audit_columns = {row["name"] for row in db.execute("PRAGMA table_info(api_audit_events)")}
+            if "completed" not in audit_columns:
+                # Older completed events remain explicitly complete after this additive migration.
+                db.execute("ALTER TABLE api_audit_events ADD COLUMN completed INTEGER NOT NULL DEFAULT 1")
             db.execute("CREATE INDEX IF NOT EXISTS idx_api_audit_created ON api_audit_events(event_id DESC)")
 
     @staticmethod
@@ -281,30 +286,42 @@ class WardenWorkflowStore:
                 ).fetchall()
         return [self._decode(r) for r in rows]
 
-    def record_api_audit_event(
-        self, *, request_id: str, method: str, path: str, status_code: int, actor_role: str
-    ) -> None:
-        """Persist request metadata only; callers must never pass query strings or bodies."""
+    def begin_api_audit_event(
+        self, *, request_id: str, method: str, actor_role: str
+    ) -> int:
+        """Persist the intent before routing so a failed audit sink blocks API work."""
         with self._connect() as db:
             db.execute(
-                "INSERT INTO api_audit_events(request_id, method, path, status_code, actor_role, created_at) "
-                "VALUES (?, ?, ?, ?, ?, ?)",
-                (request_id, method, path, status_code, actor_role, self._now()),
+                "INSERT INTO api_audit_events(request_id, method, path, status_code, actor_role, created_at, completed) "
+                "VALUES (?, ?, ?, 0, ?, ?, 0)",
+                (request_id, method, "/<pending>", actor_role, self._now()),
             )
             event_id = int(db.execute("SELECT last_insert_rowid()").fetchone()[0])
             if event_id % 500 == 0:
                 db.execute("DELETE FROM api_audit_events WHERE event_id <= ?", (event_id - 100_000,))
+        return event_id
+
+    def finish_api_audit_event(self, event_id: int, *, path: str, status_code: int) -> None:
+        """Complete a reserved event with only a route template and HTTP status."""
+        with self._connect() as db:
+            cursor = db.execute(
+                "UPDATE api_audit_events SET path=?, status_code=?, completed=1 "
+                "WHERE event_id=? AND completed=0",
+                (path, status_code, event_id),
+            )
+            if cursor.rowcount != 1:
+                raise KeyError(f"API audit event {event_id} is missing or already completed")
 
     def list_api_audit_events(self, *, limit: int = 100, offset: int = 0) -> list[dict[str, Any]]:
         if not 1 <= limit <= 500 or offset < 0:
             raise ValueError("audit pagination is out of range")
         with self._connect() as db:
             rows = db.execute(
-                "SELECT event_id, request_id, method, path, status_code, actor_role, created_at "
+                "SELECT event_id, request_id, method, path, status_code, actor_role, created_at, completed "
                 "FROM api_audit_events ORDER BY event_id DESC LIMIT ? OFFSET ?",
                 (limit, offset),
             ).fetchall()
-        return [dict(row) for row in rows]
+        return [{**dict(row), "completed": bool(row["completed"])} for row in rows]
 
     def count(self) -> int:
         with self._connect() as db:

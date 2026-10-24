@@ -66,10 +66,13 @@ Environment variables:
 - Each response carries `X-Request-ID`. A syntactically valid caller value is
   preserved; otherwise AgentGuard creates a UUID. Error bodies include it for
   middleware-level authorization and rate-limit failures.
-- Request audit events store request ID, method, matched route template, status,
-  actor role, and timestamp in the existing workflow SQLite database. They never
-  store query strings, bodies, or credentials. Unmatched paths are stored as
-  `/<unmatched>`. The journal retains approximately the latest 100,000 events.
+- Request audit events are reserved before routing, then updated with request ID,
+  method, matched route template, status, actor role, and timestamp in the existing
+  workflow SQLite database. If the reservation fails, the API returns 503 without
+  dispatching the request; a process interruption can leave an explicit incomplete
+  event. Events never store query strings, bodies, or credentials. Unmatched paths
+  are stored as `/<unmatched>`. The journal retains approximately the latest
+  100,000 events.
 - `AGENTGUARD_RATE_LIMIT_PER_MINUTE` sets an in-memory per-process limit per
   direct peer address (default 300). Forwarded IP headers are not trusted. The
   limit resets on process restart and is not shared between worker processes;

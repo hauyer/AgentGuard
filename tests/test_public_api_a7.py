@@ -28,6 +28,7 @@ def test_public_route_aliases_request_ids_and_operator_audit(tmp_path, monkeypat
         event = next(item for item in events.json()["items"] if item["request_id"] == "audit-42")
         assert event["path"] == "/v1/system/health"
         assert event["actor_role"] == "api"
+        assert event["completed"] is True
         assert "secret" not in str(events.json())
 
         page = client.get("/v1/investigations?limit=1&offset=2", headers={"X-AgentGuard-Token": "api-secret"})
@@ -119,3 +120,17 @@ def test_rate_limit_and_cors_require_explicit_origins(tmp_path, monkeypatch):
         )
         assert response.status_code == 200
         assert response.headers["access-control-allow-origin"] == "https://console.example"
+
+
+def test_api_fails_closed_if_audit_reservation_is_unavailable(tmp_path, monkeypatch):
+    app = create_app(data_dir=tmp_path / "audit-failure")
+
+    def unavailable(**kwargs):
+        raise OSError("database unavailable")
+
+    monkeypatch.setattr(app.state.warden_workflows, "begin_api_audit_event", unavailable)
+    with TestClient(app) as client:
+        response = client.get("/v1/system/health")
+    assert response.status_code == 503
+    assert response.json()["detail"]["error"] == "API_AUDIT_UNAVAILABLE"
+    assert response.headers.get("X-Request-ID")

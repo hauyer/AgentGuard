@@ -245,66 +245,70 @@ def create_app(
             not operator_token and api_token and supplied_api and secrets.compare_digest(api_token, supplied_api)
         )
         actor_role = "operator" if operator_valid or legacy_operator_valid else ("api" if api_valid else "anonymous")
-        public_paths = {"/health", "/v1/system/health", "/openapi.json", "/docs", "/redoc", "/console"}
-        auth_denied = (
-            request.method != "OPTIONS"
-            and (api_token or operator_token)
-            and request.url.path not in public_paths
-            and not (api_valid or operator_valid)
-        )
-        host = request.client.host if request.client else "unknown"
-        now = time.monotonic()
-        throttled = False
-        retry_after = 0
-        if request.method != "OPTIONS":
-            with rate_lock:
-                window = rate_windows.setdefault(host, deque())
-                while window and now - window[0] >= 60:
-                    window.popleft()
-                throttled = len(window) >= rate_limit
-                if throttled:
-                    retry_after = max(1, int(60 - (now - window[0])))
-                else:
-                    window.append(now)
-        if throttled:
-            response: Response = JSONResponse(
-                status_code=429,
-                content={"detail": {"error": "RATE_LIMIT_EXCEEDED", "request_id": request_id}},
-                headers={"Retry-After": str(retry_after)},
+        try:
+            audit_event_id = app.state.warden_workflows.begin_api_audit_event(
+                request_id=request_id, method=request.method, actor_role=actor_role,
             )
-        elif auth_denied:
-            response = JSONResponse(
-                status_code=401,
-                content={"detail": {"error": "API_TOKEN_REQUIRED", "request_id": request_id}},
+        except Exception:
+            logger.exception("AgentGuard API audit reservation failed (request_id=%s)", request_id)
+            response: Response = JSONResponse(
+                status_code=503,
+                content={"detail": {"error": "API_AUDIT_UNAVAILABLE", "request_id": request_id}},
             )
         else:
-            try:
-                response = await call_next(request)
-            except Exception:
-                logger.exception("Unhandled AgentGuard API error (request_id=%s)", request_id)
+            public_paths = {"/health", "/v1/system/health", "/openapi.json", "/docs", "/redoc", "/console"}
+            auth_denied = (
+                request.method != "OPTIONS"
+                and (api_token or operator_token)
+                and request.url.path not in public_paths
+                and not (api_valid or operator_valid)
+            )
+            host = request.client.host if request.client else "unknown"
+            now = time.monotonic()
+            throttled = False
+            retry_after = 0
+            if request.method != "OPTIONS":
+                with rate_lock:
+                    window = rate_windows.setdefault(host, deque())
+                    while window and now - window[0] >= 60:
+                        window.popleft()
+                    throttled = len(window) >= rate_limit
+                    if throttled:
+                        retry_after = max(1, int(60 - (now - window[0])))
+                    else:
+                        window.append(now)
+            if throttled:
                 response = JSONResponse(
-                    status_code=500,
-                    content={"detail": {"error": "INTERNAL_SERVER_ERROR", "request_id": request_id}},
+                    status_code=429,
+                    content={"detail": {"error": "RATE_LIMIT_EXCEEDED", "request_id": request_id}},
+                    headers={"Retry-After": str(retry_after)},
                 )
+            elif auth_denied:
+                response = JSONResponse(
+                    status_code=401,
+                    content={"detail": {"error": "API_TOKEN_REQUIRED", "request_id": request_id}},
+                )
+            else:
+                try:
+                    response = await call_next(request)
+                except Exception:
+                    logger.exception("Unhandled AgentGuard API error (request_id=%s)", request_id)
+                    response = JSONResponse(
+                        status_code=500,
+                        content={"detail": {"error": "INTERNAL_SERVER_ERROR", "request_id": request_id}},
+                    )
+            try:
+                matched_path = getattr(request.scope.get("route"), "path", "/<unmatched>")
+                app.state.warden_workflows.finish_api_audit_event(
+                    audit_event_id, path=matched_path, status_code=response.status_code,
+                )
+            except Exception:
+                logger.exception("AgentGuard API audit event could not be completed (request_id=%s)", request_id)
         response.headers["X-Request-ID"] = request_id
         response.headers["X-Content-Type-Options"] = "nosniff"
         response.headers["X-Frame-Options"] = "DENY"
         response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
-        _record_api_audit(request, request_id, response.status_code, actor_role)
         return response
-
-    def _record_api_audit(request: Request, request_id: str, status_code: int, actor_role: str) -> None:
-        try:
-            app.state.warden_workflows.record_api_audit_event(
-                request_id=request_id,
-                method=request.method,
-                path=getattr(request.scope.get("route"), "path", "/<unmatched>"),
-                status_code=status_code,
-                actor_role=actor_role,
-            )
-        except Exception:
-            # The request path and response remain usable, while audit sink failures are visible to operators.
-            logger.exception("AgentGuard API audit event could not be persisted (request_id=%s)", request_id)
 
     def persist_report(report: RunReport) -> str:
         payload = report.model_dump_json(indent=2).encode("utf-8")
