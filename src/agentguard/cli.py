@@ -237,6 +237,8 @@ def main() -> None:
                 raise SystemExit(4)
             print(json.dumps({
                 "request_id": entry["request_id"], "status": entry["status"],
+                "workflow_status": entry["workflow_status"],
+                "statistics": store.execution_statistics(args.request_id),
                 "revision": entry["revision"], "created_at": entry["created_at"],
                 "updated_at": entry["updated_at"], "context": entry["context"],
                 "result": entry["result"], "error_code": entry["error_code"],
@@ -253,14 +255,9 @@ def main() -> None:
                     result = {"kernel": "WARDEN", "items": client.resources(args.kind)}
                 elif args.action == "contracts":
                     result = {"kernel": "WARDEN", "items": client.contracts()}
-                elif args.action == "submit":
-                    if not args.config:
-                        parser.error("kernel submit requires --config")
-                    request = WardenAuditRequest.model_validate(json.loads(Path(args.config).read_text(encoding="utf-8")))
-                    result = client.submit_audit(request.to_warden_payload(), start_run=not args.plan_only)
                 else:
                     if not args.config:
-                        parser.error("kernel run requires --config")
+                        parser.error(f"kernel {args.action} requires --config")
                     values = json.loads(Path(args.config).read_text(encoding="utf-8"))
                     if args.plan_only:
                         values["start_run"] = False
@@ -280,6 +277,8 @@ def main() -> None:
                     result = WardenLifecycleService(
                         client, experiences=store, workflows=workflow_store
                     ).execute(request, approval_valid=approved)
+                    if args.action == "submit":
+                        result["submission_status"] = result["status"]
                 print(json.dumps(result, ensure_ascii=False, indent=2))
             except (WardenKernelError, ValueError, OSError, json.JSONDecodeError) as exc:
                 print(json.dumps({"status": "error", "error": str(exc)}, ensure_ascii=False, indent=2), file=sys.stderr)

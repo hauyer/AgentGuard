@@ -7,13 +7,24 @@ lost. Ambiguous submission states require reconciliation rather than auto-retry.
 """
 from __future__ import annotations
 
+import errno
 import hashlib
 import json
+import os
 import sqlite3
-from datetime import datetime, timezone
+from collections.abc import Iterator, Mapping
+from contextlib import contextmanager
+from datetime import UTC, datetime
 from pathlib import Path
 from threading import RLock
-from typing import Any, Mapping
+from typing import Any
+
+from agentguard.services.workflow_state import (
+    TERMINAL_JOURNAL_STATES,
+    WorkflowTransitionError,
+    project_workflow_state,
+    validate_transition,
+)
 
 
 class WorkflowConflictError(ValueError):
@@ -29,13 +40,60 @@ class WardenWorkflowStore:
         self._lock = RLock()
         self._initialize()
 
-    def _connect(self) -> sqlite3.Connection:
+    @contextmanager
+    def _connect(self) -> Iterator[sqlite3.Connection]:
         db = sqlite3.connect(self.path, timeout=15, check_same_thread=False)
         db.row_factory = sqlite3.Row
         db.execute("PRAGMA busy_timeout=15000")
         # Keep the SQLite default journal mode here. Setting WAL on every new
         # connection races when several workers initialize the store concurrently.
-        return db
+        try:
+            with db:
+                yield db
+        finally:
+            db.close()
+
+    @contextmanager
+    def execution_lock(self, request_id: str) -> Iterator[bool]:
+        """Hold a local OS lock for one workflow, released automatically on process exit.
+
+        Lock files contain no request content and are never deleted while active.
+        They coordinate local processes sharing this SQLite path, not remote hosts.
+        """
+        directory = self.path.parent / (self.path.name + ".locks")
+        directory.mkdir(parents=True, exist_ok=True)
+        path = directory / hashlib.sha256(request_id.encode("utf-8")).hexdigest()
+        with path.open("a+b") as handle:
+            if path.stat().st_size == 0:
+                handle.write(b"\0")
+                handle.flush()
+            handle.seek(0)
+            try:
+                if os.name == "nt":
+                    import msvcrt
+
+                    msvcrt.locking(handle.fileno(), msvcrt.LK_NBLCK, 1)
+                else:
+                    import fcntl
+
+                    fcntl.flock(handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+            except OSError as exc:
+                if exc.errno not in {errno.EACCES, errno.EAGAIN}:
+                    raise
+                yield False
+                return
+            try:
+                yield True
+            finally:
+                handle.seek(0)
+                if os.name == "nt":
+                    import msvcrt
+
+                    msvcrt.locking(handle.fileno(), msvcrt.LK_UNLCK, 1)
+                else:
+                    import fcntl
+
+                    fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
 
     def _initialize(self) -> None:
         with self._connect() as db:
@@ -71,17 +129,24 @@ class WardenWorkflowStore:
 
     @staticmethod
     def _now() -> str:
-        return datetime.now(timezone.utc).isoformat()
+        return datetime.now(UTC).isoformat()
 
     @staticmethod
     def _decode(row: sqlite3.Row) -> dict[str, Any]:
+        request = json.loads(row["request_json"])
+        context = json.loads(row["context_json"])
+        result = json.loads(row["result_json"]) if row["result_json"] else None
         return {
             "request_id": row["request_id"],
             "request_hash": row["request_hash"],
             "status": row["status"],
-            "request": json.loads(row["request_json"]),
-            "context": json.loads(row["context_json"]),
-            "result": json.loads(row["result_json"]) if row["result_json"] else None,
+            "request": request,
+            "context": context,
+            "result": result,
+            "workflow_status": project_workflow_state(row["status"], context, result).value,
+            "plan_id": (context.get("plan") or {}).get("plan_id"),
+            "run_id": (context.get("run") or {}).get("run_id"),
+            "authorization_ref": request.get("authorization_ref"),
             "error_code": row["error_code"],
             "error_message": row["error_message"],
             "revision": row["revision"],
@@ -128,14 +193,28 @@ class WardenWorkflowStore:
             if row is None:
                 raise KeyError(request_id)
             old_status = row["status"]
+            validate_transition(old_status, status)
+            if old_status in TERMINAL_JOURNAL_STATES:
+                existing = self._decode(row)
+                if (
+                    (result is not None and dict(result) != existing["result"])
+                    or (context is not None and any(
+                        existing["context"].get(key) != value for key, value in context.items()
+                    ))
+                ):
+                    raise WorkflowTransitionError("Terminal workflow data cannot be overwritten")
+                return existing
             old_context = json.loads(row["context_json"])
             if context is not None:
                 old_context.update(context)
             result_json = json.dumps(result, ensure_ascii=False, sort_keys=True, separators=(",", ":")) if result is not None else row["result_json"]
             db.execute("""UPDATE warden_workflows SET status=?, context_json=?, result_json=?, error_code=?, error_message=?, revision=revision+1, updated_at=? WHERE request_id=?""",
                 (status, json.dumps(old_context, ensure_ascii=False, sort_keys=True, separators=(",", ":")), result_json, error_code, error_message, now, request_id))
+            event_detail = dict(detail or {})
+            if error_code:
+                event_detail["error_code"] = error_code
             db.execute("INSERT INTO warden_workflow_events(request_id, from_status, to_status, detail_json, created_at) VALUES (?, ?, ?, ?, ?)",
-                (request_id, old_status, status, json.dumps(detail or {}, ensure_ascii=False, sort_keys=True), now))
+                (request_id, old_status, status, json.dumps(event_detail, ensure_ascii=False, sort_keys=True), now))
             updated = db.execute("SELECT * FROM warden_workflows WHERE request_id=?", (request_id,)).fetchone()
             db.commit()
             return self._decode(updated)
@@ -163,3 +242,33 @@ class WardenWorkflowStore:
     def count(self) -> int:
         with self._connect() as db:
             return int(db.execute("SELECT COUNT(*) FROM warden_workflows").fetchone()[0])
+
+    def record_processing_attempt(self, request_id: str) -> None:
+        """Append an attempt under the caller's execution lock; terminal replays are read-only."""
+        entry = self.get(request_id)
+        if entry is None:
+            raise KeyError(request_id)
+        if entry["status"] in TERMINAL_JOURNAL_STATES:
+            return
+        self.update(request_id, entry["status"],
+                    error_code=entry["error_code"], error_message=entry["error_message"], detail={
+            "operation": "process_workflow", "is_retry": entry["revision"] > 0,
+            "is_recovery": entry["status"] not in {"created", "preflighting"},
+        })
+
+    def execution_statistics(self, request_id: str) -> dict[str, Any]:
+        """Derive counters from the existing durable events without a second database."""
+        events = self.events(request_id)
+        attempts = [e["detail"] for e in events if e["detail"].get("operation") == "process_workflow"]
+        return {
+            "processing_attempts": len(attempts),
+            "retry_count": sum(bool(item.get("is_retry")) for item in attempts),
+            "recovery_count": sum(bool(item.get("is_recovery")) for item in attempts),
+            "plan_submission_attempts": sum(
+                e["detail"].get("operation") == "create_audit_plan" for e in events
+            ),
+            "run_submission_attempts": sum(
+                e["detail"].get("operation") == "start_run" for e in events
+            ),
+            "legacy_attempt_history": not attempts or all(item.get("is_retry") for item in attempts),
+        }

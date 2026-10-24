@@ -50,6 +50,62 @@ class WardenLifecycleService:
         *,
         approval_valid: bool = False,
     ) -> dict[str, Any]:
+        """Serialize the same durable request across local threads and processes."""
+        if request.mode == "defense_evaluation" and not approval_valid:
+            return self._execute_new(request, approval_valid=False, workflow_id=None)
+        if self.workflows is None:
+            return self._execute_new(request, approval_valid=approval_valid, workflow_id=None)
+        self.workflows.begin(request.request_id, request.model_dump(mode="json"))
+        with self.workflows.execution_lock(request.request_id) as acquired:
+            if not acquired:
+                entry = self.workflows.get(request.request_id) or {}
+                return {
+                    "kernel": "WARDEN", "status": "in_progress",
+                    "workflow_id": request.request_id,
+                    "workflow_status": entry.get("workflow_status", "unknown"),
+                    "plan_id": entry.get("plan_id"), "run_id": entry.get("run_id"),
+                    "causal_claim_status": "not_assessed",
+                    "note": "This workflow is already being processed; no duplicate submission was made.",
+                }
+            self.workflows.record_processing_attempt(request.request_id)
+            result = self._execute_journaled(request, approval_valid=approval_valid)
+            result["workflow_status"] = (
+                self.workflows.get(request.request_id) or {}
+            ).get("workflow_status", "unknown")
+            result["statistics"] = self.workflows.execution_statistics(request.request_id)
+            return result
+
+    @staticmethod
+    def cancel_pending(workflows: WardenWorkflowStore, request_id: str) -> dict[str, Any]:
+        """Cancel only local work that has not reached an external submission stage."""
+        with workflows.execution_lock(request_id) as acquired:
+            entry = workflows.get(request_id)
+            if entry is None:
+                raise KeyError(request_id)
+            if (
+                not acquired or entry["status"] not in {"created", "preflighting"}
+                or entry.get("plan_id") or entry.get("run_id")
+            ):
+                return {
+                    "status": "unsupported", "error_code": "WARDEN_CANCEL_UNSUPPORTED",
+                    "workflow_id": request_id, "workflow_status": entry["workflow_status"],
+                    "note": "No external cancellation API is available; the workflow was not changed.",
+                }
+            result = {
+                "status": "cancelled", "workflow_id": request_id,
+                "workflow_status": "cancelled", "causal_claim_status": "not_assessed",
+                "note": "Local pending work cancelled before external plan or run submission.",
+            }
+            workflows.update(request_id, "cancelled", context={"stage": "cancelled"},
+                             result=result, detail={"operation": "cancel_local_pending"})
+            return result
+
+    def _execute_journaled(
+        self,
+        request: WardenAuditRequest,
+        *,
+        approval_valid: bool = False,
+    ) -> dict[str, Any]:
         """Execute idempotently when a durable workflow journal is configured.
 
         The request_id is the idempotency key. Completed responses are replayed;
@@ -149,6 +205,9 @@ class WardenLifecycleService:
         if workflow_id and self.workflows:
             self.workflows.update(workflow_id, "plan_submitting", context={"stage": "plan_submitting", "preflight": preflight}, detail={"operation": "create_audit_plan"})
         plan = self.client.create_audit_plan(request.to_warden_payload())
+        plan_id = plan.get("plan_id")
+        if not isinstance(plan_id, str) or not plan_id.strip():
+            raise WardenKernelError("WARDEN plan response is missing plan_id", code="WARDEN_BAD_RESPONSE")
         if workflow_id and self.workflows:
             self.workflows.update(workflow_id, "plan_created", context={"stage": "plan_created", "preflight": preflight, "plan": plan}, detail={"plan_id": plan.get("plan_id"), "plan_status": plan.get("status")})
         plan_status = self._status(plan)
@@ -177,13 +236,14 @@ class WardenLifecycleService:
         if workflow_id and self.workflows:
             self.workflows.update(workflow_id, "run_submitting", context={"stage": "run_submitting", "preflight": preflight, "plan": plan}, detail={"operation": "start_run", "plan_id": plan_id})
         run = self.client.start_run(plan_id)
-        if workflow_id and self.workflows:
-            self.workflows.update(workflow_id, "run_submitted", context={"stage": "run_submitted", "preflight": preflight, "plan": plan, "run": run}, detail={"run_id": run.get("run_id"), "run_status": run.get("status")})
         run_id = run.get("run_id")
         if not isinstance(run_id, str) or not run_id.strip():
             raise WardenKernelError(
                 "WARDEN run response is missing run_id", code="WARDEN_BAD_RESPONSE"
             )
+        self._validate_run_identity(run, run_id=run_id, plan_id=plan_id)
+        if workflow_id and self.workflows:
+            self.workflows.update(workflow_id, "run_submitted", context={"stage": "run_submitted", "preflight": preflight, "plan": plan, "run": run}, detail={"run_id": run_id, "run_status": run.get("status")})
         run_status = self._status(run)
         if run_status not in _KNOWN:
             return self._report(
@@ -193,7 +253,9 @@ class WardenLifecycleService:
         if request.wait_for_completion and run_status in _ACTIVE:
             if workflow_id and self.workflows:
                 self.workflows.update(workflow_id, "polling", context={"stage": "polling", "preflight": preflight, "plan": plan, "run": run}, detail={"run_id": run.get("run_id")})
-            run, run_status, timed_out = self._poll(run, request.timeout_seconds, request.poll_interval_seconds)
+            run, run_status, timed_out = self._poll(
+                run, request.timeout_seconds, request.poll_interval_seconds, workflow_id=workflow_id,
+            )
             if timed_out:
                 return self._report(
                     status="timed_out", preflight=preflight, plan=plan, run=run,
@@ -286,8 +348,12 @@ class WardenLifecycleService:
             self.workflows.update(request_id, "run_submitting", context={"stage": "run_submitting"}, detail={"recovered_from": "plan_created", "plan_id": plan_id})
             try:
                 run = self.client.start_run(plan_id)
+                if isinstance(run.get("run_id"), str):
+                    self._validate_run_identity(run, run_id=run["run_id"], plan_id=plan_id)
             except Exception as exc:
                 self.workflows.update(request_id, "submission_uncertain", error_code=getattr(exc, "code", type(exc).__name__), error_message=str(exc)[:300], detail={"external_submission_may_have_succeeded": True})
+                if not isinstance(exc, WardenKernelError):
+                    raise
                 return self._reconciliation_report(self.workflows.get(request_id) or entry)
             run_id = run.get("run_id")
             if not isinstance(run_id, str) or not run_id.strip():
@@ -302,6 +368,7 @@ class WardenLifecycleService:
                 return self._reconciliation_report(entry)
             try:
                 run = self.client.get_run(run_id)
+                self._validate_run_identity(run, run_id=run_id, plan_id=plan.get("plan_id"))
             except WardenKernelError as exc:
                 return self._report(status="unavailable", preflight=preflight, plan=plan, run=run, note=f"Could not reconcile WARDEN run ({exc.code}); no new run was submitted.")
             run_status = self._status(run)
@@ -311,7 +378,9 @@ class WardenLifecycleService:
                 return {**result, "workflow_id": request_id, "recovered": True}
             if request.wait_for_completion and run_status in _ACTIVE:
                 self.workflows.update(request_id, "polling", context={"stage": "polling", "preflight": preflight, "plan": plan, "run": run}, detail={"recovered": True, "run_id": run_id})
-                run, run_status, timed_out = self._poll(run, request.timeout_seconds, request.poll_interval_seconds)
+                run, run_status, timed_out = self._poll(
+                    run, request.timeout_seconds, request.poll_interval_seconds, workflow_id=request_id,
+                )
                 if timed_out:
                     result = self._report(status="timed_out", preflight=preflight, plan=plan, run=run, note="Polling deadline elapsed during recovery; WARDEN may still be running. No experience was recorded.")
                     self.workflows.update(request_id, "timed_out", context={"stage": "timed_out", "preflight": preflight, "plan": plan, "run": run}, result=result, detail={"recovered": True})
@@ -401,7 +470,8 @@ class WardenLifecycleService:
         }
 
     def _poll(
-        self, initial_run: dict[str, Any], timeout_seconds: float, interval_seconds: float
+        self, initial_run: dict[str, Any], timeout_seconds: float, interval_seconds: float,
+        *, workflow_id: str | None = None,
     ) -> tuple[dict[str, Any], str, bool]:
         run = initial_run
         run_id = run.get("run_id")
@@ -412,14 +482,27 @@ class WardenLifecycleService:
         while self._monotonic() < deadline:
             remaining = deadline - self._monotonic()
             self._sleep(min(delay, max(0.0, remaining)))
+            if self._monotonic() >= deadline:
+                return run, self._status(run), True
+            previous_status = self._status(run)
             run = self.client.get_run(run_id)
+            self._validate_run_identity(run, run_id=run_id, plan_id=initial_run.get("plan_id"))
             status = self._status(run)
+            if workflow_id and self.workflows and status != previous_status:
+                self.workflows.update(workflow_id, "polling", context={
+                    "stage": "polling", "run": run,
+                }, detail={"remote_status_from": previous_status, "remote_status_to": status})
             if status not in _KNOWN:
                 return run, "unknown", False
             if status not in _ACTIVE:
                 return run, status, False
             delay = min(delay * 1.6, 5.0)
         return run, self._status(run), True
+
+    @staticmethod
+    def _validate_run_identity(run: Mapping[str, Any], *, run_id: str, plan_id: str | None) -> None:
+        if run.get("run_id") != run_id or (plan_id is not None and run.get("plan_id") != plan_id):
+            raise WardenKernelError("WARDEN run identity does not match the workflow", code="WARDEN_BAD_RESPONSE")
 
     def _record_experience(
         self, request: WardenAuditRequest, run: Mapping[str, Any]

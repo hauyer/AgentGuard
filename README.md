@@ -2,8 +2,9 @@
 
 > **当前开发边界（2026-10-24）：** 在 `feature/agentguard-upper-layer-v1`
 > 完成上层平台 A0–A8；WARDEN、FRACTAL-Bench、StegoPot 只读。
-> A0、A1 已完成，见[A0 报告](docs/migration/UPPER_LAYER_A0.md)、
+> A0–A2 已完成，见[A0 报告](docs/migration/UPPER_LAYER_A0.md)、
 > [A1 报告](docs/migration/UPPER_LAYER_A1.md)、
+> [A2 报告](docs/migration/UPPER_LAYER_A2.md)、
 > [模块依赖图](docs/migration/DEPENDENCY_GRAPH.md)和
 > [依赖阻塞](docs/DEPENDENCY_BLOCKERS.md)。通过候选验收后才建立独立
 > `AgentGuard-QWB-App`，比赛应用只调用 AgentGuard 公共接口。
@@ -54,6 +55,12 @@ AGENTGUARD_WARDEN_READ_RETRIES=0
 `AGENTGUARD_WARDEN_READ_RETRIES` 可设为 0–3，只重试 GET 的临时网络错误或
 408/429/502/503/504；提交类请求始终只发送一次。单次连接/读取使用上述超时，
 单个 JSON 响应最多 2 MiB。写请求使用已核对的 API v1；每次工作流预检刷新健康状态。
+
+`kernel submit`、`kernel run` 和两个 API 提交入口共用同一 SQLite 日志。
+同一请求的并发处理受本地跨进程锁保护；返回的 `workflow_status` 表示业务
+状态，旧 `status` 字段保持兼容。已知运行可在网络恢复后继续查询。
+`POST /v1/kernel/workflows/{request_id}/cancel` 只取消尚未提交的本地任务；
+外部运行取消不受支持时明确返回 unsupported。
 
 新增接口：
 

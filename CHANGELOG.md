@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased — Upper-layer platform A2
+
+- Serialized durable workflow execution across local threads/processes and closed SQLite connections deterministically.
+- Added journal transition rules, immutable terminal data, business-state projection, durable attempt counters, and observed remote-status events.
+- Unified API audit aliases and CLI submit/run behind the existing lifecycle journal; preserved uncertainty for malformed submission responses and checked current defense approval on resume.
+- Added local pending cancellation while reporting external cancellation as unsupported; validated 195 tests and a live blocked-workflow replay.
+
 ## Unreleased — Upper-layer platform A1
 
 - Hardened the existing WARDEN client with credential-safe URL validation, redirect rejection, bounded JSON responses, strict response checks, and optional GET-only retries.

@@ -339,35 +339,9 @@ def create_app(
 
     @app.post("/v1/kernel/audits")
     def submit_kernel_audit(request: WardenAuditRequest) -> dict:
-        """Submit a low-level audit to WARDEN; AgentGuard does not execute local duplicate kernels."""
-        if request.mode == "defense_evaluation" and not approval_is_valid(request.authorization_ref):
-            raise HTTPException(
-                status_code=403,
-                detail={"error": "OPERATOR_APPROVAL_REQUIRED", "message": "defense_evaluation requires a valid AgentGuard approval reference"},
-            )
-        client = _configured_warden_client()
-        if client is None:
-            raise HTTPException(status_code=503, detail={"error": "WARDEN_NOT_CONFIGURED"})
-        try:
-            result = client.submit_audit(request.to_warden_payload(), start_run=request.start_run)
-        except WardenKernelError as exc:
-            status_code = 502 if exc.status_code is None or exc.status_code >= 500 else 400
-            raise HTTPException(
-                status_code=status_code,
-                detail={"error": exc.code, "message": str(exc)},
-            ) from exc
-        plan = result.get("plan") if isinstance(result, dict) else {}
-        run = result.get("run") if isinstance(result, dict) else None
-        state = str((run or {}).get("status") or (plan or {}).get("status") or result.get("submission_status") or "unknown").lower()
-        return {
-            "kernel": "WARDEN",
-            "status": state,
-            "plan": plan,
-            "run": run,
-            "submission_status": result.get("submission_status", state),
-            "causal_claim_status": "not_assessed" if state in {"blocked", "failed", "unavailable", "invalid"} else "awaiting_warden_evidence",
-            "note": "A planned or queued audit is not a causal finding. Read WARDEN's run evidence before making claims.",
-        }
+        """Compatibility alias using the same durable workflow and approval gate."""
+        result = execute_kernel_workflow(request)
+        return {**result, "submission_status": result["status"]}
 
     @app.get("/v1/kernel/audits/{plan_id}")
     def get_kernel_audit_plan(plan_id: str) -> dict:
@@ -433,6 +407,7 @@ def create_app(
                 {
                     "request_id": entry["request_id"],
                     "status": entry["status"],
+                    "workflow_status": entry["workflow_status"],
                     "revision": entry["revision"],
                     "created_at": entry["created_at"],
                     "updated_at": entry["updated_at"],
@@ -445,6 +420,14 @@ def create_app(
             "count": len(entries),
         }
 
+    @app.post("/v1/kernel/workflows/{request_id}/cancel")
+    def cancel_pending_kernel_workflow(request_id: str) -> dict:
+        """Cancel unsubmitted local work; never claim remote model cancellation."""
+        try:
+            return WardenLifecycleService.cancel_pending(app.state.warden_workflows, request_id)
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail={"error": "WORKFLOW_NOT_FOUND"}) from exc
+
     @app.get("/v1/kernel/workflows/{request_id}")
     def get_kernel_workflow(request_id: str) -> dict:
         """Inspect a durable upper-layer workflow record without contacting WARDEN."""
@@ -454,7 +437,9 @@ def create_app(
         return {
             "request_id": entry["request_id"],
             "status": entry["status"],
+            "workflow_status": entry["workflow_status"],
             "revision": entry["revision"],
+            "statistics": app.state.warden_workflows.execution_statistics(request_id),
             "created_at": entry["created_at"],
             "updated_at": entry["updated_at"],
             "plan_id": (entry.get("context") or {}).get("plan", {}).get("plan_id"),

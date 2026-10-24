@@ -176,6 +176,8 @@ def test_defense_evaluation_requires_agentguard_approval(tmp_path, monkeypatch):
 def test_kernel_audit_endpoint_forwards_request_and_preserves_blocked_status(tmp_path, monkeypatch):
     transport = FakeTransport([
         HEALTH,
+        (200, []),
+        (200, ["contract-1"]),
         (200, {"plan_id": "plan-9", "status": "blocked", "blockers": ["Probe not found"]}),
     ])
     kernel = WardenKernelClient("https://warden.local", transport=transport)
@@ -188,6 +190,6 @@ def test_kernel_audit_endpoint_forwards_request_and_preserves_blocked_status(tmp
     assert body["status"] == "blocked"
     assert body["run"] is None
     assert body["causal_claim_status"] == "not_assessed"
-    sent = json.loads(transport.calls[1][3])
+    sent = json.loads(transport.calls[3][3])
     assert "start_run" not in sent
     assert sent["request_id"] == "req-1"

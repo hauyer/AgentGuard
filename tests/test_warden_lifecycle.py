@@ -682,6 +682,10 @@ def test_poll_network_failure_retains_known_run_for_retry(tmp_path):
         service.execute(value)
     assert journal.get(value.request_id)["status"] == "run_submitted"
     assert service.execute(value)["status"] == "completed"
+    assert any(
+        event["detail"].get("error_code") == "WARDEN_TIMEOUT"
+        for event in journal.events(value.request_id)
+    )
     assert sum(call[0] == "create_audit_plan" for call in kernel.calls) == 1
     assert sum(call[0] == "start_run" for call in kernel.calls) == 1
 
@@ -700,6 +704,61 @@ def test_legacy_interrupted_workflow_with_run_id_is_not_resubmitted(tmp_path):
     result = WardenLifecycleService(kernel, workflows=journal).execute(value)
     assert result["status"] == "completed"
     assert not any(call[0] in {"create_audit_plan", "start_run"} for call in kernel.calls)
+
+
+@pytest.mark.parametrize("invalid_run", [
+    {"plan_id": "plan-1", "status": "completed"},
+    {"run_id": "run-1", "plan_id": "different-plan", "status": "completed"},
+])
+def test_bad_submission_response_preserves_uncertainty_without_resubmit(tmp_path, invalid_run):
+    from agentguard.adapters.warden import WardenKernelError
+    from agentguard.services.warden_workflow_store import WardenWorkflowStore
+
+    kernel = FakeKernel(run=invalid_run)
+    journal = WardenWorkflowStore(tmp_path / "workflows.sqlite3")
+    service = WardenLifecycleService(kernel, workflows=journal)
+    with pytest.raises(WardenKernelError):
+        service.execute(request())
+    assert journal.get("req-1")["status"] == "submission_uncertain"
+    assert service.execute(request())["status"] == "reconciliation_required"
+    assert sum(call[0] == "start_run" for call in kernel.calls) == 1
+
+
+def test_resume_cannot_submit_defense_run_without_current_approval(tmp_path):
+    from agentguard.services.warden_workflow_store import WardenWorkflowStore
+
+    value = request(mode="defense_evaluation")
+    journal = WardenWorkflowStore(tmp_path / "workflows.sqlite3")
+    journal.begin(value.request_id, value.model_dump(mode="json"))
+    journal.update(value.request_id, "plan_created", context={"plan": {"plan_id": "plan-1"}})
+    kernel = FakeKernel()
+    result = WardenLifecycleService(kernel, workflows=journal).execute(value)
+    assert result["status"] == "blocked"
+    assert kernel.calls == []
+    assert journal.get(value.request_id)["status"] == "plan_created"
+
+
+def test_every_observed_remote_status_change_is_journaled(tmp_path):
+    from agentguard.services.warden_workflow_store import WardenWorkflowStore
+
+    kernel = FakeKernel(
+        run={"run_id": "run-1", "plan_id": "plan-1", "status": "queued"},
+        poll_runs=[
+            {"run_id": "run-1", "plan_id": "plan-1", "status": "running"},
+            {"run_id": "run-1", "plan_id": "plan-1", "status": "completed"},
+        ],
+    )
+    clock = FakeClock()
+    store = WardenWorkflowStore(tmp_path / "workflows.sqlite3")
+    result = WardenLifecycleService(
+        kernel, workflows=store, sleep=clock.sleep, monotonic=clock.monotonic,
+    ).execute(request(wait_for_completion=True))
+    assert result["workflow_status"] == "completed"
+    transitions = [
+        (event["detail"]["remote_status_from"], event["detail"]["remote_status_to"])
+        for event in store.events("req-1") if "remote_status_to" in event["detail"]
+    ]
+    assert transitions == [("queued", "running"), ("running", "completed")]
 
 
 def test_workflow_api_lists_durable_workflow_summaries(tmp_path, monkeypatch):

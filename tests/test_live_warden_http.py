@@ -40,3 +40,7 @@ def test_live_warden_preflight_plan_and_sqlite_journal(tmp_path):
     assert "truth" not in (result.get("plan") or {}).get("threat_contract", {})
     assert journal.get(request.request_id)["status"] == "finished"
     assert journal.events(request.request_id)
+    replay = WardenLifecycleService(client, workflows=journal).execute(request)
+    assert replay["idempotent_replay"] is True
+    assert replay["workflow_status"] == result["status"]
+    assert replay["statistics"]["processing_attempts"] == 1

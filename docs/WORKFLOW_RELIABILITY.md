@@ -1,5 +1,37 @@
 # AgentGuard 0.9.0：WARDEN 工作流可靠性与恢复
 
+## 当前上层 A2（2026-10-24）
+
+生产 API 的 `/v1/kernel/audits` 与 `/v1/kernel/workflows`、CLI 的 submit/run
+现在共用 `WardenLifecycleService` 和同一个 SQLite 日志。兼容提交入口新增
+预检、幂等和当前审批校验，不再绕过工作流直接提交。
+
+同一 SQLite 路径和 request_id 使用本地操作系统文件锁协调处理；未取得锁
+的并发请求返回 `in_progress` 与已有业务状态，不再次提交。进程异常退出由
+操作系统释放锁，远端引用仍在 SQLite 中。锁文件只存一个无敏感信息的字节，
+不能在服务运行时删除。此保证针对同机本地文件系统，不支持多主机网络盘
+部署；需要跨主机队列时必须另外评估部署方案。
+
+旧数据库 `status` 保持兼容，新的 `workflow_status` 将其映射到统一业务
+状态；例如日志 `finished` + 计划结果 `planned` 仍显示 planned，不会显示
+模型 completed。状态映射及合法迁移见 `services/workflow_state.py`。终态
+不能倒退或改写结果；本地 `timed_out` 是跟踪期限，不是远端已终止，仍能恢复。
+
+每次实际处理、提交和恢复写入追加事件，`statistics` 从同一事件表计算重试与
+恢复计数。旧版本没有记录处理次数的历史通过 `legacy_attempt_history` 标记，
+不能把缺失的历史当成零成本。轮询保存每次实际观察到的远端状态变化。
+
+任务默认不等待模型完成，以 WARDEN run ID 跟踪；需要等待时使用有界轮询。
+未新增不可恢复的模型后台线程或第二套任务数据库。相同请求再次提交可恢复
+已知外部运行；GET 工作流详情只读取本地最近快照，不自动联系 WARDEN。
+
+新增取消入口只允许取消未提交的本地 created/preflighting 工作。已有计划、
+运行或并发处理时不会改成 cancelled，外部取消返回 unsupported。没有向
+WARDEN 猜测或新增取消路由。
+
+验证：195 测试通过、2 跳过；真实 WARDEN blocked 工作流重放 1 通过。
+详细边界与兼容变化见 `migration/UPPER_LAYER_A2.md`。
+
 ## 本版本解决的问题
 
 0.8.0 已具备 WARDEN 生命周期调用，但进程在远端计划/运行提交期间退出时，单靠内存状态无法区分“请求没有到达内核”和“内核已接收但响应丢失”。如果客户端直接重试，可能创建重复任务。
