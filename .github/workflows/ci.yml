@@ -18,12 +18,19 @@ jobs:
           python-version: ${{ matrix.python-version }}
           cache: pip
       - name: Install package and development tools
-        run: python -m pip install -e ".[dev]"
+        run: python -m pip install -c requirements/dev.lock -e ".[dev]"
       - name: Validate Python syntax
         run: python -m compileall -q src scripts
       - name: Lint
         run: ruff check src tests scripts
       - name: Run tests
         run: pytest
+      - name: Build release artifacts
+        run: python -m build --no-isolation --sdist --wheel --outdir dist
+      - name: Install wheel in a clean environment
+        run: |
+          python -m venv "$RUNNER_TEMP/agentguard-release-venv"
+          "$RUNNER_TEMP/agentguard-release-venv/bin/python" -m pip install -c requirements/runtime.lock dist/agentguard-1.0.0rc1-py3-none-any.whl
+          "$RUNNER_TEMP/agentguard-release-venv/bin/agentguard" --help
       - name: Verify synthetic demo
         run: agentguard demo --no-auto-intervene

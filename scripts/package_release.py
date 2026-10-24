@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import tomllib
 import zipfile
 from pathlib import Path
 
@@ -44,13 +45,23 @@ def package(project_root: Path, output: Path) -> tuple[str, int]:
     return digest, len(names)
 
 
+def project_version(project_root: Path) -> str:
+    metadata = tomllib.loads((project_root / "pyproject.toml").read_text(encoding="utf-8"))
+    version = metadata.get("project", {}).get("version")
+    if not isinstance(version, str) or not version:
+        raise ValueError("pyproject.toml must define a project version")
+    return version
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="Package a clean AgentGuard source ZIP")
     parser.add_argument("--project-root", default=str(Path(__file__).resolve().parents[1]))
-    parser.add_argument("--output", default="dist/AgentGuard-0.9.0.zip")
+    parser.add_argument("--output")
     args = parser.parse_args()
-    digest, count = package(Path(args.project_root), Path(args.output))
-    print(f"Created {Path(args.output).resolve()}")
+    project_root = Path(args.project_root)
+    output = Path(args.output) if args.output else Path("dist") / f"AgentGuard-{project_version(project_root)}.zip"
+    digest, count = package(project_root, output)
+    print(f"Created {output.resolve()}")
     print(f"Files: {count}")
     print(f"SHA-256: {digest}")
 

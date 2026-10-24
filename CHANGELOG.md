@@ -1,5 +1,15 @@
 # Changelog
 
+## 1.0.0-rc1 — Candidate acceptance
+
+- Repaired CI under the existing Ruff rules: sorted imports, removed unused imports, replaced unsafe broad exception handling with typed handling, and corrected small idioms without disabling checks.
+- Recovered meaningful coverage hidden by repeated test-function names; test collection increased from 246 to 255 cases. Exact duplicate cancellation coverage remains represented once.
+- Split stable business route declarations into `agentguard.api.public_routes` and the static console into `agentguard.api.console`; existing handlers and route contracts remain unchanged.
+- Rejected known hidden-evaluator fields recursively in WARDEN request metadata and sanitized request-validation responses so invalid values are not echoed to clients or persisted in the workflow journal.
+- Added a regression contract covering all public and legacy route methods, deprecated Probe endpoints, request schemas, and pagination parameters.
+- Full A8 acceptance results and external blockers are recorded in `docs/release/` and `docs/migration/UPPER_LAYER_A8.md`.
+- Python 3.11/3.12/3.13 Actions matrix remains the authoritative cross-version check. Real WARDEN HTTP, model execution, and causal-defense validation are blocked when no WARDEN URL/executor is configured; no real causal result is claimed.
+
 ## Unreleased — Upper-layer platform A7
 
 - Added stable `/v1/system`, `/v1/workflows`, `/v1/investigations`, `/v1/evidence`, `/v1/defense-policies`, and `/v1/reports` business routes while keeping the existing kernel/run paths available.

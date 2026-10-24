@@ -194,11 +194,12 @@ def test_rate_limit_and_cors_require_explicit_origins(tmp_path, monkeypatch):
         assert response.headers["access-control-allow-origin"] == "https://console.example"
 
 
-def test_api_fails_closed_if_audit_reservation_is_unavailable(tmp_path, monkeypatch):
+def test_api_fails_closed_if_audit_reservation_is_unavailable(tmp_path, monkeypatch, caplog):
     app = create_app(data_dir=tmp_path / "audit-failure")
+    hidden_value = "audit-error-oracle-sentinel"
 
     def unavailable(**kwargs):
-        raise OSError("database unavailable")
+        raise OSError(hidden_value)
 
     monkeypatch.setattr(app.state.warden_workflows, "begin_api_audit_event", unavailable)
     with TestClient(app) as client:
@@ -206,6 +207,24 @@ def test_api_fails_closed_if_audit_reservation_is_unavailable(tmp_path, monkeypa
     assert response.status_code == 503
     assert response.json()["detail"]["error"] == "API_AUDIT_UNAVAILABLE"
     assert response.headers.get("X-Request-ID")
+    assert hidden_value not in caplog.text
+
+
+def test_unhandled_api_exception_log_does_not_echo_exception_message(tmp_path, caplog):
+    app = create_app(data_dir=tmp_path / "exception-log")
+    hidden_value = "request-error-oracle-sentinel"
+
+    def fail_with_sensitive_exception() -> dict[str, str]:
+        raise RuntimeError(hidden_value)
+
+    app.add_api_route("/test-sensitive-error", fail_with_sensitive_exception, methods=["GET"])
+    with TestClient(app) as client:
+        response = client.get("/test-sensitive-error")
+
+    assert response.status_code == 500
+    assert response.json()["detail"]["error"] == "INTERNAL_SERVER_ERROR"
+    assert hidden_value not in response.text
+    assert hidden_value not in caplog.text
 
 
 def test_hidden_truth_metadata_is_rejected_without_api_or_sqlite_leak(tmp_path, caplog):

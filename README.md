@@ -2,7 +2,7 @@
 
 > **当前开发边界（2026-10-24）：** 在 `feature/agentguard-upper-layer-v1`
 > 完成上层平台 A0–A8；WARDEN、FRACTAL-Bench、StegoPot 只读。
-> A0–A7 已完成软件实现，A8 候选验收待完成，见[A0 报告](docs/migration/UPPER_LAYER_A0.md)、
+> A0–A7 已完成；A8 正在进行候选验收，跨版本 CI 和真实 WARDEN 烟测状态单独记录，见[A0 报告](docs/migration/UPPER_LAYER_A0.md)、
 > [A1 报告](docs/migration/UPPER_LAYER_A1.md)、
 > [A2 报告](docs/migration/UPPER_LAYER_A2.md)、
 > [A3 兼容隔离](docs/migration/UPPER_LAYER_A3.md)、
@@ -14,11 +14,15 @@
 > [依赖阻塞](docs/DEPENDENCY_BLOCKERS.md)。通过候选验收后才建立独立
 > `AgentGuard-QWB-App`，比赛应用只调用 AgentGuard 公共接口。
 
+A8 验收材料：[测试报告](docs/release/A8_TEST_REPORT.md)、[成熟度矩阵](docs/release/FEATURE_MATURITY.md)、
+[架构图](docs/release/ARCHITECTURE.md)、[API 参考](docs/release/API_REFERENCE.md)、
+[部署指南](docs/release/DEPLOYMENT.md)和[已知限制](docs/release/KNOWN_LIMITATIONS.md)。
+
 > **1.0.0 迁移进度：** 阶段 0 审计和阶段 1 HTTP 联调已完成；额外打通了 WARDEN → StegoPot → 本地 7B 模型的观察性运行，并由 AgentGuard 接收证据。该运行没有因果干预，8 个实验条件中 2 个失败。阶段 2 的重复底层代码尚未删除。查看[真实模型联调记录](docs/migration/OBSERVATION_RUN.md)、[阶段 1 实测报告](docs/migration/STAGE1_REPORT.md)、[重复能力与调用点](docs/migration/DUPLICATION_MAP.md)和[迁移顺序](docs/migration/MIGRATION_PLAN.md)。
 
 阶段 2 已关闭通过 `create_app(engine=...)` 注入真实模型运行时和直接配对执行器的路径；真实审计请使用 `/v1/kernel/workflows`。旧 Probe、白盒和 StegoPot Python 接口仍只供离线兼容研究，迁移和删除条件见[阶段 2 边界报告](docs/migration/STAGE2_BOUNDARY.md)。
 
-**AgentGuard 0.9.0** 是一个面向多 Agent 信息流风险研究的上层工程框架，目标是连接 FRACTAL-Bench 的场景/独立评价能力与 StegoPot 的运行时能力，并提供检测、主动调查、受控干预、定向防御和证据审计。
+**AgentGuard 1.0.0-rc1** 是 AgentGuard 1.0.0 候选版，面向多 Agent 信息流风险研究，提供以上层治理为主的调查编排、WARDEN 审计代理、策略审批、证据整理和稳定公共 API。WARDEN 是生产审计的唯一底层内核；本地 Mock 只用于合成软件测试。
 
 > **重要边界：** 默认运行使用 `MockBackend`，只用于软件与接口验证。历史实测已完成本地 7B 观察运行，但完整条件组有失败，尚未验证真实因果干预或防御效果。任何合成指标都不能作为真实模型行为、真实防御效果或因果结论。
 
@@ -44,7 +48,7 @@
 
 逐项验收见 [`docs/IMPLEMENTATION_STATUS.md`](docs/IMPLEMENTATION_STATUS.md)，当前执行顺序以 [A0–A8 迁移计划](docs/migration/MIGRATION_PLAN.md)为准；旧总体设计保留为历史目标参考。
 
-## WARDEN 内核集成（0.9.0）
+## WARDEN 内核集成
 
 AgentGuard 将 **WARDEN** 作为低层因果审计内核的唯一权威来源：Probe/SAE 资源清单、审计计划编译、低层因果审计执行和内核证据由 WARDEN 负责；AgentGuard 保留上层策略、审批、经验检索、策略推荐、结果汇总和用户接口。AgentGuard 不会把本地模拟分数或缺失的运行资源包装成 WARDEN 结果。
 
@@ -329,6 +333,6 @@ agentguard doctor
 MIT
 
 
-## WARDEN 工作流可靠性（0.9.0）
+## WARDEN 工作流可靠性
 
 AgentGuard 将工作流状态与请求哈希持久化到 SQLite，支持幂等重放、已知 run/plan 恢复、冲突检测和审计事件查询。请先阅读 [`docs/WORKFLOW_RELIABILITY.md`](docs/WORKFLOW_RELIABILITY.md)。这不是远端 exactly-once 保证；不确定的远端提交会停止自动重试并要求对账。

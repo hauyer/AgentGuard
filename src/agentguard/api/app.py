@@ -32,6 +32,7 @@ from agentguard.adapters.mock import MockBackend
 from agentguard.adapters.warden import WardenKernelClient, WardenKernelError, warden_status
 from agentguard.agents.coordinator import AgentCoordinator
 from agentguard.agents.llm_advisor import LLMInvestigationAdvisor
+from agentguard.api.console import CONSOLE_HTML
 from agentguard.api.public_routes import create_public_router
 from agentguard.artifacts.local_store import ArtifactNotFoundError, LocalArtifactStore
 from agentguard.compat.linear_probe import (
@@ -261,8 +262,12 @@ def create_app(
             audit_event_id = app.state.warden_workflows.begin_api_audit_event(
                 request_id=request_id, method=request.method, actor_role=actor_role,
             )
-        except Exception:
-            logger.exception("AgentGuard API audit reservation failed (request_id=%s)", request_id)
+        except Exception as exc:  # noqa: BLE001 - fail closed if the audit sink cannot reserve an event
+            logger.error(
+                "AgentGuard API audit reservation failed (request_id=%s, exception_type=%s)",
+                request_id,
+                type(exc).__name__,
+            )
             response: Response = JSONResponse(
                 status_code=503,
                 content={"detail": {"error": "API_AUDIT_UNAVAILABLE", "request_id": request_id}},
@@ -303,8 +308,12 @@ def create_app(
             else:
                 try:
                     response = await call_next(request)
-                except Exception:
-                    logger.exception("Unhandled AgentGuard API error (request_id=%s)", request_id)
+                except Exception as exc:  # noqa: BLE001 - sanitize any unexpected API failure at the boundary
+                    logger.error(
+                        "Unhandled AgentGuard API error (request_id=%s, exception_type=%s)",
+                        request_id,
+                        type(exc).__name__,
+                    )
                     response = JSONResponse(
                         status_code=500,
                         content={"detail": {"error": "INTERNAL_SERVER_ERROR", "request_id": request_id}},
@@ -314,8 +323,13 @@ def create_app(
                 app.state.warden_workflows.finish_api_audit_event(
                     audit_event_id, path=matched_path, status_code=response.status_code,
                 )
-            except Exception:
-                logger.exception("AgentGuard API audit event could not be completed (request_id=%s)", request_id)
+            except Exception as exc:  # noqa: BLE001 - request processing must not expose audit storage failures
+                logger.error(
+                    "AgentGuard API audit event could not be completed "
+                    "(request_id=%s, exception_type=%s)",
+                    request_id,
+                    type(exc).__name__,
+                )
         response.headers["X-Request-ID"] = request_id
         response.headers["X-Content-Type-Options"] = "nosniff"
         response.headers["X-Frame-Options"] = "DENY"
@@ -1832,28 +1846,6 @@ def create_app(
     return app
 
 
-CONSOLE_HTML = r'''<!doctype html>
-<html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>AgentGuard 控制台</title><style>
-:root{font-family:system-ui,-apple-system,"Segoe UI",sans-serif;color:#202633;background:#f4f6f9}body{margin:0}header{background:#182334;color:#fff;padding:22px 28px}header h1{margin:0;font-size:23px}header p{margin:7px 0 0;color:#cbd5e1;font-size:13px}.wrap{max-width:1180px;margin:22px auto;padding:0 18px}.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:16px}.card{background:#fff;border:1px solid #e0e5ec;border-radius:12px;padding:18px;box-shadow:0 2px 5px #10182808}.card h2{font-size:16px;margin:0 0 12px}.muted{color:#64748b;font-size:13px}button,select,input{font:inherit;border:1px solid #cbd5e1;border-radius:7px;padding:8px 11px;background:white}button{background:#1d4ed8;color:white;border:0;cursor:pointer}button.secondary{background:#e8edf5;color:#243044}pre{white-space:pre-wrap;overflow-wrap:anywhere;background:#111827;color:#e5e7eb;border-radius:8px;padding:14px;font-size:12px;max-height:440px;overflow:auto}.pill{display:inline-block;padding:3px 8px;background:#e9eef8;border-radius:20px;font-size:12px;margin:2px}.section{margin-top:16px}.actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px}#status{margin-left:10px;font-size:13px;color:#475569}@media(max-width:640px){header{padding:18px}.wrap{padding:0 10px}}
-</style></head><body><header><h1>AgentGuard</h1><p>实验运行 · 风险发现 · 调查假设 · 防御预览 · 证据审计</p></header>
-<div class="wrap"><div class="grid"><section class="card"><h2>启动实验</h2><p class="muted">默认使用合成 Mock 后端；结果不能作为真实模型实验数据。</p><label for="token">API token（仅在服务端启用鉴权时填写）</label><input id="token" type="password" autocomplete="off" placeholder="可留空" style="width:100%;box-sizing:border-box;margin-top:6px;margin-bottom:12px"><label for="scenario">场景</label><br><select id="scenario" style="width:100%;margin-top:6px"></select><div class="actions"><button id="run">运行演示</button><button class="secondary" id="refresh">刷新场景</button><span id="status"></span></div></section>
-<section class="card"><h2>后端能力</h2><div id="capabilities" class="muted">加载中…</div></section><section class="card"><h2>最近运行</h2><div id="runs" class="muted">尚无运行记录</div><div class="actions"><button class="secondary" id="loadRuns">刷新运行</button></div></section></div>
-<section class="card section"><h2>运行详情</h2><div id="summary" class="muted">选择或启动一次运行后查看结果。</div><div class="actions"><button class="secondary" id="preview">生成防御预览</button><button class="secondary" id="evidence">查看证据索引</button></div><pre id="details">尚无报告</pre></section>
-<section class="card section"><h2>交互图与候选路径</h2><p class="muted">仅绘制采集到的事件边；候选路径是调查线索，不代表合谋或因果关系。</p><div id="graph" class="muted">运行一次实验后查看交互图。</div></section>
-<p class="muted">本控制台只调用本服务 API，不提供任意 Shell、Python 或文件系统执行入口。真实后端的高影响操作必须在隔离环境中经授权执行。</p></div>
-<script>
-let currentRun=null;const $=id=>document.getElementById(id);const show=(id,v)=>$(id).textContent=typeof v==='string'?v:JSON.stringify(v,null,2);
-async function api(path,opts={}){const token=$('token')?.value||'';const auth=token?{'X-AgentGuard-Token':token}:{};const r=await fetch(path,{...opts,headers:{'Content-Type':'application/json',...auth,...(opts.headers||{})}});const data=await r.json().catch(()=>({}));if(!r.ok)throw new Error(data.detail?.message||data.detail||r.statusText);return data}
-async function scenarios(){const data=await api('/v1/scenarios');$('scenario').replaceChildren(...data.items.map(s=>{const o=document.createElement('option');o.value=s.scenario_id;o.textContent=s.name+' ('+s.scenario_id+')';return o}));}
-async function loadCaps(){const c=await api('/v1/capabilities');show('capabilities',{provider:c.provider_id,mode:c.backend_mode,capabilities:c.capabilities,limitations:c.limitations});}
-async function loadRuns(){const d=await api('/v1/runs');const box=$('runs');box.replaceChildren();for(const r of [...(d.items||[]),...(d.jobs||[])].slice(0,12)){const b=document.createElement('button');b.className='secondary';b.style.margin='3px';b.textContent=(r.run_id||r.job_id)+' · '+r.status;b.onclick=()=>loadRun(r.run_id||r.job_id);box.appendChild(b)}if(!box.children.length)box.textContent='尚无运行记录'}
-function svgNode(name,attrs={}){const n=document.createElementNS('http://www.w3.org/2000/svg',name);for(const [k,v] of Object.entries(attrs))n.setAttribute(k,String(v));return n}
-async function renderGraph(id){const host=$('graph');host.replaceChildren();try{const response=await api('/v1/runs/'+encodeURIComponent(id)+'/graph');const g=response.graph;if(!g||!g.nodes?.length){host.textContent='当前运行没有可展示的图数据';return}const nodes=g.nodes.slice(0,16),edges=g.edges.slice(0,32),width=920,height=390,cx=width/2,cy=height/2,rx=width*0.39,ry=height*0.35;const positions=new Map();nodes.forEach((n,i)=>{const a=(2*Math.PI*i/Math.max(1,nodes.length))-Math.PI/2;positions.set(n.node_id,{x:cx+rx*Math.cos(a),y:cy+ry*Math.sin(a)})});const svg=svgNode('svg',{viewBox:`0 0 ${width} ${height}`,width:'100%',role:'img','aria-label':'Agent interaction graph'});const defs=svgNode('defs');const marker=svgNode('marker',{id:'arrow',viewBox:'0 0 10 10',refX:8,refY:5,markerWidth:5,markerHeight:5,orient:'auto-start-reverse'});marker.appendChild(svgNode('path',{d:'M 0 0 L 10 5 L 0 10 z',fill:'#64748b'}));defs.appendChild(marker);svg.appendChild(defs);edges.forEach(e=>{const a=positions.get(e.source),b=positions.get(e.target);if(!a||!b)return;const line=svgNode('line',{x1:a.x,y1:a.y,x2:b.x,y2:b.y,stroke:e.risk_reasons?.length?'#dc2626':'#94a3b8','stroke-width':e.risk_reasons?.length?2.5:1.2,'marker-end':'url(#arrow)',opacity:0.85});const title=svgNode('title');title.textContent=`${e.event_type}: ${e.source} → ${e.target}; risk score=${e.risk_score}; ${e.risk_reasons||[]}`;line.appendChild(title);svg.appendChild(line)});nodes.forEach(n=>{const p=positions.get(n.node_id);const group=svgNode('g');const circle=svgNode('circle',{cx:p.x,cy:p.y,r:22,fill:n.node_type==='tool'?'#dbeafe':'#dcfce7',stroke:n.node_type==='tool'?'#2563eb':'#15803d','stroke-width':1.5});const title=svgNode('title');title.textContent=n.node_id;circle.appendChild(title);group.appendChild(circle);const text=svgNode('text',{x:p.x,y:p.y+39,'text-anchor':'middle','font-size':12,fill:'#334155'});text.textContent=n.node_id.length>18?n.node_id.slice(0,16)+'…':n.node_id;group.appendChild(text);svg.appendChild(group)});host.appendChild(svg);const summary=document.createElement('div');summary.className='muted';summary.textContent=`节点 ${g.node_count} · 边 ${g.edge_count} · 可疑边 ${g.suspicious_edge_count} · 候选路径 ${g.candidate_paths?.length||0}`;host.appendChild(summary);if(g.candidate_paths?.length){const list=document.createElement('ol');for(const path of g.candidate_paths.slice(0,5)){const li=document.createElement('li');li.textContent=`${path.nodes.join(' → ')} (score ${path.score.toFixed(2)})`;list.appendChild(li)}host.appendChild(list)}}catch(e){host.textContent=e.message}}
-async function loadRun(id){try{let r=await api('/v1/runs/'+encodeURIComponent(id));if(r.job_id){if(['running','queued','cancel_requested'].includes(r.status)){show('summary',r);return}if(r.result_run_id){r=await api('/v1/runs/'+encodeURIComponent(r.result_run_id)+'/report')}}if(['running','queued','cancel_requested'].includes(r.status)){show('summary',r);return}currentRun=r.run_id;show('summary',{run_id:r.run_id,status:r.status,backend_mode:r.backend_mode,findings:r.findings?.length,hypotheses:r.hypotheses?.length,causal_claim_status:r.causal_claim_status});show('details',r);await renderGraph(currentRun)}catch(e){show('details',e.message)}}
-$('run').onclick=async()=>{try{$('status').textContent='运行中…';const r=await api('/v1/runs',{method:'POST',body:JSON.stringify({scenario_id:$('scenario').value,runtime_backend:'mock',auto_intervene:false,max_interventions:1})});currentRun=r.run_id;show('summary',{run_id:r.run_id,status:r.status,backend_mode:r.backend_mode,findings:r.findings?.length,hypotheses:r.hypotheses?.length,causal_claim_status:r.causal_claim_status});show('details',r);await renderGraph(currentRun);await loadRuns();$('status').textContent='完成'}catch(e){$('status').textContent='失败';show('details',e.message)}};
-$('refresh').onclick=()=>scenarios().catch(e=>show('details',e.message));$('loadRuns').onclick=()=>loadRuns().catch(e=>show('details',e.message));$('preview').onclick=async()=>{if(!currentRun)return;try{const d=await api('/v1/runs/'+currentRun+'/defenses/preview',{method:'POST',body:'{}'});show('details',d)}catch(e){show('details',e.message)}};$('evidence').onclick=async()=>{if(!currentRun)return;try{show('details',await api('/v1/runs/'+currentRun+'/evidence'))}catch(e){show('details',e.message)}};
-Promise.all([scenarios(),loadCaps(),loadRuns()]).catch(e=>show('details',e.message));
-</script></body></html>'''
+
 
 app = create_app()

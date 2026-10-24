@@ -27,3 +27,16 @@ Corpus 和 Probe Suite，但默认 REST 执行组合仍未补齐；本机未升�
 只有真实 capability/resource/API 响应才可解除阻塞。测试替身通过只证明软件
 行为，不能解除真实后端或模型验收项。外部依赖不可用不阻止 A4–A7 的独立
 工程功能；成熟度应分别标为 unit_tested、contract_tested 或 blocked。
+
+## A8 候选验收现场核对（2026-10-24）
+
+- `AGENTGUARD_WARDEN_URL` 与 `AGENTGUARD_LIVE_WARDEN_URL` 均未配置；没有可用
+  的 WARDEN 服务地址，所以真实 HTTP preflight/plan/run 烟测为 **blocked**，不
+  将 TestClient 合同测试或历史观察运行当作后端验证。
+- 没有执行 3B/7B 实时模型审计或防御重放；`real_model_validated` 仍为 **blocked**。
+  历史 7B 观察组 6/8 条件完成、2 条失败且汇总为 failed，仍仅是观察性记录；
+  它不证明因果关系，也不解除 DEP-001/005/007。
+- 已完成的本地发布检查、Mock 合同测试和 PyTorch 数值/接口测试只证明 AgentGuard
+  上层软件行为。成熟度明细见 [`FEATURE_MATURITY.md`](release/FEATURE_MATURITY.md)，
+  本轮日志和限制见 [`A8_TEST_REPORT.md`](release/A8_TEST_REPORT.md) 与
+  [`KNOWN_LIMITATIONS.md`](release/KNOWN_LIMITATIONS.md)。
