@@ -90,6 +90,7 @@ from agentguard.research_registry import ResearchRegistry
 from agentguard.services.evidence_gateway import EvidenceGateway
 from agentguard.services.experiment_index import ExperimentIndexService
 from agentguard.services.interaction_graph import InteractionGraphService
+from agentguard.services.investigation_timeline import InvestigationTimelineService
 from agentguard.services.system_readiness import SystemReadinessService
 from agentguard.services.warden_diagnostics import diagnose_kernel
 from agentguard.services.warden_lifecycle import WardenLifecycleService
@@ -232,6 +233,9 @@ def create_app(
         app.state.warden_workflows, app.state.artifacts
     )
     app.state.system_readiness = SystemReadinessService()
+    app.state.investigation_timeline = InvestigationTimelineService(
+        app.state.warden_workflows
+    )
     app.state.policy_engine = InterventionPolicyEngine()
     app.state.paired_runner = PairedExperimentRunner(app.state.engine.runtime, paired_executor=paired_executor)
 
@@ -742,6 +746,17 @@ def create_app(
             force_refresh=force_refresh,
         )
         return result.model_dump(mode="json")
+
+    def get_investigation_timeline(
+        request_id: str, after_event_id: int | None = Query(default=None, ge=1)
+    ) -> dict:
+        """Project the durable journal into a real timeline; never synthesize steps."""
+        timeline = app.state.investigation_timeline.timeline(
+            request_id, after_event_id=after_event_id
+        )
+        if timeline is None:
+            raise HTTPException(status_code=404, detail={"error": "WORKFLOW_NOT_FOUND"})
+        return timeline.model_dump(mode="json")
 
 
     def _build_warden_defense_preview(request_id: str, *, persist: bool) -> DefensePreview:
@@ -1923,6 +1938,7 @@ def create_app(
         compare_experiments_handler=compare_experiments,
         get_system_readiness_handler=get_system_readiness,
         get_investigation_options_handler=get_investigation_options,
+        get_investigation_timeline_handler=get_investigation_timeline,
     ))
     return app
 

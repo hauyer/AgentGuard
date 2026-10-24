@@ -31,6 +31,7 @@ def create_public_router(
     compare_experiments_handler: Callable[[Any], dict[str, Any]],
     get_system_readiness_handler: Callable[..., dict[str, Any]],
     get_investigation_options_handler: Callable[..., dict[str, Any]],
+    get_investigation_timeline_handler: Callable[..., dict[str, Any]],
 ) -> APIRouter:
     """Build stable aliases while keeping route definitions out of the app factory."""
     router = APIRouter()
@@ -74,6 +75,13 @@ def create_public_router(
     ) -> dict[str, Any]:
         """Discovered audit modes, contracts and resources for the form."""
         return get_investigation_options_handler(force_refresh=force_refresh)
+
+    @router.get("/v1/investigations/{request_id}/timeline")
+    def get_public_investigation_timeline(
+        request_id: str, after_event_id: int | None = Query(default=None, ge=1)
+    ) -> dict[str, Any]:
+        """Durable journal timeline with optional incremental fetch."""
+        return get_investigation_timeline_handler(request_id, after_event_id)
 
     @router.get("/v1/investigations/{request_id}")
     def get_public_investigation(request_id: str) -> dict[str, Any]:
