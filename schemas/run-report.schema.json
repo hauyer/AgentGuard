@@ -1421,6 +1421,73 @@
           "title": "Scenario Id",
           "type": "string"
         },
+        "case_family": {
+          "anyOf": [
+            {
+              "maxLength": 128,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Case Family"
+        },
+        "dataset_partition": {
+          "default": "held_out_family",
+          "enum": [
+            "training",
+            "validation",
+            "test",
+            "held_out_family"
+          ],
+          "title": "Dataset Partition",
+          "type": "string"
+        },
+        "model_version": {
+          "anyOf": [
+            {
+              "maxLength": 128,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Model Version"
+        },
+        "experience_record_policy_version": {
+          "anyOf": [
+            {
+              "maxLength": 64,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Experience Record Policy Version"
+        },
+        "recommendation_policy_version": {
+          "anyOf": [
+            {
+              "maxLength": 64,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Recommendation Policy Version"
+        },
         "goal": {
           "default": "investigate unauthorized information flow",
           "maxLength": 1024,

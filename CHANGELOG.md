@@ -1,5 +1,14 @@
 # Changelog
 
+## Unreleased — Upper-layer platform A6
+
+- Expanded the existing SQLite experience records with source/run provenance, outcome and benign-utility measurements, execution cost, model/policy versions, reproducibility hash, expiry, and explicit dataset partition.
+- Migrated legacy rows into held-out quarantine; enforce one split per case family and keep test/held-out records out of public retrieval and reward selection.
+- Require completed WARDEN provenance, verified evidence references, reproducibility, repeated intervention evidence, risk and benign-utility metrics, and current training records before any outcome can become a reward. Public submissions cannot self-assert verified status.
+- Added conflict quarantine, expiry filtering, version/evidence/date filters, cost-adjusted Thompson ranking with uncertainty reporting, and immutable recommendation-policy activation/rollback history.
+- Added API and CLI policy inspection/rollback; REST policy changes require a configured AgentGuard API token.
+- Validated 236 tests passed and 1 unconfigured live WARDEN HTTP test skipped; no real model or defense outcome is inferred.
+
 ## Unreleased — Upper-layer platform A5
 
 - Added a governed Evidence Gateway for AgentGuard reports and journaled WARDEN runs, including run/plan identity checks, safe artifact-reference filtering, local content-hash validation, and source/method limitations.

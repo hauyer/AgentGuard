@@ -6,7 +6,7 @@ from uuid import uuid4
 from agentguard.agents.coordinator import AgentCoordinator
 from agentguard.contracts.capabilities import CapabilityManifest
 from agentguard.contracts.evidence import EvidenceRecord
-from agentguard.contracts.experience import ExperienceRecord
+from agentguard.contracts.experience import ExperienceRecommendationPolicy, ExperienceRecord
 from agentguard.contracts.experiment import ExperimentRequest
 from agentguard.contracts.intervention import InterventionResult
 from agentguard.contracts.lifecycle import BudgetUsage, RunTimelineEvent
@@ -61,6 +61,7 @@ class AgentGuardEngine:
         *,
         cancel_event: Event | None = None,
         experience_records: list[ExperienceRecord] | None = None,
+        experience_policy: ExperienceRecommendationPolicy | None = None,
     ) -> RunReport:
         started = monotonic()
         run_id = f"run-{uuid4().hex[:12]}"
@@ -172,6 +173,9 @@ class AgentGuardEngine:
                 hypotheses=hypotheses,
                 experience_records=experience_records,
                 scenario_id=request.scenario_id,
+                case_family=request.case_family,
+                dataset_partition=request.dataset_partition,
+                experience_policy=experience_policy,
                 max_agent_steps=request.max_agent_steps,
                 max_model_calls_remaining=remaining_model_calls,
                 max_model_tokens_remaining=remaining_model_tokens,

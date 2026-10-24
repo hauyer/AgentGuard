@@ -41,7 +41,11 @@ from agentguard.contracts.attribution import (
 from agentguard.contracts.base import ContractModel
 from agentguard.contracts.defense import DefenseCandidate, DefenseLifecycleRecord, DefensePreview
 from agentguard.contracts.evidence import EvidenceRecord, GovernedEvidence
-from agentguard.contracts.experience import ExperienceRecord, ExperienceSearchResult
+from agentguard.contracts.experience import (
+    ExperienceRecommendationPolicy,
+    ExperienceRecord,
+    ExperienceSearchResult,
+)
 from agentguard.contracts.experience_bandit import ExperienceBanditRecommendationReport
 from agentguard.contracts.experiment import ExperimentRequest
 from agentguard.contracts.intervention import InterventionRequest
@@ -269,21 +273,37 @@ def create_app(
 
     def run_engine(request: ExperimentRequest, *, cancel_event: Event | None = None) -> RunReport:
         experiences = None
+        experience_policy = None
         if request.investigation_strategy == "experience":
-            experiences = app.state.experiences.search(
+            experiences = app.state.experiences.recommendations(
                 scenario_id=request.scenario_id,
-                verified_only=True,
+                case_family=request.case_family,
+                model_version=request.model_version,
+                policy_version=request.experience_record_policy_version,
                 limit=500,
             )
+            try:
+                experience_policy = app.state.experiences.policy(request.recommendation_policy_version)
+            except KeyError as exc:
+                raise ValueError("recommendation_policy_version not found") from exc
         return app.state.engine.run(
             request,
             cancel_event=cancel_event,
             experience_records=experiences,
+            experience_policy=experience_policy,
         )
 
     def approval_is_valid(token: str | None) -> bool:
         expected = os.environ.get("AGENTGUARD_APPROVAL_TOKEN", "")
         return bool(expected and token and secrets.compare_digest(expected, token))
+
+    def require_configured_api_token(token: str | None) -> None:
+        expected = os.environ.get("AGENTGUARD_API_TOKEN", "")
+        if not expected or not token or not secrets.compare_digest(expected, token):
+            raise HTTPException(
+                status_code=403,
+                detail={"error": "API_TOKEN_REQUIRED_FOR_POLICY_CHANGE"},
+            )
 
     def resolve_job_status(run_id: str) -> dict[str, Any] | None:
         with app.state.lock:
@@ -1424,6 +1444,14 @@ def create_app(
 
     @app.post("/v1/experiences", response_model=ExperienceRecord)
     def add_experience(record: ExperienceRecord) -> ExperienceRecord:
+        if record.verification_status == "verified":
+            raise HTTPException(
+                status_code=403,
+                detail={
+                    "error": "VERIFIED_EXPERIENCE_REQUIRES_TRUSTED_REVIEW",
+                    "message": "Public submissions cannot self-assert verified reward evidence.",
+                },
+            )
         try:
             return app.state.experiences.add(record)
         except Exception as exc:
@@ -1434,30 +1462,123 @@ def create_app(
     @app.get("/v1/experiences", response_model=ExperienceSearchResult)
     def search_experiences(
         q: str = "", scenario_id: str | None = None, risk_type: str | None = None,
+        action_type: str | None = None, model_version: str | None = None,
+        policy_version: str | None = None, evidence_grade: str | None = None,
+        verified_after: datetime | None = None, dataset_partition: str | None = None,
         verified_only: bool = False, limit: int = Query(default=50, ge=1, le=500),
     ) -> ExperienceSearchResult:
-        items = app.state.experiences.search(q, scenario_id=scenario_id, risk_type=risk_type,
-                                             verified_only=verified_only, limit=limit)
+        try:
+            items = app.state.experiences.search(
+                q,
+                scenario_id=scenario_id,
+                risk_type=risk_type,
+                action_type=action_type,
+                model_version=model_version,
+                policy_version=policy_version,
+                evidence_grade=evidence_grade,
+                verified_after=verified_after,
+                dataset_partition=dataset_partition,
+                verified_only=verified_only,
+                limit=limit,
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail={"error": "INVALID_EXPERIENCE_FILTER"}) from exc
         return ExperienceSearchResult(query=q, items=items, total=len(items))
 
     @app.get("/v1/experiences/recommendations")
-    def experience_recommendations(scenario_id: str | None = None, risk_type: str | None = None, limit: int = 5) -> dict:
-        items = app.state.experiences.recommendations(scenario_id=scenario_id, risk_type=risk_type, limit=limit)
+    def experience_recommendations(
+        scenario_id: str | None = None,
+        risk_type: str | None = None,
+        action_type: str | None = None,
+        case_family: str | None = None,
+        model_version: str | None = None,
+        policy_version: str | None = None,
+        evidence_grade: str | None = None,
+        verified_after: datetime | None = None,
+        limit: int = Query(default=5, ge=1, le=50),
+    ) -> dict:
+        items = app.state.experiences.recommendations(
+            scenario_id=scenario_id,
+            risk_type=risk_type,
+            action_type=action_type,
+            case_family=case_family,
+            model_version=model_version,
+            policy_version=policy_version,
+            evidence_grade=evidence_grade,
+            verified_after=verified_after,
+            limit=limit,
+        )
         return {"items": [item.model_dump(mode="json") for item in items],
-                "note": "Only verified, explicitly recommendation-enabled records are returned; recommendations do not execute actions."}
+                "note": "Only complete, non-conflicting verified training records are returned; same-family, test, held-out, expired, and unverified records are excluded. Recommendations do not execute actions."}
+
+    @app.get("/v1/experiences/recommendation-policies")
+    def list_experience_recommendation_policies() -> dict:
+        active = app.state.experiences.active_policy()
+        return {
+            "active": active.model_dump(mode="json"),
+            "versions": [item.model_dump(mode="json") for item in app.state.experiences.policy_versions()],
+            "events": app.state.experiences.policy_history(),
+        }
+
+    @app.post("/v1/experiences/recommendation-policies", response_model=ExperienceRecommendationPolicy)
+    def save_experience_recommendation_policy(
+        policy: ExperienceRecommendationPolicy,
+        activate: bool = False,
+        x_agentguard_token: str | None = Header(default=None, alias="X-AgentGuard-Token"),
+    ) -> ExperienceRecommendationPolicy:
+        require_configured_api_token(x_agentguard_token)
+        try:
+            return app.state.experiences.save_policy(policy, activate=activate)
+        except ValueError as exc:
+            raise HTTPException(status_code=409, detail={"error": "POLICY_VERSION_IMMUTABLE"}) from exc
+
+    @app.post("/v1/experiences/recommendation-policies/{policy_version}/rollback")
+    def rollback_experience_recommendation_policy(
+        policy_version: str,
+        reason: str = Query(default="operator_rollback", min_length=1, max_length=256),
+        x_agentguard_token: str | None = Header(default=None, alias="X-AgentGuard-Token"),
+    ) -> dict:
+        require_configured_api_token(x_agentguard_token)
+        try:
+            app.state.experiences.rollback_policy(policy_version, reason=reason)
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail={"error": "RECOMMENDATION_POLICY_NOT_FOUND"}) from exc
+        return {"active": app.state.experiences.active_policy().model_dump(mode="json")}
 
     @app.get("/v1/experiences/bandit-recommendations", response_model=ExperienceBanditRecommendationReport)
     def experience_bandit_recommendations(
         scenario_id: str | None = None,
         risk_type: str | None = None,
+        case_family: str | None = None,
+        target_partition: Literal["training", "validation", "test", "held_out_family"] = "held_out_family",
+        model_version: str | None = None,
+        record_policy_version: str | None = None,
+        recommendation_policy_version: str | None = None,
         seed: int = 7,
         limit: int = Query(default=5, ge=1, le=50),
     ) -> dict:
         records = app.state.experiences.search(
-            scenario_id=scenario_id, risk_type=risk_type, verified_only=False, limit=500
+            scenario_id=scenario_id,
+            risk_type=risk_type,
+            verified_only=False,
+            limit=500,
         )
+        try:
+            policy = app.state.experiences.policy(recommendation_policy_version)
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail={"error": "RECOMMENDATION_POLICY_NOT_FOUND"}) from exc
         return recommend_actions(
-            records, scenario_id=scenario_id, risk_type=risk_type, seed=seed, limit=limit
+            records,
+            scenario_id=scenario_id,
+            risk_type=risk_type,
+            case_family=case_family,
+            target_partition=target_partition,
+            model_version=model_version,
+            policy_version=record_policy_version,
+            conflicted_experience_ids=app.state.experiences.conflicted_experience_ids(),
+            policy=policy,
+            seed=seed,
+            limit=limit,
         )
 
     @app.get("/v1/experiences/action-statistics")

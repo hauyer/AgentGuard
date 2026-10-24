@@ -97,7 +97,8 @@ def test_background_run_and_idempotency(tmp_path):
 def test_experience_api_accepts_unverified_memory_but_does_not_recommend_it(tmp_path):
     client = TestClient(create_app(data_dir=tmp_path / "data"))
     record = {
-        "scenario_id": "release_review", "case_family": "family-a", "risk_type": "unauthorized_information_flow",
+        "scenario_id": "release_review", "case_family": "family-a", "dataset_partition": "training",
+        "risk_type": "unauthorized_information_flow",
         "hypothesis_summary": "Message edge may violate policy", "action_type": "message_block",
         "action_summary": "Block one message edge", "outcome": "inconclusive", "evidence_grade": "synthetic",
     }
@@ -106,6 +107,40 @@ def test_experience_api_accepts_unverified_memory_but_does_not_recommend_it(tmp_
     searched = client.get("/v1/experiences?q=message+edge")
     assert searched.status_code == 200 and searched.json()["total"] == 1
     assert client.get("/v1/experiences/recommendations").json()["items"] == []
+
+
+def test_experience_api_rejects_self_asserted_verified_rewards(tmp_path):
+    client = TestClient(create_app(data_dir=tmp_path / "verified-data"))
+    response = client.post("/v1/experiences", json={
+        "scenario_id": "release_review",
+        "case_family": "family-verified",
+        "dataset_partition": "training",
+        "risk_type": "unauthorized_information_flow",
+        "hypothesis_summary": "Caller supplied a claimed result",
+        "action_type": "message_block",
+        "action_summary": "Block one message edge",
+        "outcome": "success",
+        "evidence_grade": "interventional",
+        "verification_status": "verified",
+        "repetitions": 2,
+        "evidence_refs": ["artifact://caller-claim"],
+        "validation_notes": ["Caller assertion"],
+        "allow_auto_recommendation": True,
+        "source_system": "warden",
+        "source_run_status": "completed",
+        "evidence_provenance_verified": True,
+        "audit_run_id": "claimed-run",
+        "metrics": {"risk_reduction": 0.9},
+        "observed_outcome": {"risk_reduction": 0.9},
+        "benign_utility": {"task_success_rate": 1.0},
+        "execution_cost": 0.01,
+        "model_version": "claimed-model",
+        "policy_version": "claimed-policy",
+        "reproducibility_hash": "e" * 64,
+        "verified_at": "2026-10-24T00:00:00+00:00",
+    })
+    assert response.status_code == 403
+    assert response.json()["detail"]["error"] == "VERIFIED_EXPERIENCE_REQUIRES_TRUSTED_REVIEW"
 
 
 def test_probe_training_api_uses_case_family_isolated_split_and_stores_model_artifact(tmp_path):

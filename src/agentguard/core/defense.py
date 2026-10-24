@@ -79,10 +79,8 @@ class DefensePlannerService:
             return DefensePreview(run_id=report.run_id, status="unsupported", policy_notes=["Run report has no capability manifest."])
         verified_experiences = [
             item for item in experiences
-            if item.verification_status == "verified"
-            and item.allow_auto_recommendation
+            if not item.reward_ineligibility_reasons()
             and item.outcome == "success"
-            and item.evidence_grade in {"interventional", "causal_validated"}
         ]
         for finding in report.findings:
             operations = {"message": ["block", "replace"], "tool_call": ["block", "replace"],
@@ -178,10 +176,8 @@ class DefensePlannerService:
             )
         records = [
             item for item in experiences
-            if item.verification_status == "verified"
-            and item.allow_auto_recommendation
+            if not item.reward_ineligibility_reasons()
             and item.outcome == "success"
-            and item.evidence_grade in {"interventional", "causal_validated"}
         ]
         candidates: list[DefenseCandidate] = []
         notes = [

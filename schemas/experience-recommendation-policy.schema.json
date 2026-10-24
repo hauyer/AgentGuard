@@ -1,0 +1,53 @@
+{
+  "additionalProperties": false,
+  "description": "Immutable, versioned parameters for contextual Thompson decision support.",
+  "properties": {
+    "schema_version": {
+      "const": "0.1",
+      "default": "0.1",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "policy_version": {
+      "maxLength": 64,
+      "minLength": 1,
+      "title": "Policy Version",
+      "type": "string"
+    },
+    "algorithm": {
+      "const": "beta_bernoulli_thompson_sampling",
+      "default": "beta_bernoulli_thompson_sampling",
+      "title": "Algorithm",
+      "type": "string"
+    },
+    "cost_penalty": {
+      "default": 0.2,
+      "maximum": 1,
+      "minimum": 0,
+      "title": "Cost Penalty",
+      "type": "number"
+    },
+    "cost_scale": {
+      "default": 1.0,
+      "exclusiveMinimum": 0,
+      "title": "Cost Scale",
+      "type": "number"
+    },
+    "minimum_repetitions": {
+      "default": 2,
+      "minimum": 2,
+      "title": "Minimum Repetitions",
+      "type": "integer"
+    },
+    "created_at": {
+      "format": "date-time",
+      "title": "Created At",
+      "type": "string"
+    }
+  },
+  "required": [
+    "policy_version"
+  ],
+  "title": "ExperienceRecommendationPolicy",
+  "type": "object"
+}

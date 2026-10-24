@@ -25,7 +25,11 @@ from agentguard.contracts.defense import (
 )
 from agentguard.contracts.evaluation import EvaluationReport
 from agentguard.contracts.evidence import CausalValidationCriteria, EvidenceRecord, GovernedEvidence
-from agentguard.contracts.experience import ExperienceRecord, ExperienceSearchResult
+from agentguard.contracts.experience import (
+    ExperienceRecommendationPolicy,
+    ExperienceRecord,
+    ExperienceSearchResult,
+)
 from agentguard.contracts.experience_bandit import (
     ExperienceBanditActionScore,
     ExperienceBanditRecommendationReport,
@@ -93,6 +97,7 @@ SCHEMAS = {
     "defense-status-event.schema.json": DefenseStatusEvent,
     "experience-record.schema.json": ExperienceRecord,
     "experience-search-result.schema.json": ExperienceSearchResult,
+    "experience-recommendation-policy.schema.json": ExperienceRecommendationPolicy,
     "experience-bandit-action-score.schema.json": ExperienceBanditActionScore,
     "experience-bandit-recommendation-report.schema.json": ExperienceBanditRecommendationReport,
     "artifact-ref.schema.json": ArtifactRef,

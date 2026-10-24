@@ -1,6 +1,6 @@
 # AgentGuard 上层平台依赖图
 
-日期：2026-10-24；分支 `feature/agentguard-upper-layer-v1`；A5。
+日期：2026-10-24；分支 `feature/agentguard-upper-layer-v1`；A6。
 
 ```mermaid
 flowchart TD
@@ -16,6 +16,9 @@ flowchart TD
   EvidenceGateway --> WardenDefense[WARDEN 证据目标引用 → 策略候选]
   WardenDefense --> JournalDefense[同一 WARDEN SQLite / append-only 防御事件]
   Lifecycle --> Memory[memory.store]
+  API --> Memory
+  Memory --> ExperiencePolicy[SQLite 分区 / 冲突 / 过期门控与策略版本]
+  ExperiencePolicy --> Bandit[成本调整的 Thompson 排序 / 非执行建议]
   Client --> WARDEN[只读依赖 WARDEN /v1 API]
   API --> Coordinator[agents.coordinator / llm_advisor]
   Coordinator --> Strategies[固定 / 风险 / 信息价值 / 经验 / LLM 排序]
@@ -38,7 +41,7 @@ flowchart TD
 复现静态模块图：
 
 ```powershell
-python scripts/audit_architecture.py --check --output .agentguard/architecture-a4.json
+python scripts/audit_architecture.py --check --output .agentguard/architecture-a6.json
 ```
 
 源码调用者按兼容边界划分：
@@ -57,7 +60,7 @@ WARDEN 工作流与诊断不依赖这些实现，所有底层 API 调用经过
 `WardenKernelClient`。`adapters` 包现在按需导入旧 FRACTAL-Bench/StegoPot
 适配器，普通 WARDEN/Mock 导入不会初始化它们。
 
-静态检查当前为 76 个模块、463 条导入；旧兼容路径和 `agentguard.compat` 单独列为兼容债务；白盒和
+静态检查当前为 77 个模块、495 条导入；旧兼容路径和 `agentguard.compat` 单独列为兼容债务；白盒和
 StegoPot/FRACTAL-Bench 的三个底层导入只允许出现在兼容实现中。AST 检查包括
 函数内导入和字面动态导入，不判断代码运行时可达性，也不扫描 Python 隐式
 包初始化以外的打包行为。

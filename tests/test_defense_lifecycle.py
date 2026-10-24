@@ -1,3 +1,5 @@
+from datetime import UTC, datetime
+
 import pytest
 
 from agentguard.adapters.mock import MockBackend
@@ -42,6 +44,7 @@ def test_defense_candidate_ranking_exposes_evidence_cost_and_verified_experience
     experience = ExperienceRecord(
         scenario_id=report.scenario_id,
         case_family="reviewed-family",
+        dataset_partition="training",
         risk_type=finding.risk_type,
         hypothesis_summary="Reviewed intervention action.",
         action_type="message_block",
@@ -49,9 +52,21 @@ def test_defense_candidate_ranking_exposes_evidence_cost_and_verified_experience
         outcome="success",
         evidence_grade="interventional",
         verification_status="verified",
+        source_system="warden",
+        source_run_status="completed",
+        evidence_provenance_verified=True,
         repetitions=3,
         evidence_refs=["sha256:" + "a" * 64],
         validation_notes=["Independent paired repeats reviewed."],
+        audit_run_id="reviewed-audit-run",
+        metrics={"risk_reduction": 0.25},
+        observed_outcome={"risk_reduction": 0.25},
+        benign_utility={"task_success_rate": 0.99},
+        execution_cost=0.15,
+        model_version="model-v1",
+        policy_version="policy-v1",
+        reproducibility_hash="a" * 64,
+        verified_at=datetime.now(UTC),
         allow_auto_recommendation=True,
     )
     informed = service.preview(report, experiences=[experience])

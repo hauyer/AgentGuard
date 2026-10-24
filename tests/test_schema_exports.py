@@ -40,6 +40,7 @@ def test_checked_in_schemas_exist_and_are_valid_json():
         "defense-status-event.schema.json",
         "experience-record.schema.json",
         "experience-search-result.schema.json",
+        "experience-recommendation-policy.schema.json",
         "experience-bandit-action-score.schema.json",
         "experience-bandit-recommendation-report.schema.json",
         "artifact-ref.schema.json",

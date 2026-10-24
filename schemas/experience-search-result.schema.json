@@ -2,11 +2,14 @@
   "$defs": {
     "ExperienceRecord": {
       "additionalProperties": false,
-      "description": "Versioned case memory. Unverified records are advisory only.",
+      "description": "A provenance-bearing case memory; defaults are quarantined from reward use.",
       "properties": {
         "schema_version": {
-          "const": "0.1",
-          "default": "0.1",
+          "default": "0.2",
+          "enum": [
+            "0.1",
+            "0.2"
+          ],
           "title": "Schema Version",
           "type": "string"
         },
@@ -23,13 +26,88 @@
           "title": "Case Family",
           "type": "string"
         },
+        "dataset_partition": {
+          "default": "held_out_family",
+          "enum": [
+            "training",
+            "validation",
+            "test",
+            "held_out_family"
+          ],
+          "title": "Dataset Partition",
+          "type": "string"
+        },
         "risk_type": {
           "title": "Risk Type",
           "type": "string"
         },
+        "source_system": {
+          "default": "legacy",
+          "enum": [
+            "warden",
+            "agentguard",
+            "external",
+            "legacy"
+          ],
+          "title": "Source System",
+          "type": "string"
+        },
+        "source_run_status": {
+          "default": "unknown",
+          "enum": [
+            "completed",
+            "blocked",
+            "failed",
+            "cancelled",
+            "unknown"
+          ],
+          "title": "Source Run Status",
+          "type": "string"
+        },
+        "evidence_provenance_verified": {
+          "default": false,
+          "title": "Evidence Provenance Verified",
+          "type": "boolean"
+        },
+        "audit_run_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Audit Run Id"
+        },
+        "hypothesis": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Hypothesis"
+        },
         "hypothesis_summary": {
           "title": "Hypothesis Summary",
           "type": "string"
+        },
+        "selected_action": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Selected Action"
         },
         "action_type": {
           "title": "Action Type",
@@ -49,6 +127,13 @@
           "title": "Outcome",
           "type": "string"
         },
+        "observed_outcome": {
+          "additionalProperties": {
+            "type": "number"
+          },
+          "title": "Observed Outcome",
+          "type": "object"
+        },
         "evidence_grade": {
           "enum": [
             "observational",
@@ -58,6 +143,24 @@
           ],
           "title": "Evidence Grade",
           "type": "string"
+        },
+        "verification_level": {
+          "anyOf": [
+            {
+              "enum": [
+                "observational",
+                "synthetic",
+                "interventional",
+                "causal_validated"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Verification Level"
         },
         "verification_status": {
           "default": "unverified",
@@ -89,6 +192,26 @@
           "title": "Validation Notes",
           "type": "array"
         },
+        "benign_utility": {
+          "additionalProperties": {
+            "type": "number"
+          },
+          "title": "Benign Utility",
+          "type": "object"
+        },
+        "execution_cost": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Execution Cost"
+        },
         "metrics": {
           "additionalProperties": {
             "type": "number"
@@ -106,6 +229,30 @@
           "title": "Code Version",
           "type": "string"
         },
+        "policy_version": {
+          "default": "unknown",
+          "title": "Policy Version",
+          "type": "string"
+        },
+        "reproducibility_hash": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Reproducibility Hash"
+        },
+        "limitations": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Limitations",
+          "type": "array"
+        },
         "seed": {
           "anyOf": [
             {
@@ -122,6 +269,32 @@
           "default": false,
           "title": "Allow Auto Recommendation",
           "type": "boolean"
+        },
+        "verified_at": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Verified At"
+        },
+        "expires_at": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Expires At"
         },
         "created_at": {
           "format": "date-time",
@@ -152,8 +325,11 @@
   "additionalProperties": false,
   "properties": {
     "schema_version": {
-      "const": "0.1",
-      "default": "0.1",
+      "default": "0.2",
+      "enum": [
+        "0.1",
+        "0.2"
+      ],
       "title": "Schema Version",
       "type": "string"
     },
@@ -175,7 +351,7 @@
       "type": "integer"
     },
     "recommendation_note": {
-      "default": "Unverified memory is advisory and must not trigger execution.",
+      "default": "Public retrieval excludes test and held-out families; unverified memory cannot contribute reward.",
       "title": "Recommendation Note",
       "type": "string"
     }

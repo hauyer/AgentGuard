@@ -38,14 +38,30 @@ from agentguard.contracts.defense import (
     DefenseStatusEvent,
     DefenseVerification,
 )
-from agentguard.contracts.experience import ExperienceRecord, ExperienceSearchResult
+from agentguard.contracts.experience import (
+    ExperienceRecommendationPolicy,
+    ExperienceRecord,
+    ExperienceSearchResult,
+)
 from agentguard.contracts.hypothesis import (
     InvestigationAction,
     InvestigationHypothesis,
     PairedExperimentDesign,
 )
 
-__all__ += ["DefenseCandidate", "DefenseLifecycleRecord", "DefensePreview", "DefenseStatusEvent", "DefenseVerification", "ExperienceRecord", "ExperienceSearchResult", "InvestigationAction", "InvestigationHypothesis", "PairedExperimentDesign"]
+__all__ += [
+    "DefenseCandidate",
+    "DefenseLifecycleRecord",
+    "DefensePreview",
+    "DefenseStatusEvent",
+    "DefenseVerification",
+    "ExperienceRecommendationPolicy",
+    "ExperienceRecord",
+    "ExperienceSearchResult",
+    "InvestigationAction",
+    "InvestigationHypothesis",
+    "PairedExperimentDesign",
+]
 
 from agentguard.contracts.graph import (
     CandidatePath,

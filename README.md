@@ -2,12 +2,13 @@
 
 > **当前开发边界（2026-10-24）：** 在 `feature/agentguard-upper-layer-v1`
 > 完成上层平台 A0–A8；WARDEN、FRACTAL-Bench、StegoPot 只读。
-> A0–A5 已完成，A6–A8 尚待实现，见[A0 报告](docs/migration/UPPER_LAYER_A0.md)、
+> A0–A6 已完成，A7–A8 尚待实现，见[A0 报告](docs/migration/UPPER_LAYER_A0.md)、
 > [A1 报告](docs/migration/UPPER_LAYER_A1.md)、
 > [A2 报告](docs/migration/UPPER_LAYER_A2.md)、
 > [A3 兼容隔离](docs/migration/UPPER_LAYER_A3.md)、
 > [A4 调查编排](docs/migration/UPPER_LAYER_A4.md)、
 > [A5 证据治理](docs/migration/UPPER_LAYER_A5.md)、
+> [A6 经验门控](docs/migration/UPPER_LAYER_A6.md)、
 > [模块依赖图](docs/migration/DEPENDENCY_GRAPH.md)和
 > [依赖阻塞](docs/DEPENDENCY_BLOCKERS.md)。通过候选验收后才建立独立
 > `AgentGuard-QWB-App`，比赛应用只调用 AgentGuard 公共接口。

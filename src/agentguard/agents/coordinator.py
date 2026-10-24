@@ -14,7 +14,7 @@ from agentguard.agents.role_permissions import (
 )
 from agentguard.contracts.agent_message import AgentMessage
 from agentguard.contracts.evaluation import EvaluationReport
-from agentguard.contracts.experience import ExperienceRecord
+from agentguard.contracts.experience import ExperienceRecommendationPolicy, ExperienceRecord
 from agentguard.contracts.hypothesis import InvestigationAction, InvestigationHypothesis
 from agentguard.contracts.intervention import InterventionRequest, InterventionResult
 from agentguard.contracts.observation import DetectionFinding, Observation
@@ -116,6 +116,9 @@ class AgentCoordinator:
         hypotheses: list[InvestigationHypothesis] | None = None,
         experience_records: list[ExperienceRecord] | None = None,
         scenario_id: str | None = None,
+        case_family: str | None = None,
+        dataset_partition: str = "held_out_family",
+        experience_policy: ExperienceRecommendationPolicy | None = None,
         max_agent_steps: int = 32,
         max_model_calls_remaining: int | None = 1,
         max_model_tokens_remaining: int | None = 384,
@@ -145,6 +148,9 @@ class AgentCoordinator:
             hypotheses=hypotheses,
             experience_records=experience_records,
             scenario_id=scenario_id,
+            case_family=case_family,
+            dataset_partition=dataset_partition,
+            experience_policy=experience_policy,
             max_candidates=max_agent_steps,
         )
         self.agent_steps_used = len(ranked)
@@ -172,6 +178,9 @@ class AgentCoordinator:
                     "score": round(item.score, 8),
                     "rationale": item.rationale[:300],
                     "eligible_experience_count": item.eligible_experience_count,
+                    "reward_uncertainty": round(item.reward_uncertainty, 8),
+                    "mean_execution_cost": round(item.mean_execution_cost, 8),
+                    "recommendation_policy_version": item.recommendation_policy_version or "",
                 },
                 evidence_refs=item.finding.evidence_refs,
                 confidence=max(0.0, min(1.0, item.finding.score)),

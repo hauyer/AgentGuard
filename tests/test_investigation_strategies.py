@@ -31,6 +31,8 @@ def _candidate(finding_id, *, severity, score, evidence_refs, risk_type):
 def _experience(*, risk_type, verification_status="verified", outcome="success"):
     return ExperienceRecord(
         scenario_id="scenario-test",
+        case_family="experience-train-family",
+        dataset_partition="training",
         risk_type=risk_type,
         hypothesis_summary="Matched repeated test evidence supports this candidate.",
         action_type="block",
@@ -42,6 +44,18 @@ def _experience(*, risk_type, verification_status="verified", outcome="success")
         evidence_refs=["artifact-a"],
         validation_notes=["Independent case-family repeats reviewed."] if verification_status == "verified" else [],
         allow_auto_recommendation=verification_status == "verified",
+        source_system="warden" if verification_status == "verified" else "legacy",
+        source_run_status="completed" if verification_status == "verified" else "unknown",
+        evidence_provenance_verified=verification_status == "verified",
+        audit_run_id=f"experience-run-{risk_type}" if verification_status == "verified" else None,
+        metrics={"risk_reduction": 0.3} if verification_status == "verified" else {},
+        observed_outcome={"risk_reduction": 0.3} if verification_status == "verified" else {},
+        benign_utility={"task_success_rate": 0.99} if verification_status == "verified" else {},
+        execution_cost=0.1 if verification_status == "verified" else None,
+        model_version="model-v1" if verification_status == "verified" else "unknown",
+        policy_version="policy-v1" if verification_status == "verified" else "unknown",
+        reproducibility_hash="c" * 64 if verification_status == "verified" else None,
+        verified_at=datetime.now(UTC) if verification_status == "verified" else None,
         created_at=datetime.now(UTC),
     )
 
@@ -195,12 +209,16 @@ def test_api_experience_strategy_reads_matching_verified_history(tmp_path):
         "scenario_id": "demo_cloud_security",
         "runtime_backend": "mock",
         "auto_intervene": False,
+        "case_family": "experience-eval-family",
+        "dataset_partition": "test",
     }
     baseline = client.post("/v1/runs", json=base_request)
     assert baseline.status_code == 200, baseline.text
     baseline_finding = baseline.json()["findings"][0]
     app.state.experiences.add(ExperienceRecord(
         scenario_id="demo_cloud_security",
+        case_family="experience-api-train-family",
+        dataset_partition="training",
         risk_type=baseline_finding["risk_type"],
         hypothesis_summary="Controlled test fixture for experience-based ranking.",
         action_type="block",
@@ -212,6 +230,18 @@ def test_api_experience_strategy_reads_matching_verified_history(tmp_path):
         evidence_refs=["test-artifact-ref"],
         validation_notes=["Test fixture validates the query gate, not an experiment outcome."],
         allow_auto_recommendation=True,
+        source_system="warden",
+        source_run_status="completed",
+        evidence_provenance_verified=True,
+        audit_run_id="experience-api-run",
+        metrics={"risk_reduction": 0.2},
+        observed_outcome={"risk_reduction": 0.2},
+        benign_utility={"task_success_rate": 0.99},
+        execution_cost=0.1,
+        model_version="model-v1",
+        policy_version="policy-v1",
+        reproducibility_hash="d" * 64,
+        verified_at=datetime.now(UTC),
     ))
 
     response = client.post(

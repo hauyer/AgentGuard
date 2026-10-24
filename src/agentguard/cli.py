@@ -7,6 +7,7 @@ import importlib.util
 import json
 import os
 import sys
+from datetime import datetime
 from pathlib import Path
 from typing import Any
 
@@ -94,15 +95,20 @@ def _find_report(path_or_id: str) -> dict[str, Any]:
     return json.loads(candidate.read_text(encoding="utf-8"))
 
 
-def _verified_experiences_for(request: ExperimentRequest):
+def _experience_context_for(request: ExperimentRequest):
     store_path = _data_dir() / "experiences.sqlite3"
     if request.investigation_strategy != "experience" or not store_path.is_file():
-        return None
-    return ExperienceStore(store_path).search(
+        return None, None
+    store = ExperienceStore(store_path)
+    records = store.recommendations(
         scenario_id=request.scenario_id,
-        verified_only=True,
+        case_family=request.case_family,
+        model_version=request.model_version,
+        policy_version=request.experience_record_policy_version,
         limit=500,
     )
+    policy = store.policy(request.recommendation_policy_version)
+    return records, policy
 
 
 def main() -> None:
@@ -144,11 +150,26 @@ def main() -> None:
     benchmark.add_argument("--runs", required=True, help="comma-separated run IDs or JSON paths")
 
     experience = sub.add_parser("experience", help="query the versioned experience store")
-    experience.add_argument("action", choices=["search", "stats", "recommend"], default="search", nargs="?")
+    experience.add_argument(
+        "action",
+        choices=["search", "stats", "recommend", "policy-list", "policy-rollback"],
+        default="search",
+        nargs="?",
+    )
     experience.add_argument("query", nargs="?", default="")
     experience.add_argument("--scenario-id")
     experience.add_argument("--risk-type")
+    experience.add_argument("--action-type")
+    experience.add_argument("--case-family")
+    experience.add_argument("--dataset-partition", choices=["training", "validation", "test", "held_out_family"])
+    experience.add_argument("--model-version")
+    experience.add_argument("--record-policy-version")
+    experience.add_argument("--recommendation-policy-version")
+    experience.add_argument("--evidence-grade", choices=["synthetic", "observational", "interventional", "causal_validated"])
+    experience.add_argument("--verified-after", type=datetime.fromisoformat)
     experience.add_argument("--verified-only", action="store_true")
+    experience.add_argument("--policy-version")
+    experience.add_argument("--reason", default="operator_rollback")
     experience.add_argument("--seed", type=int, default=7)
     experience.add_argument("--limit", type=int, default=5)
 
@@ -215,7 +236,12 @@ def main() -> None:
             values.setdefault("runtime_backend", "mock")
             request = ExperimentRequest.model_validate(values)
             output = args.output
-        report = engine.run(request, experience_records=_verified_experiences_for(request))
+        experience_records, experience_policy = _experience_context_for(request)
+        report = engine.run(
+            request,
+            experience_records=experience_records,
+            experience_policy=experience_policy,
+        )
         destination = _save_report(report, output)
         print(report.model_dump_json(indent=2))
         print(f"Report saved to: {destination}", file=sys.stderr)
@@ -358,10 +384,28 @@ def main() -> None:
                                    verified_only=False, limit=500)
             print(json.dumps(recommend_actions(
                 records, scenario_id=args.scenario_id, risk_type=args.risk_type,
+                case_family=args.case_family, target_partition=args.dataset_partition or "held_out_family",
+                model_version=args.model_version, policy_version=args.record_policy_version,
+                conflicted_experience_ids=store.conflicted_experience_ids(),
+                policy=store.policy(args.recommendation_policy_version),
                 seed=args.seed, limit=args.limit
             ), ensure_ascii=False, indent=2))
+        elif args.action == "policy-list":
+            print(json.dumps({
+                "active": store.active_policy().model_dump(mode="json"),
+                "versions": [item.model_dump(mode="json") for item in store.policy_versions()],
+                "events": store.policy_history(),
+            }, ensure_ascii=False, indent=2))
+        elif args.action == "policy-rollback":
+            if not args.policy_version:
+                parser.error("experience policy-rollback requires --policy-version")
+            store.rollback_policy(args.policy_version, reason=args.reason)
+            print(json.dumps({"active": store.active_policy().model_dump(mode="json")}, ensure_ascii=False, indent=2))
         else:
             items = store.search(args.query, scenario_id=args.scenario_id, risk_type=args.risk_type,
+                                 action_type=args.action_type, model_version=args.model_version,
+                                 policy_version=args.record_policy_version, evidence_grade=args.evidence_grade,
+                                 verified_after=args.verified_after, dataset_partition=args.dataset_partition,
                                  verified_only=args.verified_only, limit=100)
             print(json.dumps({"total": len(items), "items": [item.model_dump(mode="json") for item in items],
                               "note": "Unverified experience is advisory only and is never auto-executed."}, ensure_ascii=False, indent=2))

@@ -20,6 +20,11 @@ class ExperimentRequest(ContractModel):
     schema_version: Literal["0.1"] = "0.1"
     experiment_id: str = Field(default_factory=lambda: f"exp-{uuid4().hex[:12]}")
     scenario_id: str = Field(min_length=1, max_length=128)
+    case_family: str | None = Field(default=None, min_length=1, max_length=128)
+    dataset_partition: Literal["training", "validation", "test", "held_out_family"] = "held_out_family"
+    model_version: str | None = Field(default=None, min_length=1, max_length=128)
+    experience_record_policy_version: str | None = Field(default=None, min_length=1, max_length=64)
+    recommendation_policy_version: str | None = Field(default=None, min_length=1, max_length=64)
     goal: str = Field(default="investigate unauthorized information flow", max_length=1024)
     investigation_strategy: Literal[
         "fixed_order", "risk_score", "information_value", "experience", "llm"

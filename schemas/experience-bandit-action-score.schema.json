@@ -2,8 +2,11 @@
   "additionalProperties": false,
   "properties": {
     "schema_version": {
-      "const": "0.1",
-      "default": "0.1",
+      "default": "0.2",
+      "enum": [
+        "0.1",
+        "0.2"
+      ],
       "title": "Schema Version",
       "type": "string"
     },
@@ -31,6 +34,20 @@
       "maximum": 1,
       "minimum": 0,
       "title": "Thompson Sample",
+      "type": "number"
+    },
+    "reward_uncertainty": {
+      "minimum": 0,
+      "title": "Reward Uncertainty",
+      "type": "number"
+    },
+    "mean_execution_cost": {
+      "minimum": 0,
+      "title": "Mean Execution Cost",
+      "type": "number"
+    },
+    "cost_adjusted_sample": {
+      "title": "Cost Adjusted Sample",
       "type": "number"
     },
     "verified_record_count": {
@@ -72,6 +89,20 @@
       "title": "Evidence Refs",
       "type": "array"
     },
+    "policy_versions": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Policy Versions",
+      "type": "array"
+    },
+    "dataset_partitions": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Dataset Partitions",
+      "type": "array"
+    },
     "execution_authorized": {
       "const": false,
       "default": false,
@@ -85,6 +116,9 @@
     "posterior_beta",
     "posterior_mean_reward",
     "thompson_sample",
+    "reward_uncertainty",
+    "mean_execution_cost",
+    "cost_adjusted_sample",
     "verified_record_count",
     "success_records",
     "partial_records",
