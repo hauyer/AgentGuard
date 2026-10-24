@@ -1,5 +1,15 @@
 # AgentGuard 上层平台开发状态（2026-10-24）
 
+## 上层平台重构 A7
+
+- [x] 新增 system/workflow/investigation/evidence/defense-policy/report 业务路由；旧 kernel/run 路由保留，工作流列表支持 limit/offset。
+- [x] 新增标准库 Python SDK，限制 API origin、拒绝重定向、限制响应大小、区分 API 错误并提供业务方法；源码打包测试核验 SDK/MCP/API 文档均入包。
+- [x] MCP 统一通过 SDK 调 Public API；移除本地 Engine、WARDEN、Compat、Artifact 和 ExperienceStore 直接依赖，只允许不启动运行的 observation/capture/detection 计划及查询/提议工具。
+- [x] 加入请求 ID、安全响应头、每进程直接对端限流、明确 CORS 白名单、独立操作员 token，以及不记录查询/正文/凭据的 SQLite API 审计事件；审计事件先预留再路由，预留失败时 API fail closed。
+- [x] 新增 OpenAPI、REST、SDK 错误/URL、MCP 边界、操作员角色、分页、审计、限流、CORS 回归；全量测试 245 通过、2 跳过。跳过项为未配置 PyTorch 的可选白盒测试及未配置真实 WARDEN URL 的 HTTP 测试。
+- [x] A7 源码 Ruff、编译、架构边界检查和 `git diff --check` 通过；无 WARDEN 边界违规和导入循环。详见 [`UPPER_LAYER_A7.md`](migration/UPPER_LAYER_A7.md) 与 [`PUBLIC_API.md`](PUBLIC_API.md)。
+- [ ] 未进行本阶段的真实 WARDEN HTTP、3B/7B 模型或干预运行；合同与 Mock 测试不计作这些真实验证。操作员 token 未配置时保留 API-token 兼容回退，正式暴露服务前应配置独立凭证。
+
 ## 上层平台重构 A6
 
 - [x] 经验合同 0.2 记录来源/运行状态、证据核验、风险结果、正常任务效用、成本、版本、可复现摘要、训练/验证/测试/held-out 分区、验证与过期时间。
@@ -27,7 +37,7 @@
 - [x] 兼容 API/CLI 提交统一进入持久化工作流；新增业务状态映射、尝试/恢复计数、远端状态事件及严格运行身份检查。
 - [x] 未提交本地任务可取消；外部取消明确 unsupported；恢复防御任务需要当前审批。
 - [x] 全量测试 195 通过、2 跳过，真实 HTTP blocked 工作流重放 1 通过，主要服务与新增测试 Ruff 及编译通过。
-- [ ] A7–A8 待完成；外部执行能力仍有依赖阻塞，独立比赛应用尚未开始。
+- [ ] A8 候选验收待完成；外部执行能力仍有依赖阻塞，独立比赛应用尚未开始。
 
 ## 上层平台重构 A3（2026-10-24）
 
@@ -36,7 +46,7 @@
 - [x] FRACTAL-Bench 与 StegoPot 适配器按需导入；架构审计将兼容实现单独列为旧债务。
 - [x] 本阶段删除文件：无。WARDEN 无完整等价公开接口，移除会破坏未迁移调用者；详细条件见 `docs/migration/COMPATIBILITY.md`。
 - [x] 全量测试 199 通过、2 跳过；编译、A3 涉及文件 Ruff、边界审计通过；全仓 Ruff 尚余 140 项，A8 处理。
-- [x] A3 验收记录见 `docs/migration/UPPER_LAYER_A3.md`；A6–A8 与强网杯应用待完成。
+- [x] A3 验收记录见 `docs/migration/UPPER_LAYER_A3.md`；历史 A3 阶段的 API/MCP 配对入口当时仅合成；MCP 已在 A7 迁至 Public API。A8 与强网杯应用待完成。
 
 ## 上层平台重构 A4（2026-10-24）
 
@@ -46,7 +56,7 @@
 - [x] 新增候选评估步数上限和已用计数；LLM 使用剩余模型调用/输出 token 预算；预算未知时跳过模型并按确定性策略回退。
 - [x] 配对实验设计与最终选中的发现一致；CLI、REST、嵌套预算和 JSON Schema 支持新策略字段。
 - [x] 全量测试 208 通过、2 跳过；编译、A4 涉及文件 Ruff、Schema 一致性和架构边界检查通过。
-- [x] 全仓 Ruff 历史检查仍有 124 项问题（A0 基线 171 项）；留给 A8 收敛。A4 报告见 `docs/migration/UPPER_LAYER_A4.md`；A6–A8 与强网杯应用待完成。
+- [x] 全仓 Ruff 历史检查仍有 124 项问题（A0 基线 171 项）；留给 A8 收敛。A4 报告见 `docs/migration/UPPER_LAYER_A4.md`；A8 与强网杯应用待完成。
 
 ## 上层平台重构 A1（2026-10-24）
 

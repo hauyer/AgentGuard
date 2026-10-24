@@ -5,6 +5,10 @@
 - 默认运行时为 `MockBackend`，只产生合成事件。
 - 默认 API 监听 `127.0.0.1`；不要未经鉴权和网络隔离就绑定公网地址。
 - 可通过 `AGENTGUARD_API_TOKEN` 要求所有非公开 API 请求携带 `X-AgentGuard-Token`。
+- `AGENTGUARD_OPERATOR_API_TOKEN` 可单独限制策略激活/回滚和审计读取；设置后，通用 API token 不能替代操作员凭证。未设置独立操作员 token 时，为兼容旧部署，API token 仍可用于这些操作。
+- `AGENTGUARD_RATE_LIMIT_PER_MINUTE` 控制每进程、按直接 TCP 对端地址计数的请求频率（默认 300 次/分钟）；不信任转发 IP 头。多进程部署必须在可信反向代理上配置共享限流。
+- `AGENTGUARD_CORS_ORIGINS` 仅接受显式 origin 列表，拒绝 `*`；留空时关闭 CORS。
+- 每个响应返回 `X-Request-ID`；SQLite 审计事件只保存 ID、HTTP 方法、匹配路由模板、状态和主体角色，不保存 query/body/token。审计表在约 100,000 条后滚动保留近期事件。
 - 真实后端写操作必须提供 `authorization_ref`，并要求设置 `AGENTGUARD_APPROVAL_TOKEN`，在请求中使用 `X-Approval-Token`。
 - 真实后端的 message、tool-call、tool-result 等写操作只能使用 `isolated_test_environment` 范围；策略层拒绝真实后端的 `synthetic_demo` 范围。
 - 工具结果、消息内容和经验库条目均视为不可信输入；它们不能覆盖策略代码或系统配置。
@@ -37,3 +41,5 @@ agentguard serve --host 127.0.0.1 --port 8000
 ```
 
 PowerShell 可使用 `$env:AGENTGUARD_API_TOKEN = "..."`。不要将真实凭证写入配置模板、日志、源码或压缩包。
+
+MCP 是使用 `AgentGuardClient` 的 Public API 客户端；它只创建不启动运行的只读/观测类 WARDEN 计划，不能审批或执行防御。API 和 SDK 的路由、环境变量与部署边界见 [`PUBLIC_API.md`](PUBLIC_API.md)。

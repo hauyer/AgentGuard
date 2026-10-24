@@ -2,13 +2,14 @@
 
 > **当前开发边界（2026-10-24）：** 在 `feature/agentguard-upper-layer-v1`
 > 完成上层平台 A0–A8；WARDEN、FRACTAL-Bench、StegoPot 只读。
-> A0–A6 已完成，A7–A8 尚待实现，见[A0 报告](docs/migration/UPPER_LAYER_A0.md)、
+> A0–A7 已完成软件实现，A8 候选验收待完成，见[A0 报告](docs/migration/UPPER_LAYER_A0.md)、
 > [A1 报告](docs/migration/UPPER_LAYER_A1.md)、
 > [A2 报告](docs/migration/UPPER_LAYER_A2.md)、
 > [A3 兼容隔离](docs/migration/UPPER_LAYER_A3.md)、
 > [A4 调查编排](docs/migration/UPPER_LAYER_A4.md)、
 > [A5 证据治理](docs/migration/UPPER_LAYER_A5.md)、
 > [A6 经验门控](docs/migration/UPPER_LAYER_A6.md)、
+> [A7 公共 API/SDK/MCP](docs/migration/UPPER_LAYER_A7.md)、
 > [模块依赖图](docs/migration/DEPENDENCY_GRAPH.md)和
 > [依赖阻塞](docs/DEPENDENCY_BLOCKERS.md)。通过候选验收后才建立独立
 > `AgentGuard-QWB-App`，比赛应用只调用 AgentGuard 公共接口。
@@ -259,25 +260,32 @@ python -m pip install -e ".[mcp]"
 agentguard-mcp
 ```
 
-工具仅包含场景/能力查询、合成实验、报告和 Finding 查询、防御预览、受预算限制的合成配对实验、经验检索与未验证经验记录。它不暴露任意 Shell、Python 或文件系统执行能力；默认只运行 Mock 后端。
+MCP 连接 `AGENTGUARD_BASE_URL` 指向的 AgentGuard 服务，并通过同一 Python SDK 调用公开 API；不会自行创建引擎、读写本地经验库或直接调用 WARDEN。工具限于状态/场景/能力/调查/治理证据查询、只创建不运行的 WARDEN 调查计划、防御候选预览和已验证经验检索。MCP 不提供审批或防御执行工具，也不暴露任意 Shell、Python 或文件系统执行能力。鉴权凭证从 AgentGuard 环境变量读取。
+
+### Python SDK 与稳定业务路由
+
+```python
+from agentguard.sdk import AgentGuardClient
+
+client = AgentGuardClient.from_env()
+print(client.health())
+print(client.list_investigations(limit=20, offset=0))
+```
+
+设置 `AGENTGUARD_BASE_URL`、`AGENTGUARD_API_TOKEN`（可选）和 `AGENTGUARD_API_TIMEOUT`。业务路由及旧 `/v1/kernel/*`、`/v1/runs/*` 兼容路径列于 [`docs/PUBLIC_API.md`](docs/PUBLIC_API.md)。
 
 ## 6. 架构与模块
 
 ```text
-REST API / CLI / Web Console / Optional MCP
-                  |
-           AgentGuard Engine
-                  |
-  ┌───────────────┼────────────────┐
-  |               |                |
-Detector     Active Investigator  Defense Planner
-  |           Hypothesis / Action  Preview / Verify
-  └───────────────┼────────────────┘
-          Policy Engine + Evidence
-                  |
-          Provider Contracts
-      ┌───────────┴──────────┐
-  Mock Backend      FRACTAL-Bench / StegoPot adapters
+CLI / Web Console ──┐
+Python SDK ──────────┼──> AgentGuard Public API
+Optional MCP ────────┘          |
+                        ┌───────┴────────┐
+                        |                |
+                Upper-layer services   Synthetic research
+              WARDEN client + policy       engine
+                        |                |
+                     WARDEN API       Mock Backend
 ```
 
 角色协调目前是确定性的、类型化的软件工作流，不是多个独立 LLM Agent 的自主协作。多 Agent 自主调查必须通过与单 Agent 和固定工作流的对照实验来证明价值。

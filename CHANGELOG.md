@@ -1,12 +1,21 @@
 # Changelog
 
+## Unreleased — Upper-layer platform A7
+
+- Added stable `/v1/system`, `/v1/workflows`, `/v1/investigations`, `/v1/evidence`, `/v1/defense-policies`, and `/v1/reports` business routes while keeping the existing kernel/run paths available.
+- Added a standard-library `AgentGuardClient` with origin validation, redirect rejection, bounded JSON responses, typed API failures, request IDs, pagination, and investigation/evidence/report helpers.
+- Routed the restricted MCP server through the Public API SDK; removed local engine, WARDEN, compatibility-runner, artifact, and experience-store access. MCP can create only a WARDEN plan with `start_run=false`; approval and execution tools are absent.
+- Added `X-Request-ID`, per-process peer rate limiting, explicit-origin CORS, distinct operator-token support, security headers, and SQLite request audit events that omit query strings, bodies, and credentials.
+- Audit events are reserved before dispatch; if the existing workflow database cannot reserve an event, the API returns 503 without executing the request. Interrupted requests remain marked incomplete.
+- Added API/SDK/MCP boundary and security tests; full suite: 245 passed, 2 skipped. Live WARDEN HTTP, local-model execution and real causal validation remain separate external acceptance items.
+
 ## Unreleased — Upper-layer platform A6
 
 - Expanded the existing SQLite experience records with source/run provenance, outcome and benign-utility measurements, execution cost, model/policy versions, reproducibility hash, expiry, and explicit dataset partition.
 - Migrated legacy rows into held-out quarantine; enforce one split per case family and keep test/held-out records out of public retrieval and reward selection.
 - Require completed WARDEN provenance, verified evidence references, reproducibility, repeated intervention evidence, risk and benign-utility metrics, and current training records before any outcome can become a reward. Public submissions cannot self-assert verified status.
 - Added conflict quarantine, expiry filtering, version/evidence/date filters, cost-adjusted Thompson ranking with uncertainty reporting, and immutable recommendation-policy activation/rollback history.
-- Added API and CLI policy inspection/rollback; REST policy changes require a configured AgentGuard API token.
+- Added API and CLI policy inspection/rollback; REST policy changes require a configured operator or legacy API token.
 - Validated 236 tests passed and 1 unconfigured live WARDEN HTTP test skipped; no real model or defense outcome is inferred.
 
 ## Unreleased — Upper-layer platform A5
