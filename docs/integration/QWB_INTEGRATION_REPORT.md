@@ -43,6 +43,12 @@
 - 全量测试 333/0/2（跳过原因：torch 可选模块、未配置 live WARDEN），Ruff/compileall/
   架构审计/Schema 导出全绿；真实 uvicorn HTTP 集成链路通过；包构建 + 干净 wheel
   安装 + `agentguard --help` 通过。详见 [TEST_REPORT.md](../release/TEST_REPORT.md)。
+- **候选后追加**：① 真实 WARDEN 内核（本机 `077f540`，plan 级组合）live 验证通过
+  ——readiness/options 与内核能力/契约逐项一致、公共 API 真实提交计划、时间线/
+  实验索引/图谱诚实语义在真实内核上复现（TEST_REPORT §4a）；② 第十阶段概念区分
+  保障测试 8 项（TEST_REPORT §2a）。全量更新为 **342 通过 / 0 失败 / 3 跳过**。
+- 完整观察运行（C1 真实消息边）受本地 ollama 无已加载模型限制，保持不可执行并
+  如实记录；不冒充通过。
 - 三版本 CI 矩阵待推送后在 Actions 执行（发布流程最后一步，未获推送授权前不执行）。
 
 ## 5. 阶段提交记录

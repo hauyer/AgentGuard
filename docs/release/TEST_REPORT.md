@@ -4,6 +4,44 @@
 范围：仅 AgentGuard 上层；WARDEN、FRACTAL-Bench、StegoPot 与 AgentGuard-QWB-App
 保持只读。历史 A8 验收记录见 [A8_TEST_REPORT.md](A8_TEST_REPORT.md)，未覆盖。
 
+> **候选后追加（同日）：** ① 真实 WARDEN 内核 live 验证（见 §4a）；② 第十阶段
+> 研究概念区分保障测试 8 项（见 §2a）。全量更新为 **342 通过 / 0 失败 / 3 跳过**
+> （新增的第 3 项跳过 = `test_live_warden_c_round`，仅在未配置
+> `AGENTGUARD_LIVE_WARDEN_URL` 时跳过并明示）。
+
+## 4a. 真实 WARDEN 内核 live 验证（候选后追加）
+
+以本机 WARDEN 检出（`077f540`，0.2.0）启动真实 HTTP 服务（plan 级组合：
+`WARDEN_FRACTAL_DATASET=integration-data/dataset.json`，8 个契约实例，不注入
+模型运行时——agent.runtime 如实报 unavailable），`AGENTGUARD_LIVE_WARDEN_URL`
+指向该服务后运行 `tests/test_live_warden_c_round.py`，**通过**：
+
+- readiness：warden_connectivity/available、api_compatibility/available、
+  available_contracts/available（contract_count=8 与内核一致）、
+  model_runtime/unavailable（与真实能力报告一致，非 health 推断）、
+  intervention_execution/unsupported。
+- options：threat_contracts 与内核 `/v1/contracts` 逐项一致；无运行时 →
+  全部模式 submittable=false 且 blocker 指明 COMPONENT_UNAVAILABLE:agent.runtime。
+- 公共 API 真实提交 observation 计划（start_run=false）→ journal 落盘 →
+  timeline 首事件 workflow_created、实验索引出现 warden_workflow 条目
+  （execution_status=planned）、图谱如实 available=false（无 run 载荷）。
+- 既有 `test_live_warden_http.py`（preflight/plan/幂等重放）同轮通过。
+
+限制：完整观察运行（将产生 C1 真实消息边）需 StegoPot+本地模型；当前 ollama
+服务可达但无已加载模型，按诚实原则未拉取模型，该项保持不可执行并记录，
+不冒充通过。
+
+## 2a. 第十阶段：研究概念区分保障（候选后追加）
+
+`tests/test_concept_separation.py`（8 项，全过）逐项固化公共输出中的概念边界：
+Observation（记录的事件，无风险判定）≠ Finding（带检测器来源的候选风险）≠
+Hypothesis（绑定 finding 的可证伪陈述）≠ Intervention（真实执行记录，
+simulated_only 不升级）≠ Verification（causal_claim_status 与 provenance 门控）≠
+Defense Recommendation（expected_risk_reduction 是承诺不是效果，
+execution_performed=false）≠ Defense Effectiveness（仅 verified 生命周期可达）；
+统计输出不自带因果标签；研究分析必须先有预注册；plan-only 工作流不产生
+run/证据/图谱边；隐藏真值不出现在任何可查询输出。
+
 ## 1. 质量检查（全部通过）
 
 | 检查 | 命令 | 结果 |
