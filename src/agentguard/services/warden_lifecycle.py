@@ -62,13 +62,18 @@ class WardenLifecycleService:
         payload = request.model_dump(mode="json")
         entry, created = self.workflows.begin(request.request_id, payload)
         if not created:
+            saved_context = entry.get("context") or {}
+            saved_run = saved_context.get("run") or {}
+            if entry.get("status") == "interrupted" and saved_run.get("run_id"):
+                return self._resume_existing(request, entry)
             if entry.get("result") is not None and entry.get("status") not in {"timed_out", "run_submitted", "polling", "plan_created"}:
                 replay = dict(entry["result"])
                 replay["idempotent_replay"] = True
                 replay["workflow_revision"] = entry["revision"]
                 return replay
             if entry.get("status") in {
-                "run_submitted", "polling", "timed_out", "plan_created", "submission_uncertain"
+                "run_submitted", "polling", "timed_out", "plan_created",
+                "submission_uncertain", "run_submitting"
             }:
                 return self._resume_existing(request, entry)
             if entry.get("status") not in {"created", "preflighting", "interrupted"}:
@@ -79,11 +84,22 @@ class WardenLifecycleService:
             result = self._execute_new(request, approval_valid=approval_valid, workflow_id=request.request_id)
         except Exception as exc:
             current = self.workflows.get(request.request_id) or {}
-            stage = (current.get("context") or {}).get("stage", current.get("status", "unknown"))
+            current_context = current.get("context") or {}
+            stage = current_context.get("stage", current.get("status", "unknown"))
             uncertain = stage in {"plan_submitting", "run_submitting"}
+            saved_run = current_context.get("run") or {}
+            if saved_run.get("run_id"):
+                retry_state = "run_submitted"
+            elif uncertain:
+                retry_state = "submission_uncertain"
+            elif stage == "plan_created":
+                retry_state = "plan_created"
+            else:
+                retry_state = "interrupted"
             self.workflows.update(
                 request.request_id,
-                "submission_uncertain" if uncertain else "interrupted",
+                retry_state,
+                context={"stage": retry_state} if not uncertain else None,
                 error_code=getattr(exc, "code", type(exc).__name__),
                 error_message=str(exc)[:300],
                 detail={"exception_type": type(exc).__name__, "external_submission_may_have_succeeded": uncertain},
@@ -218,20 +234,27 @@ class WardenLifecycleService:
         plan = dict(context.get("plan") or {})
         run = dict(context.get("run") or {})
         state = str(entry.get("status") or "unknown")
+        if state == "interrupted" and run.get("run_id"):
+            state = "run_submitted"
 
-        if state == "submission_uncertain" and context.get("stage") == "run_submitting":
+        if state in {"submission_uncertain", "run_submitting"} and context.get("stage") == "run_submitting":
             plan_id = plan.get("plan_id")
             if isinstance(plan_id, str) and plan_id.strip():
                 try:
                     remote_plan = self.client.get_audit_plan(plan_id)
                     remote_request = remote_plan.get("request")
                     expected = request.to_warden_payload()
-                    identity_keys = (
-                        "request_id", "contract_id", "model_id", "runtime_id", "mode"
-                    )
-                    if not isinstance(remote_request, Mapping) or any(
-                        remote_request.get(key) != expected[key] for key in identity_keys
+                    if (
+                        remote_plan.get("plan_id") != plan_id
+                        or not isinstance(remote_request, Mapping)
+                        or set(remote_request) - set(expected)
                     ):
+                        return self._reconciliation_report(entry)
+                    try:
+                        normalized = WardenAuditRequest.model_validate(remote_request).to_warden_payload()
+                    except ValueError:
+                        return self._reconciliation_report(entry)
+                    if self.workflows.canonical_hash(normalized) != self.workflows.canonical_hash(expected):
                         return self._reconciliation_report(entry)
                     matches = [
                         item for item in self.client.list_runs()
@@ -239,7 +262,11 @@ class WardenLifecycleService:
                     ]
                 except WardenKernelError:
                     return self._reconciliation_report(entry)
-                if len(matches) == 1 and isinstance(matches[0].get("run_id"), str):
+                if (
+                    len(matches) == 1
+                    and isinstance(matches[0].get("run_id"), str)
+                    and matches[0]["run_id"].strip()
+                ):
                     run = dict(matches[0])
                     self.workflows.update(
                         request_id, "run_submitted",

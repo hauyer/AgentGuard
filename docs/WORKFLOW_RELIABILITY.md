@@ -52,9 +52,15 @@ REST 接口：
 # 丢失运行提交响应后的唯一匹配恢复（2026-10-24）
 
 当 SQLite 记录处于 `submission_uncertain` 且已知 WARDEN `plan_id` 时，
-AgentGuard 先读取 WARDEN 计划，核对 `request_id/contract_id/model_id/runtime_id/mode`，
+AgentGuard 先读取 WARDEN 计划，严格校验完整内核请求合同，并比较所有字段
+（包括 Probe、SAE、capture_targets 和 metadata），
 再列出远端运行。只有**恰好一个**运行属于该计划且有 `run_id`，才读取其终态并
 继续原工作流；零个、多个、身份不一致或内核不可达时继续返回
 `reconciliation_required`，不会再次执行 `POST /v1/runs`。真实 HTTP 演练从
 现存观察运行恢复到 SQLite `finished`，没有再次调用模型。
 本次全量测试 146 通过、2 跳过，真实 HTTP 专项 1 通过。
+
+进一步加固后，已知 `run_id` 的网络或轮询异常会保留 `run_submitted` 状态；
+兼容旧版本留下的 `interrupted` 记录时，也会先恢复原运行。查询失败不再触发
+新的计划或模型运行。新增完整合同差异、未知字段、默认值规范化、网络故障和
+旧记录恢复测试；当前全量测试 154 通过、2 跳过。

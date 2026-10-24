@@ -4,6 +4,7 @@
 
 - Prevent real runtime or paired-executor injection into the AgentGuard API; real audits must use WARDEN. Keep legacy offline interfaces until kernel parity is verified.
 - Reconcile a lost run-submission response against WARDEN only when the remote plan identity matches and exactly one run belongs to that plan; never resubmit an ambiguous run.
+- Compare the full normalized kernel request during reconciliation and preserve known runs across polling failures, including recovery of older interrupted journal entries.
 - Added `observation` mode to WARDEN requests and diagnostics. Local model runs now return `queued` promptly and can be polled through the existing durable AgentGuard workflow.
 - Kept completed observation evidence at `causal_claim_status=not_assessed`; no causal claim is inferred from a message trace.
 - Recorded a real local 7B model run and its failed aggregate experiment in `docs/migration/OBSERVATION_RUN.md`.
