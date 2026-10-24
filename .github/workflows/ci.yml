@@ -24,7 +24,7 @@ jobs:
       - name: Lint
         run: ruff check src tests scripts
       - name: Run tests
-        run: pytest
+        run: python -m pytest
       - name: Build release artifacts
         run: python -m build --no-isolation --sdist --wheel --outdir dist
       - name: Install wheel in a clean environment

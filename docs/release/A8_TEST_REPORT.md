@@ -30,6 +30,11 @@ GitHub 目标分支之前的 Actions run `40058130736` 在 Python 3.11、3.12、
 收集从此前基线 246 增至 256。两项 skip 分别是未配置 live WARDEN 的测试，以及
 基础环境没有 PyTorch 时整模块的可选跳过；随后在 nanogpt 环境运行该模块得到 5 passed。
 
+修复后的首个 GitHub Actions run `40074520778` 中，三种 Python 的安装、编译和 Ruff
+均通过；pytest console entry point 在 Linux 上未将项目根目录放入 `sys.path`，导致
+三个收集错误无法导入 `scripts`。CI 已改用 `python -m pytest` 与已验证的本地调用一致，
+需检查后续 run 的完整测试、构建和隔离 wheel 安装结果。
+
 ## 安全与架构核对
 
 - 新生产审计路径只能通过 WARDEN HTTP 客户端访问低层审计；API 禁止注入真实本地
