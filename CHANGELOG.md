@@ -1,5 +1,18 @@
 # Changelog
 
+## 1.1.0-rc1 — QWB application integration (C0–C8)
+
+- Added the message-level interaction graph API `GET /v1/investigations/{request_id}/interaction-graph` (QWB-INT-001). Real edges come only from WARDEN run payload message metadata recorded in the workflow journal; synthetic engine reports are served only under an explicit `run_id` and are always labelled `agentguard_synthetic_report`. Missing metadata returns `available=false` with `GRAPH_SOURCE_UNAVAILABLE` instead of fabricated edges.
+- Added the read-only experiment index `GET /v1/experiments`, `GET /v1/experiments/{experiment_id}` and `POST /v1/experiments/compare` (QWB-INT-006) over persisted WARDEN workflows and run-report artifacts. Missing metrics stay `null`, grouping-free runs keep `experiment_id=null`, and comparisons return `not_comparable` with reasons unless scenario, model version, data-source level and shared metrics all check out.
+- Added layered readiness `GET /v1/system/readiness` and investigation option discovery `GET /v1/investigations/options` (QWB-INT-005/007) with per-layer blockers, short-TTL cache provenance, and no promotion of WARDEN health into model-runtime, audit or intervention executability; intervention execution stays `unsupported` until a kernel executor is declared.
+- Added the durable investigation timeline `GET /v1/investigations/{request_id}/timeline` with `after_event_id` incremental fetch, projected strictly from `warden_workflow_events`; no step is synthesized for unrecorded transitions.
+- Extended `GovernedEvidence` with additive artifact capability fields (`metadata_available`, `content_access_supported`, `integrity_verified`, `access_restriction`) and added `GET /v1/reports` as a paginated index of persisted run reports; report reads now rehydrate from the content-addressed store after a service restart.
+- Extended `DefensePreview` with additive capability fields (`approval_required_per_candidate`, `execution_supported_overall`, `rollback_supported`, `verification_evidence_available`, `benign_utility_data_available`, `capability_notes`); approval still never implies execution support.
+- Fixed the pre-existing public `GET /v1/defense-policies/{request_id}` failure caused by a keyword-only `persist` parameter mismatch with the route adapter.
+- Extended the standard-library SDK with `get_readiness`, `get_investigation_options`, `get_investigation_graph`, `get_investigation_timeline`, `list_experiments`, `get_experiment`, `compare_experiments` and `list_reports`.
+- Added read-only QWB application-layer contract tests (dashboard, investigations, evidence, defense, reports, experiments, experiences, security) and an OpenAPI additive-only regression against the C0 baseline; full suite 333 passed, 2 skipped (torch-optional whitebox, unconfigured live WARDEN HTTP), plus a uvicorn subprocess live-HTTP integration test.
+- Real WARDEN execution, model validation and causal-defense validation remain blocked as recorded in `docs/DEPENDENCY_BLOCKERS.md`; no real causal result is claimed.
+
 ## 1.0.0-rc1 — Candidate acceptance
 
 - Repaired CI under the existing Ruff rules: sorted imports, removed unused imports, replaced unsafe broad exception handling with typed handling, and corrected small idioms without disabling checks.

@@ -18,11 +18,25 @@ A8 验收材料：[测试报告](docs/release/A8_TEST_REPORT.md)、[成熟度矩
 [架构图](docs/release/ARCHITECTURE.md)、[API 参考](docs/release/API_REFERENCE.md)、
 [部署指南](docs/release/DEPLOYMENT.md)和[已知限制](docs/release/KNOWN_LIMITATIONS.md)。
 
+> **当前开发边界（2026-10-24，C0–C8）：** 在 `feature/qwb-public-api-integration`
+> 完成"强网杯应用层集成"轮次（C0 接口审计 → C8 候选发布）。新增消息级交互图谱、
+> 只读实验索引与对比、分层 readiness 与调查可选项、持久化调查时间线、证据/报告
+> 工件能力字段与报告索引、防御能力描述字段，以及配套 SDK 方法与只读 QWB 合同
+> 兼容测试。验收材料见
+> [C 轮测试报告](docs/release/TEST_REPORT.md)、
+> [QWB 集成报告](docs/integration/QWB_INTEGRATION_REPORT.md)和
+> [接口覆盖矩阵](docs/integration/QWB_API_MATRIX.md)。真实 WARDEN 执行、模型
+> 验证与因果防御验证仍按依赖阻塞记录，不因新端点解除。
+
 > **1.0.0 迁移进度：** 阶段 0 审计和阶段 1 HTTP 联调已完成；额外打通了 WARDEN → StegoPot → 本地 7B 模型的观察性运行，并由 AgentGuard 接收证据。该运行没有因果干预，8 个实验条件中 2 个失败。阶段 2 的重复底层代码尚未删除。查看[真实模型联调记录](docs/migration/OBSERVATION_RUN.md)、[阶段 1 实测报告](docs/migration/STAGE1_REPORT.md)、[重复能力与调用点](docs/migration/DUPLICATION_MAP.md)和[迁移顺序](docs/migration/MIGRATION_PLAN.md)。
 
 阶段 2 已关闭通过 `create_app(engine=...)` 注入真实模型运行时和直接配对执行器的路径；真实审计请使用 `/v1/kernel/workflows`。旧 Probe、白盒和 StegoPot Python 接口仍只供离线兼容研究，迁移和删除条件见[阶段 2 边界报告](docs/migration/STAGE2_BOUNDARY.md)。
 
-**AgentGuard 1.0.0-rc1** 是 AgentGuard 1.0.0 候选版，面向多 Agent 信息流风险研究，提供以上层治理为主的调查编排、WARDEN 审计代理、策略审批、证据整理和稳定公共 API。WARDEN 是生产审计的唯一底层内核；本地 Mock 只用于合成软件测试。
+**AgentGuard 1.1.0-rc1** 是面向强网杯应用层的候选版：在 1.0.0-rc1 的调查编排、
+WARDEN 审计代理、策略审批、证据整理和稳定公共 API 之上，补齐消息级图谱、实验
+汇总、能力发现、调查时间线、证据/报告与防御合同，使 AgentGuard-QWB-App 可以
+完全通过公共接口获得真实业务数据与明确的能力边界。WARDEN 仍是生产审计的唯一
+底层内核；本地 Mock 只用于合成软件测试。
 
 > **重要边界：** 默认运行使用 `MockBackend`，只用于软件与接口验证。历史实测已完成本地 7B 观察运行，但完整条件组有失败，尚未验证真实因果干预或防御效果。任何合成指标都不能作为真实模型行为、真实防御效果或因果结论。
 
