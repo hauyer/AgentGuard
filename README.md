@@ -2,7 +2,7 @@
 
 > **当前开发边界（2026-10-24）：** 在 `feature/agentguard-upper-layer-v1`
 > 完成上层平台 A0–A8；WARDEN、FRACTAL-Bench、StegoPot 只读。
-> A0–A7 已完成；A8 正在进行候选验收，跨版本 CI 和真实 WARDEN 烟测状态单独记录，见[A0 报告](docs/migration/UPPER_LAYER_A0.md)、
+> A0–A7 已完成；A8 软件候选验收检查已通过，真实 WARDEN 烟测和模型验证仍按依赖阻塞记录，见[A0 报告](docs/migration/UPPER_LAYER_A0.md)、
 > [A1 报告](docs/migration/UPPER_LAYER_A1.md)、
 > [A2 报告](docs/migration/UPPER_LAYER_A2.md)、
 > [A3 兼容隔离](docs/migration/UPPER_LAYER_A3.md)、

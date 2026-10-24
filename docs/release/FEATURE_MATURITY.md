@@ -20,7 +20,7 @@
 | 可选白盒/Activation 兼容代码 | 是 | 是（nanogpt：5 passed） | 否 | **blocked** | **blocked** | 仅旧兼容/离线工具，不属于 AgentGuard 生产审计内核 |
 | LLM 调查建议器 | 是 | 是（schema、fallback、transport） | 否 | 否 | **blocked** | 未验证真实本地 3B/7B 模型与端到端安全行为 |
 | API 鉴权、审计、CORS、进程内限流 | 是 | 是 | 是（请求合同） | 否 | 不适用 | 真实代理/集群拓扑未做部署验收；详见部署限制 |
-| Python 3.11/3.12/3.13 兼容 | 是 | Python 3.12 本地通过 | Actions 矩阵待运行 | 不适用 | 不适用 | RC 验收需三个矩阵作业均通过 |
+| Python 3.11/3.12/3.13 兼容 | 是 | 是 | 是（GitHub Actions run 40074638267） | 不适用 | 不适用 | 三种版本的完整作业、构建和 wheel 安装全部通过 |
 
 历史 7B 观察记录包含 6/8 条件完成、2 条失败，汇总状态为 failed。它既不是
 `real_model_validated` 的成功证据，也不是已验证因果防御结论；细节见

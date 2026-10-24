@@ -8,7 +8,7 @@
 - Rejected known hidden-evaluator fields recursively in WARDEN request metadata and sanitized request-validation responses so invalid values are not echoed to clients or persisted in the workflow journal.
 - Added a regression contract covering all public and legacy route methods, deprecated Probe endpoints, request schemas, and pagination parameters.
 - Full A8 acceptance results and external blockers are recorded in `docs/release/` and `docs/migration/UPPER_LAYER_A8.md`.
-- Python 3.11/3.12/3.13 Actions matrix remains the authoritative cross-version check. Real WARDEN HTTP, model execution, and causal-defense validation are blocked when no WARDEN URL/executor is configured; no real causal result is claimed.
+- Python 3.11/3.12/3.13 Actions matrix passed with the release build and clean wheel install. Real WARDEN HTTP, model execution, and causal-defense validation remain blocked when no WARDEN URL/executor is configured; no real causal result is claimed.
 
 ## Unreleased — Upper-layer platform A7
 

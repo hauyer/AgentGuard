@@ -21,6 +21,6 @@ WARDEN、FRACTAL-Bench 或 StegoPot。
 [`../release/FEATURE_MATURITY.md`](../release/FEATURE_MATURITY.md) 和
 [`../DEPENDENCY_BLOCKERS.md`](../DEPENDENCY_BLOCKERS.md)。
 
-真实 WARDEN HTTP 烟测、真实模型运行和因果防御执行没有配置/执行条件，均按 blocked
-记录。候选发布前仍须等待分支上 Python 3.11、3.12、3.13 GitHub Actions 全绿；不以
-本机 Python 3.12 或模拟测试代替矩阵与真实后端验收。
+Python 3.11、3.12、3.13 GitHub Actions 三个完整作业已全绿。真实 WARDEN HTTP 烟测、
+真实模型运行和因果防御执行没有配置/执行条件，均按 blocked 记录；矩阵通过不解除
+这些外部依赖阻塞，也不构成真实因果结论。

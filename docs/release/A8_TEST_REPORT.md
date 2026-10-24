@@ -18,7 +18,7 @@ StegoPot 均保持只读。本报告不把 Mock、合成数据、历史观察记
 | 包构建 | 通过 | 构建 `agentguard-1.0.0rc1.tar.gz` 与纯 Python wheel |
 | 干净环境安装 | 通过 | 从 wheel 在独立临时运行环境安装，版本为 `1.0.0rc1`，`agentguard --help` 成功 |
 | PyTorch 可选测试 | 通过 | `D:\flask\miniconda\envs\nanogpt`（Python 3.12.14、torch 2.11.0+cu128），`tests/test_whitebox_activation.py`：5 passed |
-| Python 3.11/3.13 | 待 CI | 本机没有这两个解释器；候选分支 GitHub Actions 矩阵必须通过后才能接受 |
+| Python 3.11/3.12/3.13 | 通过 | GitHub Actions run `40074638267` 三个矩阵作业全绿；每个版本均构建并安装 wheel |
 | WARDEN 真实 HTTP | 阻塞 | `AGENTGUARD_WARDEN_URL`、`AGENTGUARD_LIVE_WARDEN_URL` 未配置 |
 | 真实模型/因果防御 | 阻塞 | 无实时 3B/7B WARDEN 模型运行与经验证的防御执行器 |
 
@@ -33,7 +33,10 @@ GitHub 目标分支之前的 Actions run `40058130736` 在 Python 3.11、3.12、
 修复后的首个 GitHub Actions run `40074520778` 中，三种 Python 的安装、编译和 Ruff
 均通过；pytest console entry point 在 Linux 上未将项目根目录放入 `sys.path`，导致
 三个收集错误无法导入 `scripts`。CI 已改用 `python -m pytest` 与已验证的本地调用一致，
-需检查后续 run 的完整测试、构建和隔离 wheel 安装结果。
+后续 run `40074638267`（提交 `24285ab03cf81860fb8364f2c7b5185e80f22a05`）在三种
+Python 上全部通过：每个作业均为 255 passed、2 skipped、1 warning，Ruff 全绿，
+sdist/wheel 构建、隔离 wheel 安装和 CLI 启动均成功。两项 skip 是未配置真实 WARDEN
+服务，以及 Linux CI 环境未安装可选 PyTorch 模块。
 
 ## 安全与架构核对
 
@@ -48,6 +51,5 @@ GitHub 目标分支之前的 Actions run `40058130736` 在 Python 3.11、3.12、
 
 ## 待完成门槛
 
-推送候选分支后，等待 3.11/3.12/3.13 Actions 全部通过，再更新本报告中的 CI
-结果并标记候选验收。当前修复后的跨版本矩阵尚未运行；任何版本失败都需修复后重新运行。真实 WARDEN/model 项仍按
+最终文档更新提交仍须保留三版本矩阵全绿。软件 RC 验收的真实 WARDEN/model 项按
 依赖阻塞公开记录，不影响软件包构建与上层 API 合同验收。
