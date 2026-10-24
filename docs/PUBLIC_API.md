@@ -25,10 +25,27 @@ upgrade synthetic, observational, blocked, failed, or unsupported evidence.
 | `POST /v1/defense-policies/{request_id}/execute` | Compatibility alias; separate approval token required, and the missing external executor remains `unsupported` |
 | `GET /v1/reports/{run_id}` | Read an AgentGuard report (including explicitly synthetic reports) |
 | `GET /v1/system/audit-events?limit=&offset=` | Operator-only API request audit page |
+| `GET /v1/system/readiness?force_refresh=` | Layered readiness checks (connectivity, API compatibility, contracts, model runtime, Probe/SAE, audit and intervention execution, evidence access) with per-layer blockers, cache provenance; WARDEN health is never promoted to executability |
+| `GET /v1/investigations/options?force_refresh=` | Discovered audit-mode options, threat contracts, Probe/SAE resources and capture-target support for investigation forms; nothing unreported is invented |
+| `GET /v1/investigations/{request_id}/interaction-graph?run_id=` | Message-level interaction graph from authorized WARDEN run metadata; `available=false` with `GRAPH_SOURCE_UNAVAILABLE` when no compliant source exists; an explicit `run_id` renders the synthetic engine report, always labelled `agentguard_synthetic_report` |
+| `GET /v1/investigations/{request_id}/timeline?after_event_id=` | Durable journal timeline for one investigation; steps without recorded events are never synthesized |
+| `GET /v1/experiments?status=&scenario_id=&data_source=&limit=&offset=` | Read-only experiment index over persisted WARDEN workflows and run-report artifacts; missing metrics stay `null` |
+| `GET /v1/experiments/{experiment_id}` | One indexed experiment by experiment/request/run id |
+| `POST /v1/experiments/compare` | Descriptive comparison of two existing run reports after comparability checks; incomparable pairs return `not_comparable` with reasons |
+| `GET /v1/reports?status=&scenario_id=&limit=&offset=` | Paginated index of persisted run reports (artifact digests only, never paths) |
 
 List responses return `items`, page `count`, `offset`, `limit` and, where
 applicable, `next_offset`. The original endpoint paths and response fields remain
 available during migration.
+
+Evidence summaries expose the C5 artifact capability fields
+(`metadata_available`, `content_access_supported`, `integrity_verified`,
+`access_restriction`); `integrity_verified` is true only for AgentGuard-local
+content-addressed artifacts whose hash was re-verified. Defense previews expose
+the C6 capability fields (`approval_required_per_candidate`,
+`execution_supported_overall`, `rollback_supported`,
+`verification_evidence_available`, `benign_utility_data_available`,
+`capability_notes`); approval never implies execution support.
 
 ## Python SDK
 
@@ -42,6 +59,14 @@ from agentguard.sdk import AgentGuardClient
 client = AgentGuardClient.from_env()
 health = client.health()
 page = client.list_investigations(limit=25, offset=0)
+readiness = client.get_readiness()
+options = client.get_investigation_options()
+graph = client.get_investigation_graph("inv-1")
+timeline = client.get_investigation_timeline("inv-1")
+experiments = client.list_experiments(limit=25)
+detail = client.get_experiment("exp-1")
+comparison = client.compare_experiments(["run-a", "run-b"])
+reports = client.list_reports(status="completed")
 ```
 
 Environment variables:

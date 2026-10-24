@@ -175,6 +175,58 @@ class AgentGuardClient:
     def get_report(self, run_id: str) -> dict[str, Any]:
         return self.request("GET", f"/v1/reports/{quote(run_id, safe='')}")
 
+    def list_reports(
+        self, *, status: str | None = None, scenario_id: str | None = None,
+        limit: int = 50, offset: int = 0,
+    ) -> dict[str, Any]:
+        return self.request(
+            "GET", "/v1/reports",
+            query={"status": status, "scenario_id": scenario_id,
+                   "limit": limit, "offset": offset},
+        )
+
+    def get_readiness(self, *, force_refresh: bool = False) -> dict[str, Any]:
+        return self.request(
+            "GET", "/v1/system/readiness",
+            query={"force_refresh": str(force_refresh).lower()} if force_refresh else None,
+        )
+
+    def get_investigation_options(self, *, force_refresh: bool = False) -> dict[str, Any]:
+        return self.request(
+            "GET", "/v1/investigations/options",
+            query={"force_refresh": str(force_refresh).lower()} if force_refresh else None,
+        )
+
+    def get_investigation_graph(self, request_id: str, *, run_id: str | None = None) -> dict[str, Any]:
+        return self.request(
+            "GET", f"/v1/investigations/{quote(request_id, safe='')}/interaction-graph",
+            query={"run_id": run_id},
+        )
+
+    def get_investigation_timeline(
+        self, request_id: str, *, after_event_id: int | None = None
+    ) -> dict[str, Any]:
+        return self.request(
+            "GET", f"/v1/investigations/{quote(request_id, safe='')}/timeline",
+            query={"after_event_id": after_event_id},
+        )
+
+    def list_experiments(
+        self, *, status: str | None = None, scenario_id: str | None = None,
+        data_source: str | None = None, limit: int = 50, offset: int = 0,
+    ) -> dict[str, Any]:
+        return self.request(
+            "GET", "/v1/experiments",
+            query={"status": status, "scenario_id": scenario_id,
+                   "data_source": data_source, "limit": limit, "offset": offset},
+        )
+
+    def get_experiment(self, experiment_id: str) -> dict[str, Any]:
+        return self.request("GET", f"/v1/experiments/{quote(experiment_id, safe='')}")
+
+    def compare_experiments(self, run_ids: list[str]) -> dict[str, Any]:
+        return self.request("POST", "/v1/experiments/compare", body={"run_ids": run_ids})
+
     def search_verified_experiences(
         self, *, query: str = "", scenario_id: str | None = None, risk_type: str | None = None,
         limit: int = 50,
