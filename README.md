@@ -1,5 +1,12 @@
 # AgentGuard
 
+> **当前开发边界（2026-10-24）：** 在 `feature/agentguard-upper-layer-v1`
+> 完成上层平台 A0–A8；WARDEN、FRACTAL-Bench、StegoPot 只读。
+> A0 已完成，见[阶段报告](docs/migration/UPPER_LAYER_A0.md)、
+> [模块依赖图](docs/migration/DEPENDENCY_GRAPH.md)和
+> [依赖阻塞](docs/DEPENDENCY_BLOCKERS.md)。通过候选验收后才建立独立
+> `AgentGuard-QWB-App`，比赛应用只调用 AgentGuard 公共接口。
+
 > **1.0.0 迁移进度：** 阶段 0 审计和阶段 1 HTTP 联调已完成；额外打通了 WARDEN → StegoPot → 本地 7B 模型的观察性运行，并由 AgentGuard 接收证据。该运行没有因果干预，8 个实验条件中 2 个失败。阶段 2 的重复底层代码尚未删除。查看[真实模型联调记录](docs/migration/OBSERVATION_RUN.md)、[阶段 1 实测报告](docs/migration/STAGE1_REPORT.md)、[重复能力与调用点](docs/migration/DUPLICATION_MAP.md)和[迁移顺序](docs/migration/MIGRATION_PLAN.md)。
 
 阶段 2 已关闭通过 `create_app(engine=...)` 注入真实模型运行时和直接配对执行器的路径；真实审计请使用 `/v1/kernel/workflows`。旧 Probe、白盒和 StegoPot Python 接口仍只供离线兼容研究，迁移和删除条件见[阶段 2 边界报告](docs/migration/STAGE2_BOUNDARY.md)。

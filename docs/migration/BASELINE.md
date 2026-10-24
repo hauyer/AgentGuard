@@ -1,5 +1,39 @@
 # AgentGuard 0.9.0 迁移基线
 
+## 上层平台重构 A0 基线（2026-10-24）
+
+最新开发指令以 AgentGuard 为唯一可写业务仓库，WARDEN、FRACTAL-Bench、
+StegoPot 只读。新分支 `feature/agentguard-upper-layer-v1` 从
+`321614c18eec52d601e24b8d74a2759fb101051e` 建立，继承先前已验证的修复。
+原始导入和以前阶段记录保留在下方，不能把历史失败当作当前测试结果。
+
+| 项目 | 当前实测 |
+| --- | --- |
+| Python / AgentGuard | 3.12.10 / 0.9.0 |
+| Pydantic / FastAPI / Uvicorn | 2.14.1 / 0.161.1 / 0.54.0 |
+| pytest / Ruff / httpx | 9.1.1 / 0.17.2 / 0.28.1 |
+| `python -m pytest -o addopts='' --disable-warnings --tb=no` | 156 通过、2 跳过；真实 HTTP 未配置和可选 PyTorch 测试按条件跳过 |
+| `python -m compileall -q src tests scripts` | 通过 |
+| `ruff check scripts/audit_architecture.py tests/test_architecture_audit.py` | 通过 |
+| `ruff check src tests scripts` | 未通过：171 项现存问题；以 import 排序、重复导入、旧语法和宽泛异常为主 |
+| `python scripts/audit_architecture.py --check --output .agentguard/architecture-a0.json` | 67 模块、431 导入；3 条旧兼容模块底层导入；无新生产直接越界导入、无静态直接依赖环 |
+| 本次真实 WARDEN / 模型验证 | 未执行；本次运行无监听的内核/模型服务，历史实测见 `OBSERVATION_RUN.md` |
+
+两个架构工具测试分别验证生产越界与旧模块区分、函数内/字面动态导入识别，
+以及相对导入依赖环、缺失目录和语法错误拒绝。工具不导入被审计源码。
+静态检查不证明所有运行路径均已迁移，尤其是旧 Probe API 仍需 A3 处理。
+
+只读依赖版本：WARDEN `077f5405619261d6c4c8f989f8cfc996cc2391a6`，
+FRACTAL-Bench `cf8720bff92f43ab46b61b70dc6f69a6db54c55b`，
+StegoPot `45497d1f1c0e17de833b6d95a44fb66c4e4b376f`。
+WARDEN 有先前授权产生的未提交通信操作/场景草稿；从收到新指令起原样保留，
+未提交、未回滚、未继续修改，也不算作本次已验证依赖能力。
+
+依赖图见 `DEPENDENCY_GRAPH.md`；本轮验收见 `UPPER_LAYER_A0.md`；缺失的
+底层能力转入 `../DEPENDENCY_BLOCKERS.md`，后续不通过改写底层仓库解决。
+
+## 历史导入基线（2026-10-23）
+
 记录日期：2026-10-23（Asia/Shanghai）。本阶段只做审计与文档更新；没有修改业务代码，也没有把合成测试视为真实模型验证。
 
 ## 来源与版本

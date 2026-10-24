@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased — Upper-layer platform A0
+
+- Established `feature/agentguard-upper-layer-v1` from the tested current code and adopted read-only boundaries for WARDEN, FRACTAL-Bench, and StegoPot.
+- Added a source-only architecture audit with direct-import, legacy-caller, and dependency-cycle reports, plus regression coverage for boundary detection.
+- Recorded the current baseline, dependency graph, external blockers, and A0–A8/application acceptance sequence without deleting business modules.
+
 ## Unreleased — Real-model observation integration
 
 - Prevent real runtime or paired-executor injection into the AgentGuard API; real audits must use WARDEN. Keep legacy offline interfaces until kernel parity is verified.
