@@ -8,6 +8,12 @@
 模型实验。历史真实 7B 观察链路与失败条件见 `migration/OBSERVATION_RUN.md`。
 以前保留的未提交底层草稿不作为可用能力。
 
+GitHub 更新补充：上游 main 已到 WARDEN 0.3.0 `381fc08`，增加白盒 CLI、
+Corpus 和 Probe Suite，但默认 REST 执行组合仍未补齐；本机未升级或运行
+新版本。当前阻塞不因新版本发布而解除。另需保留计划真值过滤，以及区分
+上游标准构建与本地 observation 扩展。详见
+`migration/UPSTREAM_REVIEW_2026-10-24.md`。
+
 | ID | 缺失能力与依据 | AgentGuard 行为 | 不受阻塞的上层工作 |
 | --- | --- | --- | --- |
 | DEP-001 | 默认组合没有可用 Activation Backend 或 Probe/SAE 权重；`compiler` 对因果/防御模式要求激活读写、梯度和重放能力 | 实际能力不足时 blocked；候选防御可提出，不能标为 executed/verified | 调查策略、审批、能力感知排序、证据门控 |
