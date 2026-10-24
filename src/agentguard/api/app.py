@@ -90,6 +90,7 @@ from agentguard.research_registry import ResearchRegistry
 from agentguard.services.evidence_gateway import EvidenceGateway
 from agentguard.services.experiment_index import ExperimentIndexService
 from agentguard.services.interaction_graph import InteractionGraphService
+from agentguard.services.system_readiness import SystemReadinessService
 from agentguard.services.warden_diagnostics import diagnose_kernel
 from agentguard.services.warden_lifecycle import WardenLifecycleService
 from agentguard.services.warden_workflow_store import WardenWorkflowStore, WorkflowConflictError
@@ -230,6 +231,7 @@ def create_app(
     app.state.experiment_index = ExperimentIndexService(
         app.state.warden_workflows, app.state.artifacts
     )
+    app.state.system_readiness = SystemReadinessService()
     app.state.policy_engine = InterventionPolicyEngine()
     app.state.paired_runner = PairedExperimentRunner(app.state.engine.runtime, paired_executor=paired_executor)
 
@@ -727,6 +729,18 @@ def create_app(
     def compare_experiments(request: ExperimentCompareRequest) -> dict:
         """Descriptively compare two existing run reports after comparability checks."""
         result = app.state.experiment_index.compare(list(request.run_ids))
+        return result.model_dump(mode="json")
+
+    def get_system_readiness(force_refresh: bool = Query(default=False)) -> dict:
+        """Layered readiness; WARDEN health is never promoted to executability."""
+        result = app.state.system_readiness.readiness(force_refresh=force_refresh)
+        return result.model_dump(mode="json")
+
+    def get_investigation_options(force_refresh: bool = Query(default=False)) -> dict:
+        """Real audit-mode options and resources for the investigation form."""
+        result = app.state.system_readiness.investigation_options(
+            force_refresh=force_refresh,
+        )
         return result.model_dump(mode="json")
 
 
@@ -1907,6 +1921,8 @@ def create_app(
         list_experiments_handler=list_experiments,
         get_experiment_handler=get_experiment,
         compare_experiments_handler=compare_experiments,
+        get_system_readiness_handler=get_system_readiness,
+        get_investigation_options_handler=get_investigation_options,
     ))
     return app
 

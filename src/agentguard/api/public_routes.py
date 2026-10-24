@@ -29,6 +29,8 @@ def create_public_router(
     list_experiments_handler: Callable[..., dict[str, Any]],
     get_experiment_handler: Callable[[str], dict[str, Any]],
     compare_experiments_handler: Callable[[Any], dict[str, Any]],
+    get_system_readiness_handler: Callable[..., dict[str, Any]],
+    get_investigation_options_handler: Callable[..., dict[str, Any]],
 ) -> APIRouter:
     """Build stable aliases while keeping route definitions out of the app factory."""
     router = APIRouter()
@@ -65,6 +67,13 @@ def create_public_router(
         offset: int = Query(default=0, ge=0),
     ) -> dict[str, Any]:
         return list_workflows_handler(status=status, limit=limit, offset=offset)
+
+    @router.get("/v1/investigations/options")
+    def get_public_investigation_options(
+        force_refresh: bool = Query(default=False),
+    ) -> dict[str, Any]:
+        """Discovered audit modes, contracts and resources for the form."""
+        return get_investigation_options_handler(force_refresh=force_refresh)
 
     @router.get("/v1/investigations/{request_id}")
     def get_public_investigation(request_id: str) -> dict[str, Any]:
@@ -138,5 +147,12 @@ def create_public_router(
     def get_public_experiment(experiment_id: str) -> dict[str, Any]:
         """Fetch one indexed experiment with only the metrics the source recorded."""
         return get_experiment_handler(experiment_id)
+
+    @router.get("/v1/system/readiness")
+    def get_public_system_readiness(
+        force_refresh: bool = Query(default=False),
+    ) -> dict[str, Any]:
+        """Per-layer readiness with sources, blockers and cache provenance."""
+        return get_system_readiness_handler(force_refresh=force_refresh)
 
     return router
