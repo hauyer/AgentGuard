@@ -708,6 +708,38 @@
           ],
           "title": "Evidence Mode",
           "type": "string"
+        },
+        "approval_required_per_candidate": {
+          "default": true,
+          "title": "Approval Required Per Candidate",
+          "type": "boolean"
+        },
+        "execution_supported_overall": {
+          "default": false,
+          "title": "Execution Supported Overall",
+          "type": "boolean"
+        },
+        "rollback_supported": {
+          "default": false,
+          "title": "Rollback Supported",
+          "type": "boolean"
+        },
+        "verification_evidence_available": {
+          "default": false,
+          "title": "Verification Evidence Available",
+          "type": "boolean"
+        },
+        "benign_utility_data_available": {
+          "default": false,
+          "title": "Benign Utility Data Available",
+          "type": "boolean"
+        },
+        "capability_notes": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Capability Notes",
+          "type": "array"
         }
       },
       "required": [

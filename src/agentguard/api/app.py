@@ -793,7 +793,44 @@ def create_app(
         )
 
 
-    def _build_warden_defense_preview(request_id: str, *, persist: bool) -> DefensePreview:
+    def _annotate_defense_capabilities(
+        preview: DefensePreview,
+        *,
+        verification=None,
+        verified_candidate_ids: tuple[str, ...] = (),
+    ) -> DefensePreview:
+        """Fill the C6 capability fields without touching lifecycle semantics.
+
+        Approval validity, executor availability and verification evidence are
+        independent; none is inferred from another.
+        """
+        preview.execution_supported_overall = False
+        preview.rollback_supported = False
+        preview.approval_required_per_candidate = any(
+            candidate.approval_required for candidate in preview.candidates
+        )
+        verified_available = bool(verified_candidate_ids) or (
+            verification is not None
+            and getattr(verification, "provenance_verified", False) is True
+        )
+        preview.verification_evidence_available = verified_available
+        preview.benign_utility_data_available = bool(
+            verification is not None
+            and getattr(verification, "provenance_verified", False) is True
+            and getattr(verification, "benign_utility_before", None) is not None
+        )
+        preview.capability_notes = [
+            "No external defense executor is declared; approval alone cannot enable execution (DEP-007).",
+            "No public rollback API exists; rollback stays unsupported (DEP-003).",
+            (
+                "Provenance-verified defense verification evidence exists for this run."
+                if verified_available else
+                "No provenance-verified defense verification evidence exists for this run."
+            ),
+        ]
+        return preview
+
+    def _build_warden_defense_preview(request_id: str, persist: bool) -> DefensePreview:
         entry = app.state.warden_workflows.get(request_id)
         if entry is None:
             raise HTTPException(status_code=404, detail={"error": "WORKFLOW_NOT_FOUND"})
@@ -833,7 +870,12 @@ def create_app(
             saved = app.state.warden_workflows.get_defense_candidate(request_id, candidate.candidate_id)
             if saved is not None:
                 candidate.status = saved["lifecycle"]["status"]
-        return preview
+        verified_ids = tuple(
+            item["candidate"]["candidate_id"]
+            for item in app.state.warden_workflows.list_defense_candidates(request_id)
+            if item["lifecycle"]["status"] == "verified"
+        )
+        return _annotate_defense_capabilities(preview, verified_candidate_ids=verified_ids)
 
     @app.get("/v1/kernel/workflows/{request_id}/defenses/preview")
     def get_warden_defense_preview(request_id: str) -> dict:
@@ -1161,7 +1203,9 @@ def create_app(
         for candidate in preview.candidates:
             if candidate.candidate_id in lifecycle_by_id:
                 candidate.status = lifecycle_by_id[candidate.candidate_id].status
-        return preview.model_dump(mode="json")
+        return _annotate_defense_capabilities(
+            preview, verification=report.defense_verification
+        ).model_dump(mode="json")
 
     def _transition_defense(
         report: RunReport,
@@ -1214,7 +1258,9 @@ def create_app(
             candidate.status = lifecycle.status
         report.defense_preview = preview
         store_report(report)
-        return preview.model_dump(mode="json")
+        return _annotate_defense_capabilities(
+            preview, verification=report.defense_verification
+        ).model_dump(mode="json")
 
     @app.post("/v1/runs/{run_id}/defenses/preview")
     def preview_defenses(run_id: str) -> dict:

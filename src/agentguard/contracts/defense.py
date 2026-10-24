@@ -46,6 +46,14 @@ class DefensePreview(ContractModel):
     policy_notes: list[str] = Field(default_factory=list)
     execution_performed: bool = False
     evidence_mode: Literal["synthetic", "observed", "measured"] = "observed"
+    # Capability description (C6). Approval never implies execution support;
+    # every flag below is independent and defaults to the conservative value.
+    approval_required_per_candidate: bool = True
+    execution_supported_overall: bool = False
+    rollback_supported: bool = False
+    verification_evidence_available: bool = False
+    benign_utility_data_available: bool = False
+    capability_notes: list[str] = Field(default_factory=list)
 
 
 class DefenseVerification(ContractModel):
