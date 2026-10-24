@@ -57,6 +57,7 @@ from agentguard.contracts.experience import (
 )
 from agentguard.contracts.experience_bandit import ExperienceBanditRecommendationReport
 from agentguard.contracts.experiment import ExperimentRequest
+from agentguard.contracts.experiment_index import ExperimentCompareRequest
 from agentguard.contracts.interaction_graph import InteractionGraphResponse
 from agentguard.contracts.intervention import InterventionRequest
 from agentguard.contracts.lifecycle import RunTimelineEvent
@@ -87,6 +88,7 @@ from agentguard.core.study_analysis import analyze_registered_study
 from agentguard.memory.store import ExperienceStore
 from agentguard.research_registry import ResearchRegistry
 from agentguard.services.evidence_gateway import EvidenceGateway
+from agentguard.services.experiment_index import ExperimentIndexService
 from agentguard.services.interaction_graph import InteractionGraphService
 from agentguard.services.warden_diagnostics import diagnose_kernel
 from agentguard.services.warden_lifecycle import WardenLifecycleService
@@ -225,6 +227,9 @@ def create_app(
     app.state.defense_service = DefensePlannerService()
     app.state.evidence_gateway = EvidenceGateway()
     app.state.interaction_graph = InteractionGraphService()
+    app.state.experiment_index = ExperimentIndexService(
+        app.state.warden_workflows, app.state.artifacts
+    )
     app.state.policy_engine = InterventionPolicyEngine()
     app.state.paired_runner = PairedExperimentRunner(app.state.engine.runtime, paired_executor=paired_executor)
 
@@ -697,6 +702,32 @@ def create_app(
             raise HTTPException(status_code=404, detail={"error": "WORKFLOW_NOT_FOUND"})
         assert graph is not None
         return graph.model_dump(mode="json")
+
+    def list_experiments(
+        status: str | None = None,
+        scenario_id: str | None = None,
+        data_source: str | None = Query(default=None, pattern="^(warden_workflow|synthetic_report)$"),
+        limit: int = Query(default=50, ge=1, le=500),
+        offset: int = Query(default=0, ge=0),
+    ) -> dict:
+        """Index persisted WARDEN workflows and engine run reports; no fabricated metrics."""
+        result = app.state.experiment_index.list_experiments(
+            status=status, scenario_id=scenario_id, data_source=data_source,
+            limit=limit, offset=offset,
+        )
+        return result.model_dump(mode="json")
+
+    def get_experiment(experiment_id: str) -> dict:
+        """Resolve one indexed experiment by experiment_id, request_id or run_id."""
+        detail = app.state.experiment_index.get_experiment(experiment_id)
+        if detail is None:
+            raise HTTPException(status_code=404, detail={"error": "EXPERIMENT_NOT_FOUND"})
+        return detail.model_dump(mode="json")
+
+    def compare_experiments(request: ExperimentCompareRequest) -> dict:
+        """Descriptively compare two existing run reports after comparability checks."""
+        result = app.state.experiment_index.compare(list(request.run_ids))
+        return result.model_dump(mode="json")
 
 
     def _build_warden_defense_preview(request_id: str, *, persist: bool) -> DefensePreview:
@@ -1873,6 +1904,9 @@ def create_app(
         execute_defense_handler=execute_warden_defense_proposal,
         get_report_handler=get_run_report,
         get_interaction_graph_handler=get_interaction_graph,
+        list_experiments_handler=list_experiments,
+        get_experiment_handler=get_experiment,
+        compare_experiments_handler=compare_experiments,
     ))
     return app
 

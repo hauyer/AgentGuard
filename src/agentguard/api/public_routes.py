@@ -8,6 +8,7 @@ from typing import Any
 from fastapi import APIRouter, Header, Query
 
 from agentguard.contracts.defense import DefensePreview
+from agentguard.contracts.experiment_index import ExperimentCompareRequest
 from agentguard.contracts.warden import WardenAuditRequest, WardenDefenseExecuteRequest
 
 
@@ -25,6 +26,9 @@ def create_public_router(
     ],
     get_report_handler: Callable[[str], dict[str, Any]],
     get_interaction_graph_handler: Callable[..., dict[str, Any]],
+    list_experiments_handler: Callable[..., dict[str, Any]],
+    get_experiment_handler: Callable[[str], dict[str, Any]],
+    compare_experiments_handler: Callable[[Any], dict[str, Any]],
 ) -> APIRouter:
     """Build stable aliases while keeping route definitions out of the app factory."""
     router = APIRouter()
@@ -110,5 +114,29 @@ def create_public_router(
         same contract, always labelled ``agentguard_synthetic_report``.
         """
         return get_interaction_graph_handler(request_id, run_id)
+
+    @router.get("/v1/experiments")
+    def list_public_experiments(
+        status: str | None = None,
+        scenario_id: str | None = None,
+        data_source: str | None = Query(default=None, pattern="^(warden_workflow|synthetic_report)$"),
+        limit: int = Query(default=50, ge=1, le=500),
+        offset: int = Query(default=0, ge=0),
+    ) -> dict[str, Any]:
+        """Read-only experiment index over persisted workflows and run reports."""
+        return list_experiments_handler(
+            status=status, scenario_id=scenario_id, data_source=data_source,
+            limit=limit, offset=offset,
+        )
+
+    @router.post("/v1/experiments/compare")
+    def compare_public_experiments(request: ExperimentCompareRequest) -> dict[str, Any]:
+        """Compare two existing run reports; incomparable pairs return not_comparable."""
+        return compare_experiments_handler(request)
+
+    @router.get("/v1/experiments/{experiment_id}")
+    def get_public_experiment(experiment_id: str) -> dict[str, Any]:
+        """Fetch one indexed experiment with only the metrics the source recorded."""
+        return get_experiment_handler(experiment_id)
 
     return router
