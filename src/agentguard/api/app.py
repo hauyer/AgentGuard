@@ -57,6 +57,7 @@ from agentguard.contracts.experience import (
 )
 from agentguard.contracts.experience_bandit import ExperienceBanditRecommendationReport
 from agentguard.contracts.experiment import ExperimentRequest
+from agentguard.contracts.interaction_graph import InteractionGraphResponse
 from agentguard.contracts.intervention import InterventionRequest
 from agentguard.contracts.lifecycle import RunTimelineEvent
 from agentguard.contracts.paired import PairedExperimentRunRequest
@@ -86,6 +87,7 @@ from agentguard.core.study_analysis import analyze_registered_study
 from agentguard.memory.store import ExperienceStore
 from agentguard.research_registry import ResearchRegistry
 from agentguard.services.evidence_gateway import EvidenceGateway
+from agentguard.services.interaction_graph import InteractionGraphService
 from agentguard.services.warden_diagnostics import diagnose_kernel
 from agentguard.services.warden_lifecycle import WardenLifecycleService
 from agentguard.services.warden_workflow_store import WardenWorkflowStore, WorkflowConflictError
@@ -222,6 +224,7 @@ def create_app(
     app.state.research_registry = ResearchRegistry(base_dir / "research_registry.sqlite3")
     app.state.defense_service = DefensePlannerService()
     app.state.evidence_gateway = EvidenceGateway()
+    app.state.interaction_graph = InteractionGraphService()
     app.state.policy_engine = InterventionPolicyEngine()
     app.state.paired_runner = PairedExperimentRunner(app.state.engine.runtime, paired_executor=paired_executor)
 
@@ -668,6 +671,33 @@ def create_app(
             entry,
             artifacts=app.state.artifacts,
         )
+
+    def get_interaction_graph(request_id: str, run_id: str | None = Query(default=None)) -> dict:
+        """Project the recorded message-level interaction graph for one workflow.
+
+        The WARDEN journal is authoritative for ``request_id``. When it holds no
+        authorized message metadata the response reports ``available=false``; an
+        explicitly requested synthetic ``run_id`` may be rendered through the same
+        contract but is always labelled ``agentguard_synthetic_report``.
+        """
+        entry = app.state.warden_workflows.get(request_id)
+        graph: InteractionGraphResponse | None = None
+        if entry is not None:
+            graph = app.state.interaction_graph.for_warden_workflow(entry)
+            if graph.available:
+                return graph.model_dump(mode="json")
+        if run_id is not None:
+            with app.state.lock:
+                report = app.state.reports.get(run_id)
+            if report is None:
+                raise HTTPException(status_code=404, detail={"error": "RUN_ID_NOT_FOUND"})
+            fallback = app.state.interaction_graph.for_run_report(report, request_id=request_id)
+            return fallback.model_dump(mode="json")
+        if entry is None:
+            raise HTTPException(status_code=404, detail={"error": "WORKFLOW_NOT_FOUND"})
+        assert graph is not None
+        return graph.model_dump(mode="json")
+
 
     def _build_warden_defense_preview(request_id: str, *, persist: bool) -> DefensePreview:
         entry = app.state.warden_workflows.get(request_id)
@@ -1842,6 +1872,7 @@ def create_app(
         build_defense_preview_handler=_build_warden_defense_preview,
         execute_defense_handler=execute_warden_defense_proposal,
         get_report_handler=get_run_report,
+        get_interaction_graph_handler=get_interaction_graph,
     ))
     return app
 

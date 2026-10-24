@@ -24,6 +24,7 @@ def create_public_router(
         [str, WardenDefenseExecuteRequest, str | None], dict[str, Any]
     ],
     get_report_handler: Callable[[str], dict[str, Any]],
+    get_interaction_graph_handler: Callable[..., dict[str, Any]],
 ) -> APIRouter:
     """Build stable aliases while keeping route definitions out of the app factory."""
     router = APIRouter()
@@ -96,5 +97,18 @@ def create_public_router(
     @router.get("/v1/reports/{run_id}")
     def get_public_report(run_id: str) -> dict[str, Any]:
         return get_report_handler(run_id)
+
+    @router.get("/v1/investigations/{request_id}/interaction-graph")
+    def get_public_interaction_graph(
+        request_id: str, run_id: str | None = Query(default=None)
+    ) -> dict[str, Any]:
+        """Message-level interaction graph with explicit availability and provenance.
+
+        Real edges come only from message metadata that WARDEN's public run
+        response provided. Without it the response reports ``available=false``;
+        an explicit ``run_id`` renders the synthetic engine report through the
+        same contract, always labelled ``agentguard_synthetic_report``.
+        """
+        return get_interaction_graph_handler(request_id, run_id)
 
     return router

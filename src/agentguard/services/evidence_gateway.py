@@ -29,6 +29,11 @@ from agentguard.services.warden_lifecycle import WardenLifecycleService
 _SHA256 = re.compile(r"^[0-9a-f]{64}$")
 _ARTIFACT_URI = re.compile(r"^artifact://sha256/([0-9a-f]{64})$")
 _WINDOWS_ABSOLUTE = re.compile(r"^[a-zA-Z]:[\\/]")
+
+
+def reference_is_safe(ref: str) -> bool:
+    """Shared artifact-reference safety rule for upper-layer projections."""
+    return EvidenceGateway._safe_reference(ref)
 _TYPES = {
     "observation", "finding", "hypothesis", "experiment_design", "intervention",
     "defense", "evaluation", "run_summary", "note",
