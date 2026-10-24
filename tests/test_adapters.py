@@ -1,5 +1,7 @@
 import pytest
-from agentguard.adapters.fractal_bench import FractalBenchAdapter, IntegrationNotConfigured as FractalNotConfigured
+
+from agentguard.adapters.fractal_bench import FractalBenchAdapter
+from agentguard.adapters.fractal_bench import IntegrationNotConfigured as FractalNotConfigured
 from agentguard.adapters.stegopot import StegoPotAdapter
 from agentguard.contracts.intervention import InterventionRequest
 

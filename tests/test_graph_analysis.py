@@ -53,7 +53,6 @@ def test_behavioral_detector_flags_tool_fanout_as_a_heuristic_candidate():
 
 def test_semantic_detector_is_opt_in_and_structured():
     from agentguard.core.graph import MultiLayerDetector
-    from agentguard.contracts.observation import Observation
     backend = MockBackend()
     observations = backend.execute(backend.get_scenario("demo_cloud_security"), ExperimentRequest(scenario_id="demo_cloud_security"))
     target = observations[0]

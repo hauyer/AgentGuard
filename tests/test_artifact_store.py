@@ -1,5 +1,7 @@
 import hashlib
+
 import pytest
+
 from agentguard.artifacts.local_store import (
     ArtifactIntegrityError,
     ArtifactNotFoundError,
@@ -39,3 +41,14 @@ def test_artifact_read_detects_content_corruption(tmp_path):
     blob_path.write_bytes(b"tampered trace")
     with pytest.raises(ArtifactIntegrityError):
         store.get_bytes(record.artifact_ref.artifact_id)
+
+
+def test_artifact_listing_skips_corrupt_manifest_without_logging_contents(tmp_path, caplog):
+    store = LocalArtifactStore(tmp_path)
+    record = store.put(b"manifest fixture")
+    _, manifest_path = store._paths(record.artifact_ref.sha256)
+    manifest_path.write_text("sensitive-token=fixture-secret", encoding="utf-8")
+
+    assert store.list_metadata() == []
+    assert "fixture-secret" not in caplog.text
+    assert "Skipping invalid artifact manifest" in caplog.text

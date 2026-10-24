@@ -1,20 +1,22 @@
+import pytest
+
 from agentguard.adapters.mock import MockBackend
 from agentguard.contracts.intervention import InterventionRequest
 from agentguard.core.policy import InterventionPolicyEngine
 
 
 def _request(**overrides):
-    values = dict(
-        experiment_id="exp-1",
-        intervention_id="int-1",
-        target_type="message",
-        target_ref="msg-002",
-        operation="block",
-        parameters={
+    values = {
+        "experiment_id": "exp-1",
+        "intervention_id": "int-1",
+        "target_type": "message",
+        "target_ref": "msg-002",
+        "operation": "block",
+        "parameters": {
             "scope": "synthetic_demo",
             "approval_required": True,
         },
-    )
+    }
     values.update(overrides)
     return InterventionRequest(**values)
 
@@ -84,7 +86,8 @@ def test_real_backend_requires_approval_for_high_impact_request():
     assert decision.error_code == "APPROVAL_REQUIRED"
 
 
-def test_real_backend_requires_authorization_reference_even_if_approval_is_granted():
+@pytest.mark.parametrize("approval_granted", [True, False])
+def test_real_backend_requires_authorization_reference_even_if_approval_is_granted(approval_granted):
     from agentguard.contracts.capabilities import CapabilityManifest
     backend = MockBackend()
     manifest = CapabilityManifest(
@@ -94,23 +97,9 @@ def test_real_backend_requires_authorization_reference_even_if_approval_is_grant
     decision = InterventionPolicyEngine().evaluate(
         backend.get_scenario("demo_cloud_security"),
         _request(parameters={"scope": "isolated_test_environment"}), manifest,
-        max_interventions=1, interventions_already_attempted=0, approval_granted=True,
+        max_interventions=1, interventions_already_attempted=0,
+        approval_granted=approval_granted,
     )
     assert decision.allowed is False
     assert decision.error_code == "AUTHORIZATION_REFERENCE_REQUIRED"
 
-
-def test_real_backend_requires_authorization_reference_even_if_approval_is_granted():
-    from agentguard.contracts.capabilities import CapabilityManifest
-    backend = MockBackend()
-    manifest = CapabilityManifest(
-        provider_id="test-real", backend_mode="real",
-        supported_target_types=["message"], supported_operations=["block"],
-    )
-    decision = InterventionPolicyEngine().evaluate(
-        backend.get_scenario("demo_cloud_security"),
-        _request(parameters={"scope": "isolated_test_environment"}), manifest,
-        max_interventions=1, interventions_already_attempted=0, approval_granted=True,
-    )
-    assert decision.allowed is False
-    assert decision.error_code == "AUTHORIZATION_REFERENCE_REQUIRED"

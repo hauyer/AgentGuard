@@ -1,6 +1,8 @@
 from typing import Literal
+
 from pydantic import Field
 from pydantic.types import JsonValue
+
 from agentguard.contracts.base import ContractModel
 from agentguard.contracts.intervention import InterventionRequest, InterventionResult
 

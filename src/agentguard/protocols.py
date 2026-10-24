@@ -1,10 +1,12 @@
-from typing import Protocol, Sequence
-from agentguard.contracts.scenario import ScenarioSpec
-from agentguard.contracts.experiment import ExperimentRequest
-from agentguard.contracts.observation import Observation
-from agentguard.contracts.intervention import InterventionRequest, InterventionResult
-from agentguard.contracts.evaluation import EvaluationReport
+from collections.abc import Sequence
+from typing import Protocol
+
 from agentguard.contracts.capabilities import CapabilityManifest
+from agentguard.contracts.evaluation import EvaluationReport
+from agentguard.contracts.experiment import ExperimentRequest
+from agentguard.contracts.intervention import InterventionRequest, InterventionResult
+from agentguard.contracts.observation import Observation
+from agentguard.contracts.scenario import ScenarioSpec
 
 
 class ScenarioProvider(Protocol):

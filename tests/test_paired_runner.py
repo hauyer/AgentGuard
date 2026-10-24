@@ -1,9 +1,10 @@
+import pytest
+
 from agentguard.adapters.mock import MockBackend
 from agentguard.contracts.experiment import ExperimentRequest
 from agentguard.contracts.intervention import InterventionRequest
 from agentguard.core.orchestrator import AgentGuardEngine
-from agentguard.core.paired_runner import PairedExperimentRunner, PairedExecutionUnsupported
-import pytest
+from agentguard.core.paired_runner import PairedExecutionUnsupported, PairedExperimentRunner
 
 
 def _prepared_run(max_interventions=5):

@@ -6,6 +6,7 @@ from typing import Any, Literal
 from pydantic import Field, field_validator
 
 from agentguard.contracts.base import ContractModel
+from agentguard.contracts.truth_guard import find_hidden_truth_fields
 
 
 class WardenCaptureTarget(ContractModel):
@@ -50,6 +51,14 @@ class WardenAuditRequest(ContractModel):
     timeout_seconds: float = Field(default=30.0, ge=1.0, le=120.0)
     poll_interval_seconds: float = Field(default=0.5, ge=0.1, le=10.0)
 
+    @field_validator("metadata")
+    @classmethod
+    def reject_hidden_truth_metadata(cls, value: dict[str, Any]) -> dict[str, Any]:
+        present = find_hidden_truth_fields(value)
+        if present:
+            raise ValueError(f"metadata must not contain hidden evaluator fields: {sorted(present)}")
+        return value
+
     def to_warden_payload(self) -> dict[str, Any]:
         """Strip all AgentGuard-only orchestration fields at the kernel boundary."""
         return self.model_dump(mode="json", exclude={
@@ -63,3 +72,10 @@ class WardenAuditSubmission(ContractModel):
     plan: dict[str, Any]
     run: dict[str, Any] | None = None
     message: str | None = None
+
+
+class WardenDefenseExecuteRequest(ContractModel):
+    """AgentGuard approval reference for a requested WARDEN defense action."""
+
+    candidate_id: str = Field(min_length=1, max_length=256)
+    authorization_ref: str | None = Field(default=None, max_length=256)

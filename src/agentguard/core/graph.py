@@ -1,8 +1,15 @@
 """Evidence-linked interaction graph construction and candidate path analysis."""
 from __future__ import annotations
+
 from collections import defaultdict
-from agentguard.contracts.graph import InteractionNode, InteractionEdge, CandidatePath, InteractionGraphReport
-from agentguard.contracts.observation import Observation, DetectionFinding
+
+from agentguard.contracts.graph import (
+    CandidatePath,
+    InteractionEdge,
+    InteractionGraphReport,
+    InteractionNode,
+)
+from agentguard.contracts.observation import DetectionFinding, Observation
 
 
 class InteractionGraphAnalyzer:

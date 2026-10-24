@@ -1,6 +1,8 @@
 from typing import Literal
+
 from pydantic import Field, model_validator
 from pydantic.types import JsonValue
+
 from agentguard.contracts.base import ContractModel
 
 

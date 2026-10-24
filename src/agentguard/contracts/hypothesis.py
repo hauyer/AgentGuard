@@ -1,6 +1,8 @@
 from typing import Literal
 from uuid import uuid4
+
 from pydantic import Field, model_validator
+
 from agentguard.contracts.base import ContractModel
 
 

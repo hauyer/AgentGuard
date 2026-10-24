@@ -7,7 +7,8 @@ from __future__ import annotations
 
 import json
 import os
-from typing import Any, Callable
+from collections.abc import Callable
+from typing import Any
 from urllib.error import HTTPError, URLError
 from urllib.parse import urlparse
 from urllib.request import Request, urlopen
@@ -59,7 +60,7 @@ class OpenAICompatibleJSONClient:
         self.last_usage: dict[str, int] = {}
 
     @classmethod
-    def from_env(cls, *, transport: Transport | None = None) -> "OpenAICompatibleJSONClient":
+    def from_env(cls, *, transport: Transport | None = None) -> OpenAICompatibleJSONClient:
         api_key = os.environ.get("DEEPSEEK_API_KEY") or os.environ.get("OPENAI_API_KEY")
         if not api_key:
             raise ModelClientError("set DEEPSEEK_API_KEY or OPENAI_API_KEY to enable the model advisor")
@@ -71,7 +72,7 @@ class OpenAICompatibleJSONClient:
             raise ModelClientError("AGENTGUARD_LLM_TIMEOUT must be numeric") from None
         return cls(base_url=base_url, api_key=api_key, model=model, timeout=timeout, transport=transport)
 
-    def new_run(self) -> "OpenAICompatibleJSONClient":
+    def new_run(self) -> OpenAICompatibleJSONClient:
         """Clone immutable connection settings so usage state is not shared across runs."""
         return OpenAICompatibleJSONClient(
             base_url=self.base_url,
@@ -99,12 +100,25 @@ class OpenAICompatibleJSONClient:
                 body,
                 self.timeout,
             )
+        except ModelClientError:
+            raise
+        except (HTTPError, URLError, TimeoutError, OSError, RuntimeError) as exc:
+            raise ModelClientError(f"model request failed ({type(exc).__name__})") from None
+
+        if not isinstance(raw, (bytes, bytearray)):
+            raise ModelClientError("model provider returned an invalid response body")
+
+        try:
             response = json.loads(raw.decode("utf-8"))
+            if not isinstance(response, dict):
+                raise TypeError("model response must be an object")
             content = response["choices"][0]["message"]["content"]
             parsed = json.loads(content)
             if not isinstance(parsed, dict):
-                raise ValueError("model JSON response must be an object")
+                raise TypeError("model JSON response must be an object")
             usage = response.get("usage") or {}
+            if not isinstance(usage, dict):
+                raise TypeError("model usage response must be an object")
             self.last_usage = {
                 key: int(usage[key]) for key in ("prompt_tokens", "completion_tokens", "total_tokens")
                 if isinstance(usage.get(key), int) and usage[key] >= 0
@@ -114,5 +128,3 @@ class OpenAICompatibleJSONClient:
             raise
         except (KeyError, IndexError, TypeError, UnicodeDecodeError, json.JSONDecodeError, ValueError):
             raise ModelClientError("model provider returned an invalid JSON response") from None
-        except Exception as exc:
-            raise ModelClientError(f"model request failed ({type(exc).__name__})") from None

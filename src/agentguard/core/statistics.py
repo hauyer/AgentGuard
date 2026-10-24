@@ -7,8 +7,8 @@ from __future__ import annotations
 
 import math
 import random
+from collections.abc import Sequence
 from statistics import mean, median, stdev
-from typing import Sequence
 
 
 def _quantile(values: list[float], q: float) -> float:

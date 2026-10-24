@@ -1,7 +1,7 @@
 """Contracts for immutable preregistration and auditable study analysis."""
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Literal
 from uuid import uuid4
 
@@ -56,7 +56,7 @@ class StudyRegistrationRequest(ContractModel):
 class RegisteredStudy(StudyRegistrationRequest):
     study_id: str = Field(default_factory=lambda: f"study-{uuid4().hex[:12]}")
     status: Literal["registered"] = "registered"
-    registered_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    registered_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
     registration_sha256: str = Field(min_length=64, max_length=64)
 
 
@@ -91,7 +91,7 @@ class StudyAnalysisReport(ContractModel):
     registration_sha256: str
     analysis_sha256: str
     evidence_mode: Literal["synthetic", "observed", "measured"]
-    analyzed_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    analyzed_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
     primary_outcome: str
     outcomes: dict[str, dict[str, JsonValue]]
     multiplicity_method: Literal["none", "holm", "benjamini_hochberg"]

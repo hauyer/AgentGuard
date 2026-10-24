@@ -1,9 +1,9 @@
 """Contracts for secret-information-flow mediation and path-shift analysis."""
 from __future__ import annotations
 
-from datetime import datetime, timezone
-from typing import Literal
 import math
+from datetime import UTC, datetime
+from typing import Literal
 from uuid import uuid4
 
 from pydantic import Field, model_validator
@@ -81,7 +81,7 @@ class AttributionNodeAnalysisReport(ContractModel):
     report_artifact_id: str | None = None
     causal_claim_status: Literal["candidate_only", "causal_validation_required"] = "causal_validation_required"
     limitations: list[str] = Field(default_factory=list)
-    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
 
 
 class PathShiftAnalysisRequest(ContractModel):
@@ -122,4 +122,4 @@ class PathShiftAnalysisReport(ContractModel):
     report_artifact_id: str | None = None
     interpretation: str
     limitations: list[str] = Field(default_factory=list)
-    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))

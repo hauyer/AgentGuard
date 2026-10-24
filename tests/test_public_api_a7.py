@@ -58,16 +58,88 @@ def test_openapi_keeps_legacy_paths_and_exposes_business_contracts(tmp_path):
     with TestClient(create_app(data_dir=tmp_path / "data")) as client:
         schema = client.get("/openapi.json").json()
     paths = schema["paths"]
-    for path in (
-        "/v1/system/health", "/v1/system/capabilities", "/v1/investigations",
-        "/v1/investigations/{request_id}", "/v1/investigations/{request_id}/evidence",
-        "/v1/evidence/investigations/{request_id}", "/v1/defense-policies/{request_id}",
-        "/v1/reports/{run_id}", "/v1/kernel/workflows", "/v1/runs/{run_id}/report",
-    ):
+    expected_routes = {
+        "/console": {"get"},
+        "/health": {"get"},
+        "/v1/agents/status": {"get"},
+        "/v1/capabilities": {"get"},
+        "/v1/system/health": {"get"},
+        "/v1/system/capabilities": {"get"},
+        "/v1/system/audit-events": {"get"},
+        "/v1/kernel/status": {"get"},
+        "/v1/kernel/doctor": {"get"},
+        "/v1/kernel/capabilities": {"get"},
+        "/v1/kernel/resources": {"get"},
+        "/v1/kernel/contracts": {"get"},
+        "/v1/kernel/audits": {"post"},
+        "/v1/kernel/audits/{plan_id}": {"get"},
+        "/v1/kernel/runs/{run_id}": {"get"},
+        "/v1/kernel/workflows": {"get", "post"},
+        "/v1/kernel/workflows/{request_id}": {"get"},
+        "/v1/kernel/workflows/{request_id}/cancel": {"post"},
+        "/v1/kernel/workflows/{request_id}/evidence": {"get"},
+        "/v1/kernel/workflows/{request_id}/events": {"get"},
+        "/v1/kernel/workflows/{request_id}/defenses/preview": {"get", "post"},
+        "/v1/kernel/workflows/{request_id}/defenses/execute": {"post"},
+        "/v1/investigations": {"get", "post"},
+        "/v1/investigations/{request_id}": {"get"},
+        "/v1/investigations/{request_id}/evidence": {"get"},
+        "/v1/evidence/investigations/{request_id}": {"get"},
+        "/v1/workflows": {"get", "post"},
+        "/v1/workflows/{request_id}": {"get"},
+        "/v1/defense-policies/{request_id}": {"get"},
+        "/v1/defense-policies/{request_id}/preview": {"post"},
+        "/v1/defense-policies/{request_id}/execute": {"post"},
+        "/v1/reports/{run_id}": {"get"},
+        "/v1/scenarios": {"get"},
+        "/v1/scenarios/{scenario_id}": {"get"},
+        "/v1/artifacts": {"get"},
+        "/v1/artifacts/{artifact_id}": {"get"},
+        "/v1/artifacts/{artifact_id}/content": {"get"},
+        "/v1/runs": {"get", "post"},
+        "/v1/runs/{run_id}": {"get"},
+        "/v1/runs/{run_id}/cancel": {"post"},
+        "/v1/runs/{run_id}/observations": {"get"},
+        "/v1/runs/{run_id}/graph": {"get"},
+        "/v1/runs/{run_id}/hypotheses": {"get"},
+        "/v1/runs/{run_id}/investigation": {"get"},
+        "/v1/runs/{run_id}/timeline": {"get"},
+        "/v1/runs/{run_id}/findings": {"get"},
+        "/v1/runs/{run_id}/evidence": {"get"},
+        "/v1/runs/{run_id}/report": {"get"},
+        "/v1/runs/{run_id}/interventions": {"post"},
+        "/v1/runs/{run_id}/defenses/preview": {"get", "post"},
+        "/v1/runs/{run_id}/defenses/execute": {"post"},
+        "/v1/runs/{run_id}/defenses/verify": {"post"},
+        "/v1/runs/{run_id}/defenses/verification": {"get"},
+        "/v1/runs/{run_id}/experiments/paired": {"get", "post"},
+        "/v1/probes/train": {"post"},
+        "/v1/probes/predict": {"post"},
+        "/v1/experiences": {"get", "post"},
+        "/v1/experiences/recommendations": {"get"},
+        "/v1/experiences/recommendation-policies": {"get", "post"},
+        "/v1/experiences/recommendation-policies/{policy_version}/rollback": {"post"},
+        "/v1/experiences/bandit-recommendations": {"get"},
+        "/v1/experiences/action-statistics": {"get"},
+        "/v1/attribution/nodes/analyze": {"post"},
+        "/v1/attribution/path-shift": {"post"},
+        "/v1/studies": {"get", "post"},
+        "/v1/studies/{study_id}": {"get"},
+        "/v1/studies/{study_id}/integrity": {"get"},
+        "/v1/studies/{study_id}/analyses": {"get", "post"},
+    }
+    for path, methods in expected_routes.items():
         assert path in paths
+        assert methods <= set(paths[path])
+
     request_schema_ref = paths["/v1/investigations"]["post"]["requestBody"]["content"]["application/json"]["schema"]["$ref"]
     request_schema = schema["components"]["schemas"][request_schema_ref.rsplit("/", 1)[-1]]
     assert "request_id" in request_schema["required"]
+    assert paths["/v1/kernel/workflows"]["post"]["requestBody"]["content"]["application/json"]["schema"]["$ref"] == request_schema_ref
+    assert paths["/v1/probes/train"]["post"]["deprecated"] is True
+    assert paths["/v1/probes/predict"]["post"]["deprecated"] is True
+    list_parameters = paths["/v1/investigations"]["get"]["parameters"]
+    assert {parameter["name"] for parameter in list_parameters} >= {"limit", "offset", "status"}
 
 
 def test_operator_token_is_distinct_when_configured(tmp_path, monkeypatch):
@@ -134,3 +206,25 @@ def test_api_fails_closed_if_audit_reservation_is_unavailable(tmp_path, monkeypa
     assert response.status_code == 503
     assert response.json()["detail"]["error"] == "API_AUDIT_UNAVAILABLE"
     assert response.headers.get("X-Request-ID")
+
+
+def test_hidden_truth_metadata_is_rejected_without_api_or_sqlite_leak(tmp_path, caplog):
+    app = create_app(data_dir=tmp_path / "truth-boundary")
+    hidden_value = "oracle-sentinel-must-not-escape"
+    with TestClient(app) as client:
+        response = client.post("/v1/investigations", json={
+            "request_id": "truth-boundary",
+            "contract_id": "contract-1",
+            "model_id": "model-1",
+            "runtime_id": "runtime-1",
+            "mode": "observation",
+            "metadata": {"nested": [{"oracleLabel": hidden_value}]},
+            "start_run": False,
+        })
+
+    assert response.status_code == 422
+    assert hidden_value not in response.text
+    assert "Invalid request" in response.text
+    assert hidden_value not in caplog.text
+    assert hidden_value.encode("utf-8") not in app.state.warden_workflows.path.read_bytes()
+    assert app.state.warden_workflows.list(limit=10) == []

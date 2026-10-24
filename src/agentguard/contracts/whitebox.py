@@ -1,6 +1,8 @@
 """Contracts for local white-box activation intervention experiments."""
 from typing import Literal
+
 from pydantic import Field, model_validator
+
 from agentguard.contracts.base import ContractModel
 
 

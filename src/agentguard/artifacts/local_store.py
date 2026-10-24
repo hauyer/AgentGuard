@@ -3,10 +3,15 @@
 from __future__ import annotations
 
 import hashlib
+import logging
 import os
 from pathlib import Path
 
+from pydantic import ValidationError
+
 from agentguard.contracts.artifacts import ArtifactMetadata, ArtifactRef
+
+logger = logging.getLogger(__name__)
 
 
 class ArtifactNotFoundError(FileNotFoundError):
@@ -98,7 +103,8 @@ class LocalArtifactStore:
         for path in sorted(self.root.glob("*/*.json")):
             try:
                 records.append(ArtifactMetadata.model_validate_json(path.read_text(encoding="utf-8")))
-            except Exception:
+            except (OSError, UnicodeError, ValidationError, ValueError) as exc:
                 # Corrupt manifests are skipped by listing; direct lookup still surfaces errors.
+                logger.warning("Skipping invalid artifact manifest (%s)", type(exc).__name__)
                 continue
         return records

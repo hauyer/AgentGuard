@@ -1,7 +1,9 @@
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Literal
 from uuid import uuid4
+
 from pydantic import Field
+
 from agentguard.contracts.base import ContractModel
 
 
@@ -26,4 +28,4 @@ class AgentMessage(ContractModel):
     confidence: float | None = Field(default=None, ge=0.0, le=1.0)
     deadline: datetime | None = None
     policy_context: dict[str, str | int | float | bool] = Field(default_factory=dict)
-    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))

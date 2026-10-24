@@ -1,5 +1,5 @@
-from agentguard.contracts.observation import DetectionFinding
 from agentguard.contracts.intervention import InterventionRequest
+from agentguard.contracts.observation import DetectionFinding
 
 
 class InvestigationPlanner:
@@ -9,11 +9,7 @@ class InvestigationPlanner:
         if not findings:
             return None
         severity_rank = {"critical": 4, "high": 3, "medium": 2, "low": 1}
-        return sorted(
-            findings,
-            key=lambda f: (severity_rank[f.severity], f.score),
-            reverse=True,
-        )[0]
+        return max(findings, key=lambda f: (severity_rank[f.severity], f.score))
 
 
 class DefensePlanner:
@@ -22,9 +18,7 @@ class DefensePlanner:
     def propose(
         self, finding: DetectionFinding, experiment_id: str, intervention_id: str
     ) -> InterventionRequest:
-        if finding.target_type == "message":
-            operation = "block"
-        elif finding.target_type == "tool_call":
+        if finding.target_type == "message" or finding.target_type == "tool_call":
             operation = "block"
         elif finding.target_type == "tool_result":
             operation = "replace"

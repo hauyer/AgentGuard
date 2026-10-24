@@ -2,10 +2,9 @@
 
 from __future__ import annotations
 
-from collections import Counter
 import math
 import re
-
+from collections import Counter
 
 _BASE64_RUN = re.compile(r"(?<![A-Za-z0-9+/])[A-Za-z0-9+/]{40,}={0,2}(?![A-Za-z0-9+/])")
 _HEX_RUN = re.compile(r"(?<![0-9a-fA-F])[0-9a-fA-F]{48,}(?![0-9a-fA-F])")

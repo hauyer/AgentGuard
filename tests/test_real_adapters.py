@@ -1,8 +1,7 @@
 import json
+import sys
 from pathlib import Path
 from types import ModuleType, SimpleNamespace
-import sys
-
 
 from agentguard.adapters.fractal_bench import FractalBenchAdapter
 from agentguard.adapters.stegopot import StegoPotAdapter

@@ -1,7 +1,7 @@
 from agentguard.adapters.mock import MockBackend
 from agentguard.contracts.experiment import ExperimentRequest
-from agentguard.core.orchestrator import AgentGuardEngine
 from agentguard.core.defense import DefensePlannerService
+from agentguard.core.orchestrator import AgentGuardEngine
 
 
 def test_defense_preview_is_preview_only_and_paired_verification_is_explicit():

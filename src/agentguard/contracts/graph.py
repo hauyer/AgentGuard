@@ -1,5 +1,7 @@
 from typing import Literal
+
 from pydantic import Field
+
 from agentguard.contracts.base import ContractModel
 
 

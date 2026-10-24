@@ -1,6 +1,8 @@
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Literal
+
 from pydantic import Field
+
 from agentguard.contracts.base import ContractModel
 
 
@@ -11,7 +13,7 @@ class ArtifactRef(ContractModel):
     sha256: str = Field(min_length=64, max_length=64)
     size_bytes: int = Field(ge=0)
     media_type: str = "application/octet-stream"
-    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
 
 
 class ArtifactMetadata(ContractModel):

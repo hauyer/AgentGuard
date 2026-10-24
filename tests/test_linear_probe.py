@@ -1,7 +1,9 @@
 import json
+
 import pytest
-from agentguard.core.linear_probe import BinaryLinearProbe, split_by_group
+
 from agentguard.core.classification_metrics import evaluate_binary_classifier
+from agentguard.core.linear_probe import BinaryLinearProbe, split_by_group
 
 
 def test_binary_linear_probe_learns_separable_numeric_representations_and_roundtrips():
@@ -29,7 +31,7 @@ def test_group_split_never_leaks_case_families_between_train_and_test():
     groups = [f"family-{i}" for i in range(10) for _ in range(2)]
     labels = [i % 2 for i in range(10) for _ in range(2)]
     train, test = split_by_group(labels, groups, test_fraction=0.3, seed=11)
-    assert set(groups[i] for i in train).isdisjoint(set(groups[i] for i in test))
+    assert {groups[i] for i in train}.isdisjoint({groups[i] for i in test})
     assert set(train).isdisjoint(set(test))
 
 
@@ -45,8 +47,8 @@ def test_three_way_group_split_keeps_each_family_in_exactly_one_partition():
     train, validation, test = split_by_group_three_way(
         labels, groups, test_fraction=0.25, validation_fraction=0.15, seed=9,
     )
-    group_sets = [set(groups[i] for i in part) for part in (train, validation, test)]
+    group_sets = [{groups[i] for i in part} for part in (train, validation, test)]
     assert group_sets[0].isdisjoint(group_sets[1])
     assert group_sets[0].isdisjoint(group_sets[2])
     assert group_sets[1].isdisjoint(group_sets[2])
-    assert all(set(labels[i] for i in part) == {0, 1} for part in (train, validation, test))
+    assert all({labels[i] for i in part} == {0, 1} for part in (train, validation, test))

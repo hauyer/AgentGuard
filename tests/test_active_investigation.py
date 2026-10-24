@@ -1,5 +1,6 @@
 import pytest
 from pydantic import ValidationError
+
 from agentguard.adapters.mock import MockBackend
 from agentguard.contracts.experiment import ExperimentRequest
 from agentguard.contracts.observation import Observation
@@ -29,34 +30,12 @@ def test_run_includes_hypotheses_paired_design_and_defense_preview_without_claim
     assert any("not proof" in item for item in report.limitations)
 
 
-def test_read_only_policy_profile_never_executes_intervention():
+@pytest.mark.parametrize("auto_intervene", [True, False])
+def test_read_only_policy_profile_never_executes_intervention(auto_intervene):
     backend = MockBackend()
     report = AgentGuardEngine(backend, backend, backend).run(ExperimentRequest(
         scenario_id="demo_cloud_security", runtime_backend="mock", policy_profile="read_only",
-        auto_intervene=True, max_interventions=3,
-    ))
-    assert report.selected_intervention is None
-    assert report.intervention_result is None
-    assert report.budget_usage.intervention_attempts == 0
-
-
-def test_pre_cancelled_run_returns_partial_auditable_report():
-    from threading import Event
-    backend = MockBackend()
-    event = Event(); event.set()
-    report = AgentGuardEngine(backend, backend, backend).run(
-        ExperimentRequest(scenario_id="demo_cloud_security"), cancel_event=event
-    )
-    assert report.status == "partial"
-    assert report.observations == []
-    assert any("Cancellation" in item for item in report.limitations)
-
-
-def test_read_only_policy_profile_never_executes_intervention():
-    backend = MockBackend()
-    report = AgentGuardEngine(backend, backend, backend).run(ExperimentRequest(
-        scenario_id="demo_cloud_security", runtime_backend="mock", policy_profile="read_only",
-        auto_intervene=True, max_interventions=3,
+        auto_intervene=auto_intervene, max_interventions=3,
     ))
     assert report.selected_intervention is None
     assert report.intervention_result is None

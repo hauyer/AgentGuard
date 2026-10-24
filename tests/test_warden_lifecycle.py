@@ -228,7 +228,6 @@ def test_defense_evaluation_requires_approval_before_any_kernel_call():
 
 
 def test_kernel_workflow_api_runs_preflight_and_reports_blocked(tmp_path, monkeypatch):
-    from agentguard.adapters.warden import WardenKernelClient
 
     class Transport:
         def __init__(self):
@@ -238,11 +237,7 @@ def test_kernel_workflow_api_runs_preflight_and_reports_blocked(tmp_path, monkey
             self.calls.append((method, url, body))
             if url.endswith("/v1/health"):
                 payload = {"status": "ok", "version": "0.2.0", "api_version": "v1"}
-            elif url.endswith("/v1/capabilities"):
-                payload = []
-            elif url.endswith("/v1/contracts"):
-                payload = []
-            elif "/v1/resources" in url:
+            elif url.endswith(("/v1/capabilities", "/v1/contracts")) or "/v1/resources" in url:
                 payload = []
             else:
                 raise AssertionError(f"Unexpected request: {url}")
@@ -260,7 +255,6 @@ def test_kernel_workflow_api_runs_preflight_and_reports_blocked(tmp_path, monkey
 
 
 def test_real_client_boundary_full_lifecycle_uses_only_documented_warden_v1_routes(tmp_path):
-    from agentguard.adapters.warden import WardenKernelClient
 
     class Transport:
         def __init__(self):
@@ -301,7 +295,7 @@ def test_real_client_boundary_full_lifecycle_uses_only_documented_warden_v1_rout
 
 
 def test_kernel_client_rejects_malformed_list_payloads():
-    from agentguard.adapters.warden import WardenKernelClient, WardenKernelError
+    from agentguard.adapters.warden import WardenKernelError
 
     class Transport:
         def __call__(self, method, url, headers, body, timeout):
@@ -406,6 +400,7 @@ def test_workflow_journal_is_persistent_and_records_append_only_events(tmp_path)
 
 def test_workflow_journal_concurrent_begin_is_single_record(tmp_path):
     from concurrent.futures import ThreadPoolExecutor
+
     from agentguard.services.warden_workflow_store import WardenWorkflowStore
 
     path = tmp_path / "warden_workflows.sqlite3"
@@ -421,7 +416,6 @@ def test_workflow_journal_concurrent_begin_is_single_record(tmp_path):
 
 
 def test_workflow_api_replays_same_request_and_exposes_audit_events(tmp_path, monkeypatch):
-    from agentguard.adapters.warden import WardenKernelClient
 
     class Transport:
         def __init__(self):
@@ -431,11 +425,7 @@ def test_workflow_api_replays_same_request_and_exposes_audit_events(tmp_path, mo
             self.calls.append((method, url))
             if url.endswith("/v1/health"):
                 payload = {"status": "ok", "version": "0.2.0", "api_version": "v1"}
-            elif url.endswith("/v1/capabilities"):
-                payload = []
-            elif url.endswith("/v1/contracts"):
-                payload = []
-            elif "/v1/resources" in url:
+            elif url.endswith(("/v1/capabilities", "/v1/contracts")) or "/v1/resources" in url:
                 payload = []
             else:
                 raise AssertionError(f"Unexpected request: {url}")
@@ -462,17 +452,12 @@ def test_workflow_api_replays_same_request_and_exposes_audit_events(tmp_path, mo
 
 
 def test_workflow_api_conflicting_reuse_of_request_id_returns_409(tmp_path, monkeypatch):
-    from agentguard.adapters.warden import WardenKernelClient
 
     class Transport:
         def __call__(self, method, url, headers, body, timeout):
             if url.endswith("/v1/health"):
                 payload = {"status": "ok", "version": "0.2.0", "api_version": "v1"}
-            elif url.endswith("/v1/capabilities"):
-                payload = []
-            elif url.endswith("/v1/contracts"):
-                payload = []
-            elif "/v1/resources" in url:
+            elif url.endswith(("/v1/capabilities", "/v1/contracts")) or "/v1/resources" in url:
                 payload = []
             else:
                 raise AssertionError(f"Unexpected request: {url}")
@@ -762,17 +747,12 @@ def test_every_observed_remote_status_change_is_journaled(tmp_path):
 
 
 def test_workflow_api_lists_durable_workflow_summaries(tmp_path, monkeypatch):
-    from agentguard.adapters.warden import WardenKernelClient
 
     class Transport:
         def __call__(self, method, url, headers, body, timeout):
             if url.endswith("/v1/health"):
                 payload = {"status": "ok", "version": "0.2.0", "api_version": "v1"}
-            elif url.endswith("/v1/capabilities"):
-                payload = []
-            elif url.endswith("/v1/contracts"):
-                payload = []
-            elif "/v1/resources" in url:
+            elif url.endswith(("/v1/capabilities", "/v1/contracts")) or "/v1/resources" in url:
                 payload = []
             else:
                 raise AssertionError(f"Unexpected request: {url}")

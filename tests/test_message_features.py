@@ -1,6 +1,6 @@
-from agentguard.core.features import extract_message_features
-from agentguard.core.detector import RuleBasedDetector
 from agentguard.contracts.observation import Observation
+from agentguard.core.detector import RuleBasedDetector
+from agentguard.core.features import extract_message_features
 
 
 def test_message_features_are_deterministic_and_non_labeling():

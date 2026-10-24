@@ -4,8 +4,10 @@ The default runtime does not call an external LLM. Researchers may inject a scor
 returns a validated structured assessment from the observed message and policy context.
 """
 from __future__ import annotations
+
 from collections.abc import Callable
 from typing import Any
+
 from agentguard.contracts.observation import DetectionFinding, Observation
 
 
@@ -27,7 +29,7 @@ class SemanticDetector:
         for observation in observations:
             assessment = self.scorer(observation)
             if not isinstance(assessment, dict):
-                raise ValueError("semantic scorer must return a dictionary")
+                raise TypeError("semantic scorer must return a dictionary")
             score = assessment.get("score", 0.0)
             if not isinstance(score, (int, float)) or not 0.0 <= float(score) <= 1.0:
                 raise ValueError("semantic scorer score must be a finite number in [0, 1]")

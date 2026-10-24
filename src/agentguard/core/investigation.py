@@ -1,8 +1,13 @@
 """Budget-aware hypothesis generation and paired experiment design."""
 from __future__ import annotations
+
 from agentguard.contracts.capabilities import CapabilityManifest
 from agentguard.contracts.experiment import ExperimentRequest
-from agentguard.contracts.hypothesis import InvestigationHypothesis, InvestigationAction, PairedExperimentDesign
+from agentguard.contracts.hypothesis import (
+    InvestigationAction,
+    InvestigationHypothesis,
+    PairedExperimentDesign,
+)
 from agentguard.contracts.observation import DetectionFinding, Observation
 
 

@@ -1,9 +1,10 @@
 """Create a clean source ZIP with a SHA-256 sidecar."""
 from __future__ import annotations
+
 import argparse
 import hashlib
-from pathlib import Path
 import zipfile
+from pathlib import Path
 
 EXCLUDED_PARTS = {
     ".git", ".venv", "venv", "__pycache__", ".pytest_cache", ".mypy_cache",

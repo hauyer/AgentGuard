@@ -1,7 +1,8 @@
 """Metrics for binary detectors and linear probes."""
 from __future__ import annotations
+
+from collections.abc import Sequence
 from statistics import mean
-from typing import Sequence
 
 
 def evaluate_binary_classifier(y_true: Sequence[int], scores: Sequence[float], *, threshold: float = 0.5) -> dict:

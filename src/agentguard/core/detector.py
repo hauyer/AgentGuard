@@ -1,4 +1,4 @@
-from agentguard.contracts.observation import Observation, DetectionFinding
+from agentguard.contracts.observation import DetectionFinding, Observation
 
 
 class RuleBasedDetector:

@@ -1,12 +1,11 @@
 """SQLite-backed immutable preregistration and analysis registry."""
 from __future__ import annotations
 
-from contextlib import closing
-from datetime import datetime, timezone
 import hashlib
 import json
-from pathlib import Path
 import sqlite3
+from contextlib import closing
+from pathlib import Path
 from threading import RLock
 from typing import Any
 

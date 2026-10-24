@@ -22,6 +22,7 @@ from threading import Event, RLock
 from typing import Any, Literal
 
 from fastapi import FastAPI, Header, HTTPException, Query, Request
+from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse, JSONResponse, Response
 from pydantic import Field
@@ -31,6 +32,7 @@ from agentguard.adapters.mock import MockBackend
 from agentguard.adapters.warden import WardenKernelClient, WardenKernelError, warden_status
 from agentguard.agents.coordinator import AgentCoordinator
 from agentguard.agents.llm_advisor import LLMInvestigationAdvisor
+from agentguard.api.public_routes import create_public_router
 from agentguard.artifacts.local_store import ArtifactNotFoundError, LocalArtifactStore
 from agentguard.compat.linear_probe import (
     BinaryLinearProbe,
@@ -70,7 +72,7 @@ from agentguard.contracts.research import (
     StudyAnalysisRequest,
     StudyRegistrationRequest,
 )
-from agentguard.contracts.warden import WardenAuditRequest
+from agentguard.contracts.warden import WardenAuditRequest, WardenDefenseExecuteRequest
 from agentguard.core.attribution import analyze_attribution_node, analyze_path_shift
 from agentguard.core.classification_metrics import evaluate_binary_classifier
 from agentguard.core.defense import DefensePlannerService
@@ -94,11 +96,6 @@ class DefenseExecuteRequest(ContractModel):
     candidate_id: str
     authorization_ref: str | None = None
     intervention_id: str | None = None
-
-
-class WardenDefenseExecuteRequest(ContractModel):
-    candidate_id: str = Field(min_length=1, max_length=256)
-    authorization_ref: str | None = Field(default=None, max_length=256)
 
 
 class DefenseVerifyRequest(ContractModel):
@@ -173,6 +170,21 @@ def create_app(
         ),
         lifespan=lifespan,
     )
+
+    @app.exception_handler(RequestValidationError)
+    async def sanitized_request_validation_error(
+        _request: Request, exc: RequestValidationError
+    ) -> JSONResponse:
+        errors = [
+            {
+                "type": str(error.get("type", "validation_error")),
+                "loc": list(error.get("loc", ())),
+                "msg": "Invalid request",
+            }
+            for error in exc.errors()
+        ]
+        return JSONResponse(status_code=422, content={"detail": errors})
+
     if engine is None:
         backend = MockBackend()
         llm_enabled = os.environ.get("AGENTGUARD_LLM_INVESTIGATOR", "").strip().lower() in {"1", "true", "yes"}
@@ -426,10 +438,6 @@ def create_app(
     def health() -> dict:
         return {"status": "ok", "service": "agentguard", "version": __version__}
 
-    @app.get("/v1/system/health")
-    def public_system_health() -> dict:
-        return health()
-
     @app.get("/console", response_class=HTMLResponse)
     def console() -> str:
         return CONSOLE_HTML
@@ -450,10 +458,6 @@ def create_app(
     def get_capabilities() -> dict:
         manifest = app.state.engine.runtime.capabilities()
         return manifest.model_dump(mode="json")
-
-    @app.get("/v1/system/capabilities")
-    def public_system_capabilities() -> dict:
-        return get_capabilities()
 
     @app.get("/v1/system/audit-events")
     def list_api_audit_events(
@@ -611,31 +615,6 @@ def create_app(
             "next_offset": offset + len(entries) if len(entries) == limit else None,
         }
 
-    @app.post("/v1/investigations")
-    def create_public_investigation(request: WardenAuditRequest) -> dict:
-        """Stable business alias for submitting an AgentGuard-orchestrated WARDEN workflow."""
-        return execute_kernel_workflow(request)
-
-    @app.post("/v1/workflows")
-    def create_public_workflow(request: WardenAuditRequest) -> dict:
-        return execute_kernel_workflow(request)
-
-    @app.get("/v1/investigations")
-    def list_public_investigations(
-        status: str | None = None,
-        limit: int = Query(default=50, ge=1, le=500),
-        offset: int = Query(default=0, ge=0),
-    ) -> dict:
-        return list_kernel_workflows(status=status, limit=limit, offset=offset)
-
-    @app.get("/v1/workflows")
-    def list_public_workflows(
-        status: str | None = None,
-        limit: int = Query(default=50, ge=1, le=500),
-        offset: int = Query(default=0, ge=0),
-    ) -> dict:
-        return list_kernel_workflows(status=status, limit=limit, offset=offset)
-
     @app.post("/v1/kernel/workflows/{request_id}/cancel")
     def cancel_pending_kernel_workflow(request_id: str) -> dict:
         """Cancel unsubmitted local work; never claim remote model cancellation."""
@@ -675,22 +654,6 @@ def create_app(
             entry,
             artifacts=app.state.artifacts,
         )
-
-    @app.get("/v1/investigations/{request_id}")
-    def get_public_investigation(request_id: str) -> dict:
-        return get_kernel_workflow(request_id)
-
-    @app.get("/v1/workflows/{request_id}")
-    def get_public_workflow(request_id: str) -> dict:
-        return get_kernel_workflow(request_id)
-
-    @app.get("/v1/investigations/{request_id}/evidence")
-    def get_public_investigation_evidence(request_id: str) -> dict:
-        return get_kernel_workflow_evidence(request_id)
-
-    @app.get("/v1/evidence/investigations/{request_id}")
-    def get_public_evidence(request_id: str) -> dict:
-        return get_kernel_workflow_evidence(request_id)
 
     def _build_warden_defense_preview(request_id: str, *, persist: bool) -> DefensePreview:
         entry = app.state.warden_workflows.get(request_id)
@@ -740,14 +703,6 @@ def create_app(
 
     @app.post("/v1/kernel/workflows/{request_id}/defenses/preview")
     def create_warden_defense_preview(request_id: str) -> dict:
-        return _build_warden_defense_preview(request_id, persist=True).model_dump(mode="json")
-
-    @app.get("/v1/defense-policies/{request_id}")
-    def get_public_defense_policies(request_id: str) -> dict:
-        return _build_warden_defense_preview(request_id, persist=False).model_dump(mode="json")
-
-    @app.post("/v1/defense-policies/{request_id}/preview")
-    def create_public_defense_policy_preview(request_id: str) -> dict:
         return _build_warden_defense_preview(request_id, persist=True).model_dump(mode="json")
 
     @app.post("/v1/kernel/workflows/{request_id}/defenses/execute")
@@ -814,14 +769,6 @@ def create_app(
             "defense_status": saved["lifecycle"]["status"],
             "message": "The proposal and approval were recorded. No defense action was submitted or executed.",
         })
-
-    @app.post("/v1/defense-policies/{request_id}/execute")
-    def execute_public_defense_policy(
-        request_id: str,
-        request: WardenDefenseExecuteRequest,
-        x_approval_token: str | None = Header(default=None, alias="X-Approval-Token"),
-    ) -> dict:
-        return execute_warden_defense_proposal(request_id, request, x_approval_token)
 
     @app.get("/v1/kernel/workflows/{request_id}/events")
     def get_kernel_workflow_events(request_id: str) -> dict:
@@ -996,10 +943,6 @@ def create_app(
     def get_run_report(run_id: str) -> dict:
         report = get_report_or_404(run_id)
         return report.model_dump(mode="json")
-
-    @app.get("/v1/reports/{run_id}")
-    def get_public_report(run_id: str) -> dict:
-        return get_run_report(run_id)
 
     def _run_intervention_locked(
         run_id: str,
@@ -1875,6 +1818,17 @@ def create_app(
         items = app.state.research_registry.analyses(study_id)
         return {"items": [item.model_dump(mode="json") for item in items], "total": len(items)}
 
+    app.include_router(create_public_router(
+        health_handler=health,
+        capabilities_handler=get_capabilities,
+        create_workflow_handler=execute_kernel_workflow,
+        list_workflows_handler=list_kernel_workflows,
+        get_workflow_handler=get_kernel_workflow,
+        get_evidence_handler=get_kernel_workflow_evidence,
+        build_defense_preview_handler=_build_warden_defense_preview,
+        execute_defense_handler=execute_warden_defense_proposal,
+        get_report_handler=get_run_report,
+    ))
     return app
 
 

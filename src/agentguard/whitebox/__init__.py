@@ -1,14 +1,14 @@
 """Optional local white-box instrumentation and intervention utilities."""
 from agentguard.whitebox.activation import (
-    ActivationSnapshot,
     ActivationInterventionResult,
+    ActivationSnapshot,
     WhiteBoxActivationAdapter,
     WhiteBoxAdapterError,
 )
 
 __all__ = [
-    "ActivationSnapshot",
     "ActivationInterventionResult",
+    "ActivationSnapshot",
     "WhiteBoxActivationAdapter",
     "WhiteBoxAdapterError",
 ]

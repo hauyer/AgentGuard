@@ -1,12 +1,13 @@
 """Deterministic synthetic backend for interface development and demos only."""
 
-from typing import Sequence
-from agentguard.contracts.scenario import ScenarioSpec
-from agentguard.contracts.experiment import ExperimentRequest
-from agentguard.contracts.observation import Observation
-from agentguard.contracts.intervention import InterventionRequest, InterventionResult
-from agentguard.contracts.evaluation import EvaluationReport, MetricValue
+from collections.abc import Sequence
+
 from agentguard.contracts.capabilities import CapabilityManifest
+from agentguard.contracts.evaluation import EvaluationReport, MetricValue
+from agentguard.contracts.experiment import ExperimentRequest
+from agentguard.contracts.intervention import InterventionRequest, InterventionResult
+from agentguard.contracts.observation import Observation
+from agentguard.contracts.scenario import ScenarioSpec
 
 
 class MockBackend:

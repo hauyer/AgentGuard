@@ -1,6 +1,9 @@
 import pytest
 
-from agentguard.contracts.attribution import AttributionNodeAnalysisRequest, PathShiftAnalysisRequest
+from agentguard.contracts.attribution import (
+    AttributionNodeAnalysisRequest,
+    PathShiftAnalysisRequest,
+)
 from agentguard.core.attribution import analyze_attribution_node, analyze_path_shift
 
 

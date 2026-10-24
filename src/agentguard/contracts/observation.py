@@ -1,15 +1,18 @@
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Literal
 from uuid import uuid4
+
 from pydantic import Field, model_validator
+
 from agentguard.contracts.base import ContractModel
+from agentguard.contracts.truth_guard import find_hidden_truth_fields
 
 
 class Observation(ContractModel):
     schema_version: Literal["0.1"] = "0.1"
     event_id: str = Field(default_factory=lambda: f"evt-{uuid4().hex[:12]}")
     experiment_id: str
-    timestamp: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    timestamp: datetime = Field(default_factory=lambda: datetime.now(UTC))
     actor_id: str
     event_type: Literal[
         "message", "tool_call", "tool_result", "decision",
@@ -27,13 +30,7 @@ class Observation(ContractModel):
 
     @model_validator(mode="after")
     def reject_hidden_truth_features(self):
-        forbidden = {
-            "truth", "label", "labels", "oracle", "is_positive", "target_label",
-            "is_true_stego", "oracle_label", "ground_truth_path", "trial_truth",
-            "ground_truth", "ground_truth_label", "oracle_secret", "hidden_label", "truth_label",
-            "answer_key",
-        }
-        present = forbidden.intersection(key.lower().replace("-", "_") for key in self.features)
+        present = find_hidden_truth_fields(self.features)
         if present:
             raise ValueError(f"Observation must not contain hidden truth features: {sorted(present)}")
         return self
