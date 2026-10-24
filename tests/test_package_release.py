@@ -37,7 +37,10 @@ def test_release_packager_includes_design_docs_and_excludes_transient_files(tmp_
             assert "AgentGuard/src/agentguard/whitebox/activation.py" in names
             assert "AgentGuard/src/agentguard/core/experience_bandit.py" in names
             assert "AgentGuard/src/agentguard/contracts/experience_bandit.py" in names
+            assert "AgentGuard/src/agentguard/sdk.py" in names
+            assert "AgentGuard/src/agentguard/mcp_server.py" in names
             assert "AgentGuard/docs/EXPERIENCE_BANDIT.md" in names
+            assert "AgentGuard/docs/PUBLIC_API.md" in names
             assert "AgentGuard/schemas/experience-bandit-recommendation-report.schema.json" in names
             assert "AgentGuard/schemas/activation-patch-spec.schema.json" in names
             assert not any("packager-test" in name or ".agentguard/" in name for name in names)

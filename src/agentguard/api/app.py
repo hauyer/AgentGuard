@@ -7,8 +7,13 @@ from __future__ import annotations
 
 import hashlib
 import json
+import logging
 import os
+import re
 import secrets
+import time
+import uuid
+from collections import deque
 from concurrent.futures import Future, ThreadPoolExecutor
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime
@@ -17,6 +22,7 @@ from threading import Event, RLock
 from typing import Any, Literal
 
 from fastapi import FastAPI, Header, HTTPException, Query, Request
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse, JSONResponse, Response
 from pydantic import Field
 
@@ -81,6 +87,8 @@ from agentguard.services.warden_diagnostics import diagnose_kernel
 from agentguard.services.warden_lifecycle import WardenLifecycleService
 from agentguard.services.warden_workflow_store import WardenWorkflowStore, WorkflowConflictError
 
+logger = logging.getLogger(__name__)
+
 
 class DefenseExecuteRequest(ContractModel):
     candidate_id: str
@@ -133,6 +141,20 @@ def create_app(
             "Direct paired execution is not a production AgentGuard API path; "
             "submit controlled audits through WARDEN"
         )
+
+    try:
+        rate_limit = int(os.environ.get("AGENTGUARD_RATE_LIMIT_PER_MINUTE", "300"))
+    except ValueError as exc:
+        raise ValueError("AGENTGUARD_RATE_LIMIT_PER_MINUTE must be a positive integer") from exc
+    if rate_limit < 1:
+        raise ValueError("AGENTGUARD_RATE_LIMIT_PER_MINUTE must be a positive integer")
+    cors_origins = [
+        origin.strip()
+        for origin in os.environ.get("AGENTGUARD_CORS_ORIGINS", "").split(",")
+        if origin.strip()
+    ]
+    if "*" in cors_origins:
+        raise ValueError("AGENTGUARD_CORS_ORIGINS must list explicit origins; wildcard is forbidden")
 
     @asynccontextmanager
     async def lifespan(application: FastAPI):
@@ -190,15 +212,99 @@ def create_app(
     app.state.policy_engine = InterventionPolicyEngine()
     app.state.paired_runner = PairedExperimentRunner(app.state.engine.runtime, paired_executor=paired_executor)
 
+    rate_lock = RLock()
+    rate_windows: dict[str, deque[float]] = {}
+    request_id_pattern = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$")
+
+    if cors_origins:
+        app.add_middleware(
+            CORSMiddleware,
+            allow_origins=cors_origins,
+            allow_credentials=True,
+            allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+            allow_headers=[
+                "Authorization", "Content-Type", "X-AgentGuard-Token",
+                "X-AgentGuard-Operator-Token", "X-Approval-Token", "X-Request-ID",
+            ],
+        )
+
     @app.middleware("http")
-    async def optional_api_auth(request: Request, call_next):
-        expected = os.environ.get("AGENTGUARD_API_TOKEN", "")
-        public_paths = {"/health", "/openapi.json", "/docs", "/redoc", "/console"}
-        if expected and request.url.path not in public_paths:
-            supplied = request.headers.get("X-AgentGuard-Token", "")
-            if not secrets.compare_digest(expected, supplied):
-                return JSONResponse(status_code=401, content={"detail": {"error": "API_TOKEN_REQUIRED"}})
-        return await call_next(request)
+    async def api_security_middleware(request: Request, call_next):
+        supplied_id = request.headers.get("X-Request-ID", "")
+        request_id = supplied_id if request_id_pattern.fullmatch(supplied_id) else str(uuid.uuid4())
+        request.state.request_id = request_id
+        api_token = os.environ.get("AGENTGUARD_API_TOKEN", "")
+        operator_token = os.environ.get("AGENTGUARD_OPERATOR_API_TOKEN", "")
+        supplied_api = request.headers.get("X-AgentGuard-Token", "")
+        supplied_operator = request.headers.get("X-AgentGuard-Operator-Token", "")
+        api_valid = bool(api_token and supplied_api and secrets.compare_digest(api_token, supplied_api))
+        operator_valid = bool(
+            operator_token and supplied_operator and secrets.compare_digest(operator_token, supplied_operator)
+        )
+        legacy_operator_valid = bool(
+            not operator_token and api_token and supplied_api and secrets.compare_digest(api_token, supplied_api)
+        )
+        actor_role = "operator" if operator_valid or legacy_operator_valid else ("api" if api_valid else "anonymous")
+        public_paths = {"/health", "/v1/system/health", "/openapi.json", "/docs", "/redoc", "/console"}
+        auth_denied = (
+            request.method != "OPTIONS"
+            and (api_token or operator_token)
+            and request.url.path not in public_paths
+            and not (api_valid or operator_valid)
+        )
+        host = request.client.host if request.client else "unknown"
+        now = time.monotonic()
+        throttled = False
+        retry_after = 0
+        if request.method != "OPTIONS":
+            with rate_lock:
+                window = rate_windows.setdefault(host, deque())
+                while window and now - window[0] >= 60:
+                    window.popleft()
+                throttled = len(window) >= rate_limit
+                if throttled:
+                    retry_after = max(1, int(60 - (now - window[0])))
+                else:
+                    window.append(now)
+        if throttled:
+            response: Response = JSONResponse(
+                status_code=429,
+                content={"detail": {"error": "RATE_LIMIT_EXCEEDED", "request_id": request_id}},
+                headers={"Retry-After": str(retry_after)},
+            )
+        elif auth_denied:
+            response = JSONResponse(
+                status_code=401,
+                content={"detail": {"error": "API_TOKEN_REQUIRED", "request_id": request_id}},
+            )
+        else:
+            try:
+                response = await call_next(request)
+            except Exception:
+                logger.exception("Unhandled AgentGuard API error (request_id=%s)", request_id)
+                response = JSONResponse(
+                    status_code=500,
+                    content={"detail": {"error": "INTERNAL_SERVER_ERROR", "request_id": request_id}},
+                )
+        response.headers["X-Request-ID"] = request_id
+        response.headers["X-Content-Type-Options"] = "nosniff"
+        response.headers["X-Frame-Options"] = "DENY"
+        response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+        _record_api_audit(request, request_id, response.status_code, actor_role)
+        return response
+
+    def _record_api_audit(request: Request, request_id: str, status_code: int, actor_role: str) -> None:
+        try:
+            app.state.warden_workflows.record_api_audit_event(
+                request_id=request_id,
+                method=request.method,
+                path=getattr(request.scope.get("route"), "path", "/<unmatched>"),
+                status_code=status_code,
+                actor_role=actor_role,
+            )
+        except Exception:
+            # The request path and response remain usable, while audit sink failures are visible to operators.
+            logger.exception("AgentGuard API audit event could not be persisted (request_id=%s)", request_id)
 
     def persist_report(report: RunReport) -> str:
         payload = report.model_dump_json(indent=2).encode("utf-8")
@@ -297,13 +403,11 @@ def create_app(
         expected = os.environ.get("AGENTGUARD_APPROVAL_TOKEN", "")
         return bool(expected and token and secrets.compare_digest(expected, token))
 
-    def require_configured_api_token(token: str | None) -> None:
-        expected = os.environ.get("AGENTGUARD_API_TOKEN", "")
+    def require_operator_token(token: str | None) -> None:
+        """Require the operator credential, with an explicit legacy API-token fallback."""
+        expected = os.environ.get("AGENTGUARD_OPERATOR_API_TOKEN") or os.environ.get("AGENTGUARD_API_TOKEN", "")
         if not expected or not token or not secrets.compare_digest(expected, token):
-            raise HTTPException(
-                status_code=403,
-                detail={"error": "API_TOKEN_REQUIRED_FOR_POLICY_CHANGE"},
-            )
+            raise HTTPException(status_code=403, detail={"error": "OPERATOR_TOKEN_REQUIRED"})
 
     def resolve_job_status(run_id: str) -> dict[str, Any] | None:
         with app.state.lock:
@@ -317,6 +421,10 @@ def create_app(
     @app.get("/health")
     def health() -> dict:
         return {"status": "ok", "service": "agentguard", "version": __version__}
+
+    @app.get("/v1/system/health")
+    def public_system_health() -> dict:
+        return health()
 
     @app.get("/console", response_class=HTMLResponse)
     def console() -> str:
@@ -338,6 +446,21 @@ def create_app(
     def get_capabilities() -> dict:
         manifest = app.state.engine.runtime.capabilities()
         return manifest.model_dump(mode="json")
+
+    @app.get("/v1/system/capabilities")
+    def public_system_capabilities() -> dict:
+        return get_capabilities()
+
+    @app.get("/v1/system/audit-events")
+    def list_api_audit_events(
+        limit: int = Query(default=100, ge=1, le=500),
+        offset: int = Query(default=0, ge=0),
+        x_agentguard_operator_token: str | None = Header(default=None, alias="X-AgentGuard-Operator-Token"),
+        x_agentguard_token: str | None = Header(default=None, alias="X-AgentGuard-Token"),
+    ) -> dict:
+        require_operator_token(x_agentguard_operator_token or x_agentguard_token)
+        items = app.state.warden_workflows.list_api_audit_events(limit=limit, offset=offset)
+        return {"items": items, "count": len(items), "offset": offset, "limit": limit}
 
     @app.get("/v1/kernel/status")
     def get_kernel_status() -> dict:
@@ -456,9 +579,13 @@ def create_app(
             ) from exc
 
     @app.get("/v1/kernel/workflows")
-    def list_kernel_workflows(status: str | None = None, limit: int = Query(default=50, ge=1, le=500)) -> dict:
+    def list_kernel_workflows(
+        status: str | None = None,
+        limit: int = Query(default=50, ge=1, le=500),
+        offset: int = Query(default=0, ge=0),
+    ) -> dict:
         """List durable AgentGuard workflow summaries for operational reconciliation."""
-        entries = app.state.warden_workflows.list(status=status, limit=limit)
+        entries = app.state.warden_workflows.list(status=status, limit=limit, offset=offset)
         return {
             "items": [
                 {
@@ -475,7 +602,35 @@ def create_app(
                 for entry in entries
             ],
             "count": len(entries),
+            "offset": offset,
+            "limit": limit,
+            "next_offset": offset + len(entries) if len(entries) == limit else None,
         }
+
+    @app.post("/v1/investigations")
+    def create_public_investigation(request: WardenAuditRequest) -> dict:
+        """Stable business alias for submitting an AgentGuard-orchestrated WARDEN workflow."""
+        return execute_kernel_workflow(request)
+
+    @app.post("/v1/workflows")
+    def create_public_workflow(request: WardenAuditRequest) -> dict:
+        return execute_kernel_workflow(request)
+
+    @app.get("/v1/investigations")
+    def list_public_investigations(
+        status: str | None = None,
+        limit: int = Query(default=50, ge=1, le=500),
+        offset: int = Query(default=0, ge=0),
+    ) -> dict:
+        return list_kernel_workflows(status=status, limit=limit, offset=offset)
+
+    @app.get("/v1/workflows")
+    def list_public_workflows(
+        status: str | None = None,
+        limit: int = Query(default=50, ge=1, le=500),
+        offset: int = Query(default=0, ge=0),
+    ) -> dict:
+        return list_kernel_workflows(status=status, limit=limit, offset=offset)
 
     @app.post("/v1/kernel/workflows/{request_id}/cancel")
     def cancel_pending_kernel_workflow(request_id: str) -> dict:
@@ -516,6 +671,22 @@ def create_app(
             entry,
             artifacts=app.state.artifacts,
         )
+
+    @app.get("/v1/investigations/{request_id}")
+    def get_public_investigation(request_id: str) -> dict:
+        return get_kernel_workflow(request_id)
+
+    @app.get("/v1/workflows/{request_id}")
+    def get_public_workflow(request_id: str) -> dict:
+        return get_kernel_workflow(request_id)
+
+    @app.get("/v1/investigations/{request_id}/evidence")
+    def get_public_investigation_evidence(request_id: str) -> dict:
+        return get_kernel_workflow_evidence(request_id)
+
+    @app.get("/v1/evidence/investigations/{request_id}")
+    def get_public_evidence(request_id: str) -> dict:
+        return get_kernel_workflow_evidence(request_id)
 
     def _build_warden_defense_preview(request_id: str, *, persist: bool) -> DefensePreview:
         entry = app.state.warden_workflows.get(request_id)
@@ -565,6 +736,14 @@ def create_app(
 
     @app.post("/v1/kernel/workflows/{request_id}/defenses/preview")
     def create_warden_defense_preview(request_id: str) -> dict:
+        return _build_warden_defense_preview(request_id, persist=True).model_dump(mode="json")
+
+    @app.get("/v1/defense-policies/{request_id}")
+    def get_public_defense_policies(request_id: str) -> dict:
+        return _build_warden_defense_preview(request_id, persist=False).model_dump(mode="json")
+
+    @app.post("/v1/defense-policies/{request_id}/preview")
+    def create_public_defense_policy_preview(request_id: str) -> dict:
         return _build_warden_defense_preview(request_id, persist=True).model_dump(mode="json")
 
     @app.post("/v1/kernel/workflows/{request_id}/defenses/execute")
@@ -631,6 +810,14 @@ def create_app(
             "defense_status": saved["lifecycle"]["status"],
             "message": "The proposal and approval were recorded. No defense action was submitted or executed.",
         })
+
+    @app.post("/v1/defense-policies/{request_id}/execute")
+    def execute_public_defense_policy(
+        request_id: str,
+        request: WardenDefenseExecuteRequest,
+        x_approval_token: str | None = Header(default=None, alias="X-Approval-Token"),
+    ) -> dict:
+        return execute_warden_defense_proposal(request_id, request, x_approval_token)
 
     @app.get("/v1/kernel/workflows/{request_id}/events")
     def get_kernel_workflow_events(request_id: str) -> dict:
@@ -805,6 +992,10 @@ def create_app(
     def get_run_report(run_id: str) -> dict:
         report = get_report_or_404(run_id)
         return report.model_dump(mode="json")
+
+    @app.get("/v1/reports/{run_id}")
+    def get_public_report(run_id: str) -> dict:
+        return get_run_report(run_id)
 
     def _run_intervention_locked(
         run_id: str,
@@ -1525,8 +1716,9 @@ def create_app(
         policy: ExperienceRecommendationPolicy,
         activate: bool = False,
         x_agentguard_token: str | None = Header(default=None, alias="X-AgentGuard-Token"),
+        x_agentguard_operator_token: str | None = Header(default=None, alias="X-AgentGuard-Operator-Token"),
     ) -> ExperienceRecommendationPolicy:
-        require_configured_api_token(x_agentguard_token)
+        require_operator_token(x_agentguard_operator_token or x_agentguard_token)
         try:
             return app.state.experiences.save_policy(policy, activate=activate)
         except ValueError as exc:
@@ -1537,8 +1729,9 @@ def create_app(
         policy_version: str,
         reason: str = Query(default="operator_rollback", min_length=1, max_length=256),
         x_agentguard_token: str | None = Header(default=None, alias="X-AgentGuard-Token"),
+        x_agentguard_operator_token: str | None = Header(default=None, alias="X-AgentGuard-Operator-Token"),
     ) -> dict:
-        require_configured_api_token(x_agentguard_token)
+        require_operator_token(x_agentguard_operator_token or x_agentguard_token)
         try:
             app.state.experiences.rollback_policy(policy_version, reason=reason)
         except KeyError as exc:

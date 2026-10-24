@@ -32,7 +32,7 @@ class WorkflowConflictError(ValueError):
 
 
 class WardenWorkflowStore:
-    SCHEMA_VERSION = 2
+    SCHEMA_VERSION = 3
 
     def __init__(self, path: str | Path = ".agentguard/warden_workflows.sqlite3") -> None:
         self.path = Path(path).expanduser().resolve()
@@ -143,6 +143,16 @@ class WardenWorkflowStore:
                 FOREIGN KEY(candidate_id) REFERENCES warden_defense_candidates(candidate_id)
             )""")
             db.execute("CREATE INDEX IF NOT EXISTS idx_warden_defense_events_candidate ON warden_defense_events(candidate_id, event_id)")
+            db.execute("""CREATE TABLE IF NOT EXISTS api_audit_events (
+                event_id INTEGER PRIMARY KEY AUTOINCREMENT,
+                request_id TEXT NOT NULL,
+                method TEXT NOT NULL,
+                path TEXT NOT NULL,
+                status_code INTEGER NOT NULL,
+                actor_role TEXT NOT NULL,
+                created_at TEXT NOT NULL
+            )""")
+            db.execute("CREATE INDEX IF NOT EXISTS idx_api_audit_created ON api_audit_events(event_id DESC)")
 
     @staticmethod
     def canonical_hash(payload: Mapping[str, Any]) -> str:
@@ -251,15 +261,50 @@ class WardenWorkflowStore:
             rows = db.execute("SELECT event_id, from_status, to_status, detail_json, created_at FROM warden_workflow_events WHERE request_id=? ORDER BY event_id", (request_id,)).fetchall()
         return [{"event_id": r["event_id"], "from_status": r["from_status"], "to_status": r["to_status"], "detail": json.loads(r["detail_json"]), "created_at": r["created_at"]} for r in rows]
 
-    def list(self, *, status: str | None = None, limit: int = 50) -> list[dict[str, Any]]:
+    def list(
+        self, *, status: str | None = None, limit: int = 50, offset: int = 0
+    ) -> list[dict[str, Any]]:
         if not 1 <= limit <= 500:
             raise ValueError("limit must be between 1 and 500")
+        if offset < 0:
+            raise ValueError("offset must not be negative")
         with self._connect() as db:
             if status:
-                rows = db.execute("SELECT * FROM warden_workflows WHERE status=? ORDER BY updated_at DESC LIMIT ?", (status, limit)).fetchall()
+                rows = db.execute(
+                    "SELECT * FROM warden_workflows WHERE status=? ORDER BY updated_at DESC LIMIT ? OFFSET ?",
+                    (status, limit, offset),
+                ).fetchall()
             else:
-                rows = db.execute("SELECT * FROM warden_workflows ORDER BY updated_at DESC LIMIT ?", (limit,)).fetchall()
+                rows = db.execute(
+                    "SELECT * FROM warden_workflows ORDER BY updated_at DESC LIMIT ? OFFSET ?",
+                    (limit, offset),
+                ).fetchall()
         return [self._decode(r) for r in rows]
+
+    def record_api_audit_event(
+        self, *, request_id: str, method: str, path: str, status_code: int, actor_role: str
+    ) -> None:
+        """Persist request metadata only; callers must never pass query strings or bodies."""
+        with self._connect() as db:
+            db.execute(
+                "INSERT INTO api_audit_events(request_id, method, path, status_code, actor_role, created_at) "
+                "VALUES (?, ?, ?, ?, ?, ?)",
+                (request_id, method, path, status_code, actor_role, self._now()),
+            )
+            event_id = int(db.execute("SELECT last_insert_rowid()").fetchone()[0])
+            if event_id % 500 == 0:
+                db.execute("DELETE FROM api_audit_events WHERE event_id <= ?", (event_id - 100_000,))
+
+    def list_api_audit_events(self, *, limit: int = 100, offset: int = 0) -> list[dict[str, Any]]:
+        if not 1 <= limit <= 500 or offset < 0:
+            raise ValueError("audit pagination is out of range")
+        with self._connect() as db:
+            rows = db.execute(
+                "SELECT event_id, request_id, method, path, status_code, actor_role, created_at "
+                "FROM api_audit_events ORDER BY event_id DESC LIMIT ? OFFSET ?",
+                (limit, offset),
+            ).fetchall()
+        return [dict(row) for row in rows]
 
     def count(self) -> int:
         with self._connect() as db:
