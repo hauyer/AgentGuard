@@ -1,7 +1,7 @@
 import json
 
 from agentguard.agents.llm_advisor import LLMInvestigationAdvisor
-from agentguard.agents.model_client import OpenAICompatibleJSONClient, ModelClientError
+from agentguard.agents.model_client import ModelClientError, OpenAICompatibleJSONClient
 from agentguard.contracts.observation import DetectionFinding
 
 
@@ -86,3 +86,32 @@ def test_client_sanitizes_transport_errors_and_requires_https():
         assert "HTTPS" in str(exc)
     else:
         raise AssertionError("non-loopback HTTP should be rejected")
+
+
+def test_llm_advice_schema_rejects_extra_fields_and_respects_output_budget():
+    captured = {}
+
+    def transport(url, headers, body, timeout):
+        captured["request"] = json.loads(body)
+        payload = json.loads(captured["request"]["messages"][1]["content"])
+        return json.dumps({
+            "choices": [{"message": {"content": json.dumps({
+                "selected_finding_id": payload["candidate_findings"][0]["finding_id"],
+                "rationale": "This is a bounded advisory selection.",
+                "confidence": 0.5,
+                "execute_action": True,
+            })}}],
+            "usage": {"prompt_tokens": 17, "completion_tokens": 7, "total_tokens": 24},
+        }).encode()
+
+    advisor = LLMInvestigationAdvisor(OpenAICompatibleJSONClient(
+        base_url="https://api.deepseek.com/v1", api_key="secret", model="test", transport=transport,
+    ))
+    assert advisor.select_finding(
+        [finding("allowed-a", 0.8), finding("allowed-b", 0.7)],
+        max_tokens=11,
+        max_candidates=1,
+    ) is None
+    assert advisor.last_decision["status"] == "invalid_response_rejected"
+    assert captured["request"]["max_tokens"] == 11
+    assert "tools" not in captured["request"]

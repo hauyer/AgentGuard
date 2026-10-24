@@ -1,6 +1,8 @@
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Literal
+
 from pydantic import Field
+
 from agentguard.contracts.base import ContractModel
 
 
@@ -15,7 +17,7 @@ class RunTimelineEvent(ContractModel):
     ]
     status: Literal["started", "completed", "skipped", "rejected", "failed", "info"]
     message: str
-    timestamp: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    timestamp: datetime = Field(default_factory=lambda: datetime.now(UTC))
     details: dict[str, str | int | float | bool] = Field(default_factory=dict)
 
 
@@ -26,6 +28,8 @@ class BudgetUsage(ContractModel):
     intervention_attempts: int = Field(default=0, ge=0)
     observations_collected: int = Field(default=0, ge=0)
     findings_generated: int = Field(default=0, ge=0)
+    max_agent_steps: int = Field(default=32, ge=1, le=100)
+    agent_steps_used: int = Field(default=0, ge=0)
     elapsed_seconds: float = Field(default=0.0, ge=0)
     max_runtime_seconds: int = Field(ge=1)
     runtime_budget_exceeded: bool = False

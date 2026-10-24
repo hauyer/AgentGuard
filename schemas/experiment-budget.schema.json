@@ -8,6 +8,13 @@
       "title": "Max Interventions",
       "type": "integer"
     },
+    "max_agent_steps": {
+      "default": 32,
+      "maximum": 100,
+      "minimum": 1,
+      "title": "Max Agent Steps",
+      "type": "integer"
+    },
     "max_tool_calls": {
       "default": 40,
       "maximum": 100000,

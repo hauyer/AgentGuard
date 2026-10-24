@@ -1,11 +1,14 @@
-from uuid import uuid4
 from typing import Literal
+from uuid import uuid4
+
 from pydantic import Field, model_validator
+
 from agentguard.contracts.base import ContractModel
 
 
 class ExperimentBudget(ContractModel):
     max_interventions: int = Field(default=1, ge=0, le=100)
+    max_agent_steps: int = Field(default=32, ge=1, le=100)
     max_tool_calls: int = Field(default=40, ge=0, le=100000)
     max_model_calls: int = Field(default=64, ge=1, le=100000)
     max_runtime_seconds: int = Field(default=120, ge=1, le=86400)
@@ -18,6 +21,10 @@ class ExperimentRequest(ContractModel):
     experiment_id: str = Field(default_factory=lambda: f"exp-{uuid4().hex[:12]}")
     scenario_id: str = Field(min_length=1, max_length=128)
     goal: str = Field(default="investigate unauthorized information flow", max_length=1024)
+    investigation_strategy: Literal[
+        "fixed_order", "risk_score", "information_value", "experience", "llm"
+    ] = "information_value"
+    max_agent_steps: int = Field(default=32, ge=1, le=100)
     max_interventions: int = Field(default=1, ge=0, le=100)
     max_runtime_seconds: int = Field(default=120, ge=1, le=86400)
     max_tool_calls: int = Field(default=40, ge=0, le=100000)

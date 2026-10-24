@@ -10,6 +10,13 @@
           "title": "Max Interventions",
           "type": "integer"
         },
+        "max_agent_steps": {
+          "default": 32,
+          "maximum": 100,
+          "minimum": 1,
+          "title": "Max Agent Steps",
+          "type": "integer"
+        },
         "max_tool_calls": {
           "default": 40,
           "maximum": 100000,
@@ -73,6 +80,25 @@
       "maxLength": 1024,
       "title": "Goal",
       "type": "string"
+    },
+    "investigation_strategy": {
+      "default": "information_value",
+      "enum": [
+        "fixed_order",
+        "risk_score",
+        "information_value",
+        "experience",
+        "llm"
+      ],
+      "title": "Investigation Strategy",
+      "type": "string"
+    },
+    "max_agent_steps": {
+      "default": 32,
+      "maximum": 100,
+      "minimum": 1,
+      "title": "Max Agent Steps",
+      "type": "integer"
     },
     "max_interventions": {
       "default": 1,

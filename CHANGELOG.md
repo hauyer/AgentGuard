@@ -13,6 +13,13 @@
 - Kept Probe HTTP routes deprecated and clarified that they train or score caller-supplied vectors locally, without invoking WARDEN; current WARDEN REST has no equivalent Probe training/prediction routes.
 - Kept attribution as upper-layer statistics, made optional integration exports lazy, and documented compatibility conditions and the actual no-deletion list.
 
+## Unreleased — Upper-layer platform A4
+
+- Added fixed-order, risk-score, information-value, verified-experience, and bounded LLM investigation strategies with evidence-linked decision traces.
+- Added role tool/message allowlists; the LLM receives no tools, can only select supplied candidates, and its output is strictly schema-validated before the existing policy gate remains in control.
+- Added a candidate-step cap, model-call/output-token budgeting, explicit deterministic fallback reasons, CLI/API strategy selection, and checked-in request/budget schemas.
+- Ensured the paired investigation design follows the candidate selected by the active strategy; recorded cases with unknown model usage fall back without making an unbounded advisor call.
+
 ## Unreleased — Upper-layer platform A1
 
 - Hardened the existing WARDEN client with credential-safe URL validation, redirect rejection, bounded JSON responses, strict response checks, and optional GET-only retries.

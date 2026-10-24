@@ -1,37 +1,42 @@
 """AgentGuard command-line interface."""
 from __future__ import annotations
+
 import argparse
+import hmac
 import importlib.util
 import json
 import os
-import hmac
-from pathlib import Path
 import sys
+from pathlib import Path
 from typing import Any
+
 import uvicorn
 
 from agentguard import __version__
 from agentguard.adapters.mock import MockBackend
 from agentguard.adapters.warden import WardenKernelClient, WardenKernelError, warden_status
-from agentguard.contracts.experiment import ExperimentRequest
-from agentguard.contracts.warden import WardenAuditRequest
-from agentguard.core.orchestrator import AgentGuardEngine
-from agentguard.artifacts.local_store import LocalArtifactStore
-from agentguard.memory.store import ExperienceStore
-from agentguard.contracts.research import StudyRegistrationRequest, StudyAnalysisRequest
-from agentguard.research_registry import ResearchRegistry
-from agentguard.core.study_analysis import analyze_registered_study
-from agentguard.contracts.attribution import AttributionNodeAnalysisRequest, PathShiftAnalysisRequest
-from agentguard.core.attribution import analyze_attribution_node, analyze_path_shift
+from agentguard.agents.coordinator import AgentCoordinator
 from agentguard.agents.llm_advisor import LLMInvestigationAdvisor
 from agentguard.agents.model_client import ModelClientError
-from agentguard.agents.coordinator import AgentCoordinator
-from agentguard.core.graph import MultiLayerDetector
-from agentguard.core.planner import InvestigationPlanner, DefensePlanner
+from agentguard.artifacts.local_store import LocalArtifactStore
+from agentguard.contracts.attribution import (
+    AttributionNodeAnalysisRequest,
+    PathShiftAnalysisRequest,
+)
+from agentguard.contracts.experiment import ExperimentRequest
+from agentguard.contracts.research import StudyAnalysisRequest, StudyRegistrationRequest
+from agentguard.contracts.warden import WardenAuditRequest
+from agentguard.core.attribution import analyze_attribution_node, analyze_path_shift
 from agentguard.core.experience_bandit import recommend_actions
+from agentguard.core.graph import MultiLayerDetector
+from agentguard.core.orchestrator import AgentGuardEngine
+from agentguard.core.planner import DefensePlanner, InvestigationPlanner
+from agentguard.core.study_analysis import analyze_registered_study
+from agentguard.memory.store import ExperienceStore
+from agentguard.research_registry import ResearchRegistry
+from agentguard.services.warden_diagnostics import diagnose_kernel
 from agentguard.services.warden_lifecycle import WardenLifecycleService
 from agentguard.services.warden_workflow_store import WardenWorkflowStore
-from agentguard.services.warden_diagnostics import diagnose_kernel
 
 
 def _build_engine(*, use_llm_investigator: bool = False) -> tuple[AgentGuardEngine, MockBackend]:
@@ -75,7 +80,7 @@ def _load_request_config(path: Path) -> dict[str, Any]:
             raise RuntimeError("YAML config requires PyYAML; use JSON or install PyYAML.") from exc
         value = yaml.safe_load(raw)
     if not isinstance(value, dict):
-        raise ValueError("Config root must be an object")
+        raise TypeError("Config root must be an object")
     return value.get("experiment", value)
 
 
@@ -87,6 +92,17 @@ def _find_report(path_or_id: str) -> dict[str, Any]:
     if not candidate.is_file():
         raise FileNotFoundError(f"No saved report for run_id/path: {path_or_id}")
     return json.loads(candidate.read_text(encoding="utf-8"))
+
+
+def _verified_experiences_for(request: ExperimentRequest):
+    store_path = _data_dir() / "experiences.sqlite3"
+    if request.investigation_strategy != "experience" or not store_path.is_file():
+        return None
+    return ExperienceStore(store_path).search(
+        scenario_id=request.scenario_id,
+        verified_only=True,
+        limit=500,
+    )
 
 
 def main() -> None:
@@ -187,16 +203,19 @@ def main() -> None:
             request = ExperimentRequest(
                 scenario_id=args.scenario, max_interventions=args.max_interventions,
                 runtime_backend="mock", auto_intervene=not args.no_auto_intervene,
+                investigation_strategy="llm" if args.llm_investigator else "information_value",
             )
             output = args.output
         else:
             values = _load_request_config(Path(args.config))
             if args.no_auto_intervene:
                 values["auto_intervene"] = False
+            if args.llm_investigator:
+                values.setdefault("investigation_strategy", "llm")
             values.setdefault("runtime_backend", "mock")
             request = ExperimentRequest.model_validate(values)
             output = args.output
-        report = engine.run(request)
+        report = engine.run(request, experience_records=_verified_experiences_for(request))
         destination = _save_report(report, output)
         print(report.model_dump_json(indent=2))
         print(f"Report saved to: {destination}", file=sys.stderr)

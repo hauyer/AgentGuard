@@ -237,7 +237,7 @@ def create_app(
                 return
             app.state.jobs[job_id].update(status="running", updated_at=_utcnow(), started_at=_utcnow())
         try:
-            report = app.state.engine.run(request, cancel_event=cancel_event)
+            report = run_engine(request, cancel_event=cancel_event)
             store_report(report, alias=job_id)
             status = "cancelled" if cancel_event.is_set() and report.status == "partial" else report.status
             with app.state.lock:
@@ -257,6 +257,20 @@ def create_app(
                     completed_at=_utcnow(),
                     error_code=type(exc).__name__,
                 )
+
+    def run_engine(request: ExperimentRequest, *, cancel_event: Event | None = None) -> RunReport:
+        experiences = None
+        if request.investigation_strategy == "experience":
+            experiences = app.state.experiences.search(
+                scenario_id=request.scenario_id,
+                verified_only=True,
+                limit=500,
+            )
+        return app.state.engine.run(
+            request,
+            cancel_event=cancel_event,
+            experience_records=experiences,
+        )
 
     def approval_is_valid(token: str | None) -> bool:
         expected = os.environ.get("AGENTGUARD_APPROVAL_TOKEN", "")
@@ -520,7 +534,7 @@ def create_app(
                 app.state.futures[job_id] = future
             return dict(job)
         try:
-            report = app.state.engine.run(request)
+            report = run_engine(request)
         except KeyError as exc:
             raise HTTPException(status_code=404, detail="scenario_id not found") from exc
         except ValueError as exc:

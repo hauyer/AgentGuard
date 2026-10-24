@@ -36,6 +36,19 @@
       "title": "Findings Generated",
       "type": "integer"
     },
+    "max_agent_steps": {
+      "default": 32,
+      "maximum": 100,
+      "minimum": 1,
+      "title": "Max Agent Steps",
+      "type": "integer"
+    },
+    "agent_steps_used": {
+      "default": 0,
+      "minimum": 0,
+      "title": "Agent Steps Used",
+      "type": "integer"
+    },
     "elapsed_seconds": {
       "default": 0.0,
       "minimum": 0,

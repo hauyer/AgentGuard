@@ -13,6 +13,10 @@ flowchart TD
   Lifecycle --> Memory[memory.store]
   Client --> WARDEN[只读依赖 WARDEN /v1 API]
   API --> Coordinator[agents.coordinator / llm_advisor]
+  Coordinator --> Strategies[固定 / 风险 / 信息价值 / 经验 / LLM 排序]
+  Strategies --> Trace[类型化决策与证据引用轨迹]
+  Coordinator --> RolePolicy[角色消息和工具白名单]
+  Coordinator --> Budget[候选步数 / 模型调用 / token 预算]
   API --> Policy[core.policy / core.defense]
   API --> Research[core.attribution / statistics / study_analysis]
   API -. 弃用离线兼容路由 .-> CompatProbe[compat.linear_probe]
@@ -26,7 +30,7 @@ flowchart TD
 复现静态模块图：
 
 ```powershell
-python scripts/audit_architecture.py --check --output .agentguard/architecture-a3.json
+python scripts/audit_architecture.py --check --output .agentguard/architecture-a4.json
 ```
 
 源码调用者按兼容边界划分：
@@ -45,7 +49,7 @@ WARDEN 工作流与诊断不依赖这些实现，所有底层 API 调用经过
 `WardenKernelClient`。`adapters` 包现在按需导入旧 FRACTAL-Bench/StegoPot
 适配器，普通 WARDEN/Mock 导入不会初始化它们。
 
-静态检查当前将旧兼容路径和 `agentguard.compat` 单独列为兼容债务；白盒和
+静态检查当前为 76 个模块、463 条导入；旧兼容路径和 `agentguard.compat` 单独列为兼容债务；白盒和
 StegoPot/FRACTAL-Bench 的三个底层导入只允许出现在兼容实现中。AST 检查包括
 函数内导入和字面动态导入，不判断代码运行时可达性，也不扫描 Python 隐式
 包初始化以外的打包行为。

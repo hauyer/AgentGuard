@@ -19,16 +19,17 @@ AgentGuard；WARDEN、FRACTAL-Bench、StegoPot 只读。已有审计和验证结
 | A8 | 候选发布验收、固定依赖和交付文档 | 全套测试/质量/部署/真实接口记录；成熟度分开；满足后才创建 rc1 |
 | B0–B4 | 独立本地 `AgentGuard-QWB-App` 仓库、业务场景与控制台 | A8 前置验收通过；只依赖 AgentGuard Public API/SDK |
 
-A0–A2 已完成。A3 已完成兼容隔离，详见 `UPPER_LAYER_A3.md` 与 `COMPATIBILITY.md`。
+A0–A4 已完成。A3 兼容隔离见 `UPPER_LAYER_A3.md` 与 `COMPATIBILITY.md`；
+A4 编排实现及验收见 `UPPER_LAYER_A4.md`。
 后续每阶段先交付代码、测试和报告，
 再单独提交。明确外部阻塞后可以继续不依赖它的上层功能。旧能力不因名称
 存在或替身测试通过而升级为真实模型/因果验证。
 
-## A3 后续阶段
+## A4 后续阶段
 
-A3 没有删除业务实现：WARDEN 尚无等价公开接口，五份实现集中到兼容命名空间，
-旧导入路径和已标记弃用的 Probe HTTP API 保持工作。归因统计继续作为 AgentGuard
-上层分析。下一阶段为 A4 多 Agent 调查编排。
+A3 未删除无替代的底层兼容实现；A4 提供可切换的确定性策略及受限 LLM 建议，
+但这些软件策略测试不等同于真实多 Agent 模型消融。下一阶段为 A5 证据治理与
+防御审批状态机。
 
 ## 历史迁移计划（已被当前写入边界覆盖）
 

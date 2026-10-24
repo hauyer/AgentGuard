@@ -1,22 +1,23 @@
-from datetime import datetime, timezone
+from datetime import UTC, datetime
+from threading import Event
 from time import monotonic
 from uuid import uuid4
-from threading import Event
 
-from agentguard.contracts.experiment import ExperimentRequest
-from agentguard.contracts.evidence import EvidenceRecord
-from agentguard.contracts.intervention import InterventionResult
-from agentguard.contracts.lifecycle import RunTimelineEvent, BudgetUsage
-from agentguard.contracts.report import RunReport
-from agentguard.contracts.capabilities import CapabilityManifest
-from agentguard.protocols import ScenarioProvider, RuntimeProvider, EvaluatorProvider
-from agentguard.core.detector import RuleBasedDetector
-from agentguard.core.planner import InvestigationPlanner, DefensePlanner
-from agentguard.core.policy import InterventionPolicyEngine
 from agentguard.agents.coordinator import AgentCoordinator
-from agentguard.core.investigation import ActiveInvestigator
+from agentguard.contracts.capabilities import CapabilityManifest
+from agentguard.contracts.evidence import EvidenceRecord
+from agentguard.contracts.experience import ExperienceRecord
+from agentguard.contracts.experiment import ExperimentRequest
+from agentguard.contracts.intervention import InterventionResult
+from agentguard.contracts.lifecycle import BudgetUsage, RunTimelineEvent
+from agentguard.contracts.report import RunReport
 from agentguard.core.defense import DefensePlannerService
+from agentguard.core.detector import RuleBasedDetector
 from agentguard.core.graph import InteractionGraphAnalyzer, MultiLayerDetector
+from agentguard.core.investigation import ActiveInvestigator
+from agentguard.core.planner import DefensePlanner, InvestigationPlanner
+from agentguard.core.policy import InterventionPolicyEngine
+from agentguard.protocols import EvaluatorProvider, RuntimeProvider, ScenarioProvider
 
 
 class RunCancellationRequested(RuntimeError):
@@ -54,7 +55,13 @@ class AgentGuardEngine:
         self.defense_service = defense_service or DefensePlannerService()
         self.graph_analyzer = graph_analyzer or InteractionGraphAnalyzer()
 
-    def run(self, request: ExperimentRequest, *, cancel_event: Event | None = None) -> RunReport:
+    def run(
+        self,
+        request: ExperimentRequest,
+        *,
+        cancel_event: Event | None = None,
+        experience_records: list[ExperienceRecord] | None = None,
+    ) -> RunReport:
         started = monotonic()
         run_id = f"run-{uuid4().hex[:12]}"
         timeline: list[RunTimelineEvent] = []
@@ -83,7 +90,7 @@ class AgentGuardEngine:
                     stage=stage,
                     status=status,
                     message=message,
-                    timestamp=datetime.now(timezone.utc),
+                    timestamp=datetime.now(UTC),
                     details=details,
                 )
             )
@@ -132,37 +139,62 @@ class AgentGuardEngine:
             investigation_actions = self.active_investigator.rank_actions(
                 hypotheses, findings, capabilities
             )
-            if hypotheses and investigation_actions:
-                top_hypothesis = next(
-                    item for item in hypotheses
-                    if item.hypothesis_id == investigation_actions[0].hypothesis_id
-                )
-                experiment_designs = [self.active_investigator.design_paired_experiment(
-                    request, top_hypothesis, investigation_actions[0], repetitions=5
-                )]
             check_cancelled()
             event(
                 "detected", "completed", "Risk detection completed.",
                 findings_count=len(findings),
                 detector="multi_layer_baseline",
             )
-            preferred_finding_id = None
-            preferred_operation = None
-            if investigation_actions:
-                top_action = investigation_actions[0]
-                top_hypothesis = next((item for item in hypotheses if item.hypothesis_id == top_action.hypothesis_id), None)
-                if top_hypothesis is not None:
-                    preferred_finding_id = top_hypothesis.finding_id
-                    preferred_operation = top_action.operation
+            usage_method = getattr(self.runtime, "usage_for", None)
+            pre_investigation_usage = (
+                usage_method(request.experiment_id) if callable(usage_method) else {}
+            )
+            pre_investigation_usage = (
+                pre_investigation_usage if isinstance(pre_investigation_usage, dict) else {}
+            )
+            used_model_calls = pre_investigation_usage.get("model_calls_used")
+            used_model_tokens = pre_investigation_usage.get("model_tokens_used")
+            remaining_model_calls = (
+                max(0, request.max_model_calls - used_model_calls)
+                if isinstance(used_model_calls, int) and not isinstance(used_model_calls, bool)
+                else None
+            )
+            remaining_model_tokens = (
+                max(0, request.max_model_tokens - used_model_tokens)
+                if isinstance(used_model_tokens, int) and not isinstance(used_model_tokens, bool)
+                else None
+            )
             selected = coordinator.investigate(
                 findings,
                 max_interventions=request.max_interventions,
-                preferred_finding_id=preferred_finding_id,
+                strategy=request.investigation_strategy,
+                actions=investigation_actions,
+                hypotheses=hypotheses,
+                experience_records=experience_records,
+                scenario_id=request.scenario_id,
+                max_agent_steps=request.max_agent_steps,
+                max_model_calls_remaining=remaining_model_calls,
+                max_model_tokens_remaining=remaining_model_tokens,
+                max_output_tokens_per_call=request.max_output_tokens_per_call,
             )
-            if selected is not None and preferred_finding_id != selected.finding_id:
-                # A model may prioritize another existing finding. Do not reuse an action
-                # ranked for a different target; let the defense planner choose afresh.
-                preferred_operation = None
+            preferred_operation = None
+            if selected is not None:
+                selected_hypothesis = next(
+                    (item for item in hypotheses if item.finding_id == selected.finding_id), None
+                )
+                if selected_hypothesis is not None:
+                    selected_action = next(
+                        (
+                            item for item in investigation_actions
+                            if item.hypothesis_id == selected_hypothesis.hypothesis_id
+                        ),
+                        None,
+                    )
+                    if selected_action is not None:
+                        preferred_operation = selected_action.operation
+                        experiment_designs = [self.active_investigator.design_paired_experiment(
+                            request, selected_hypothesis, selected_action, repetitions=5
+                        )]
 
             if selected is None:
                 event("planned", "skipped", "No candidate finding was selected.")
@@ -193,6 +225,7 @@ class AgentGuardEngine:
                     target_ref=intervention_request.target_ref,
                     operation=intervention_request.operation,
                 )
+                coordinator.authorize_tool("policy_engine", "evaluate_action")
                 policy_decision = self.policy_engine.evaluate(
                     scenario,
                     intervention_request,
@@ -213,6 +246,7 @@ class AgentGuardEngine:
                 )
 
                 if policy_decision.allowed:
+                    coordinator.authorize_tool("runtime", "execute_authorized_intervention")
                     intervention_attempts += 1
                     intervention_result = self.runtime.intervene(intervention_request)
                     coordinator.intervention_result(intervention_result)
@@ -239,6 +273,7 @@ class AgentGuardEngine:
                     coordinator.intervention_result(intervention_result)
 
             check_cancelled()
+            coordinator.authorize_tool("evaluator", "evaluate_run")
             evaluation = self.evaluator.evaluate(
                 scenario, request, observations, intervention_result
             )
@@ -399,10 +434,14 @@ class AgentGuardEngine:
 
             limitations = [
                 "Detection findings are candidate indicators, not proof of malicious intent.",
-                "An intervention outcome alone does not establish a causal claim; matched controls and "
-                "normal-task utility checks are required.",
-                "High-impact defensive actions must be reviewed and executed only in an authorized "
-                "isolated environment.",
+                (
+                    "An intervention outcome alone does not establish a causal claim; matched controls and "
+                    "normal-task utility checks are required."
+                ),
+                (
+                    "High-impact defensive actions must be reviewed and executed only in an authorized "
+                    "isolated environment."
+                ),
                 "Investigation actions are ranked by transparent heuristics; expected information gain is not calibrated.",
                 "Paired experiment designs are plans only; they do not prove that treatment/control runs were executed.",
             ]
@@ -414,9 +453,23 @@ class AgentGuardEngine:
             runtime_exceeded = elapsed > request.max_runtime_seconds
             usage_method = getattr(self.runtime, "usage_for", None)
             usage = usage_method(request.experiment_id) if callable(usage_method) else {}
-            model_calls_used = usage.get("model_calls_used")
-            model_tokens_used = usage.get("model_tokens_used")
+            runtime_model_calls = usage.get("model_calls_used")
+            runtime_model_tokens = usage.get("model_tokens_used")
             tool_calls_used = usage.get("tool_calls_used")
+            model_calls_used = (
+                runtime_model_calls + coordinator.model_calls_used
+                if isinstance(runtime_model_calls, int) and not isinstance(runtime_model_calls, bool)
+                else None
+            )
+            model_tokens_used = (
+                runtime_model_tokens + coordinator.model_tokens_used
+                if isinstance(runtime_model_tokens, int)
+                and not isinstance(runtime_model_tokens, bool)
+                and isinstance(coordinator.model_tokens_used, int)
+                else None
+                if coordinator.model_calls_used
+                else runtime_model_tokens
+            )
             model_call_exceeded = (
                 isinstance(model_calls_used, int)
                 and model_calls_used > request.max_model_calls
@@ -451,6 +504,10 @@ class AgentGuardEngine:
                     "Observed total token usage exceeded the declared token budget; this is detected from "
                     "provider-reported usage after execution, not a hard pre-call token ceiling."
                 )
+            if coordinator.model_calls_used and model_tokens_used is None:
+                limitations.append(
+                    "The LLM provider did not report complete token usage; total model-token budget compliance is unknown."
+                )
             if tool_call_exceeded:
                 limitations.append("Observed tool-call usage exceeded the declared AgentGuard budget.")
             coordinator.finish(status)
@@ -469,6 +526,8 @@ class AgentGuardEngine:
                 intervention_attempts=intervention_attempts,
                 observations_collected=len(observations),
                 findings_generated=len(findings),
+                max_agent_steps=request.max_agent_steps,
+                agent_steps_used=coordinator.agent_steps_used,
                 elapsed_seconds=round(elapsed, 6),
                 max_runtime_seconds=request.max_runtime_seconds,
                 runtime_budget_exceeded=runtime_exceeded,
@@ -519,7 +578,7 @@ class AgentGuardEngine:
             if provider_manifest is None:
                 try:
                     provider_manifest = self.runtime.capabilities()
-                except Exception:
+                except Exception:  # noqa: BLE001 - fail closed when reporting a partial run
                     provider_manifest = None
             usage_method = getattr(self.runtime, "usage_for", None)
             usage = usage_method(request.experiment_id) if callable(usage_method) else {}
@@ -550,6 +609,8 @@ class AgentGuardEngine:
                     intervention_attempts=intervention_attempts,
                     observations_collected=len(observations),
                     findings_generated=len(findings),
+                    max_agent_steps=request.max_agent_steps,
+                    agent_steps_used=coordinator.agent_steps_used,
                     elapsed_seconds=round(elapsed, 6),
                     max_runtime_seconds=request.max_runtime_seconds,
                     runtime_budget_exceeded=elapsed > request.max_runtime_seconds,
