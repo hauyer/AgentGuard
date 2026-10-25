@@ -5,8 +5,8 @@ behave differently under a tight budget, where the first action choice matters.
 """
 from __future__ import annotations
 
-from agentguard.services.investigation_strategies import select_next_action
 from agentguard.contracts.investigation_loop import LoopAction
+from agentguard.services.investigation_strategies import select_next_action
 
 
 def _action(action_type: str) -> LoopAction:
