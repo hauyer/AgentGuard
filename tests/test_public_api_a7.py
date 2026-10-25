@@ -192,6 +192,20 @@ def test_rate_limit_and_cors_require_explicit_origins(tmp_path, monkeypatch):
         )
         assert response.status_code == 200
         assert response.headers["access-control-allow-origin"] == "https://console.example"
+        loop_preflight = client.options(
+            "/v1/investigation-loops",
+            headers={
+                "Origin": "https://console.example",
+                "Access-Control-Request-Method": "POST",
+                "Access-Control-Request-Headers": (
+                    "x-agentguard-operator-token,x-loop-idempotency-key"
+                ),
+            },
+        )
+        assert loop_preflight.status_code == 200
+        allowed_headers = loop_preflight.headers["access-control-allow-headers"].lower()
+        assert "x-agentguard-operator-token" in allowed_headers
+        assert "x-loop-idempotency-key" in allowed_headers
 
 
 def test_api_fails_closed_if_audit_reservation_is_unavailable(tmp_path, monkeypatch, caplog):

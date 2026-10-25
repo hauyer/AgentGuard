@@ -279,6 +279,7 @@ def create_app(
             allow_headers=[
                 "Authorization", "Content-Type", "X-AgentGuard-Token",
                 "X-AgentGuard-Operator-Token", "X-Approval-Token", "X-Request-ID",
+                "X-Loop-Idempotency-Key",
             ],
         )
 
