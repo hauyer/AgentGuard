@@ -1,0 +1,196 @@
+{
+  "schema_version": "1.0",
+  "investigation_id": "loop-i6-synthetic-control-001",
+  "base_request_id": "i6-synthetic-control-001",
+  "strategy": "risk_score",
+  "strategy_degraded": false,
+  "strategy_degradation_note": "",
+  "phase": "STOPPED",
+  "stop_reason": "action_budget_reached",
+  "decisions": [
+    {
+      "schema_version": "1.0",
+      "round_index": 1,
+      "phase": "EVIDENCE_UPDATED",
+      "selected_action": "act-read-graph",
+      "candidate_actions": [
+        "act-read-state",
+        "act-read-graph",
+        "act-read-evidence",
+        "act-read-hypotheses",
+        "act-read-experiments",
+        "act-read-experiences",
+        "act-plan-intervention"
+      ],
+      "selection_strategy": "risk_score",
+      "selection_reason": "risk context rides on the message graph",
+      "evidence_refs": [
+        "edge:synthetic-msg-1",
+        "edge:synthetic-msg-2",
+        "edge:synthetic-msg-3"
+      ],
+      "cost_estimate": 0.2,
+      "actual_cost": 0.0,
+      "result_status": "completed",
+      "new_evidence": true,
+      "stop_reason": null,
+      "occurred_at": "2026-10-25T15:09:30.358250Z"
+    },
+    {
+      "schema_version": "1.0",
+      "round_index": 2,
+      "phase": "EVIDENCE_UPDATED",
+      "selected_action": "act-read-hypotheses",
+      "candidate_actions": [
+        "act-read-state",
+        "act-read-graph",
+        "act-read-evidence",
+        "act-read-hypotheses",
+        "act-read-experiments",
+        "act-read-experiences",
+        "act-plan-intervention"
+      ],
+      "selection_strategy": "risk_score",
+      "selection_reason": "hypotheses rank where risk concentrates",
+      "evidence_refs": [
+        "rf-fanin-75ced0b20d",
+        "rf-extflow-6f6decf881"
+      ],
+      "cost_estimate": 0.3,
+      "actual_cost": 0.0,
+      "result_status": "completed",
+      "new_evidence": true,
+      "stop_reason": null,
+      "occurred_at": "2026-10-25T15:09:30.366266Z"
+    },
+    {
+      "schema_version": "1.0",
+      "round_index": 3,
+      "phase": "ACTION_EXECUTED",
+      "selected_action": "act-read-evidence",
+      "candidate_actions": [
+        "act-read-state",
+        "act-read-graph",
+        "act-read-evidence",
+        "act-read-hypotheses",
+        "act-read-experiments",
+        "act-read-experiences",
+        "act-plan-intervention"
+      ],
+      "selection_strategy": "risk_score",
+      "selection_reason": "governed evidence backs every risk claim",
+      "evidence_refs": [],
+      "cost_estimate": 0.2,
+      "actual_cost": 0.0,
+      "result_status": "completed",
+      "new_evidence": false,
+      "stop_reason": null,
+      "occurred_at": "2026-10-25T15:09:30.374979Z"
+    },
+    {
+      "schema_version": "1.0",
+      "round_index": 4,
+      "phase": "ACTION_EXECUTED",
+      "selected_action": "act-read-experiences",
+      "candidate_actions": [
+        "act-read-state",
+        "act-read-graph",
+        "act-read-evidence",
+        "act-read-hypotheses",
+        "act-read-experiments",
+        "act-read-experiences",
+        "act-plan-intervention"
+      ],
+      "selection_strategy": "risk_score",
+      "selection_reason": "past verified actions weight the ranking",
+      "evidence_refs": [],
+      "cost_estimate": 0.2,
+      "actual_cost": 0.0,
+      "result_status": "completed",
+      "new_evidence": false,
+      "stop_reason": null,
+      "occurred_at": "2026-10-25T15:09:30.383513Z"
+    },
+    {
+      "schema_version": "1.0",
+      "round_index": 5,
+      "phase": "EVIDENCE_UPDATED",
+      "selected_action": "act-read-experiments",
+      "candidate_actions": [
+        "act-read-state",
+        "act-read-graph",
+        "act-read-evidence",
+        "act-read-hypotheses",
+        "act-read-experiments",
+        "act-read-experiences",
+        "act-plan-intervention"
+      ],
+      "selection_strategy": "risk_score",
+      "selection_reason": "experiment history contextualizes risk",
+      "evidence_refs": [
+        "run-i6-synthetic-control-001"
+      ],
+      "cost_estimate": 0.2,
+      "actual_cost": 0.016,
+      "result_status": "completed",
+      "new_evidence": true,
+      "stop_reason": null,
+      "occurred_at": "2026-10-25T15:09:30.392883Z"
+    },
+    {
+      "schema_version": "1.0",
+      "round_index": 6,
+      "phase": "EVIDENCE_UPDATED",
+      "selected_action": "act-read-state",
+      "candidate_actions": [
+        "act-read-state",
+        "act-read-graph",
+        "act-read-evidence",
+        "act-read-hypotheses",
+        "act-read-experiments",
+        "act-read-experiences",
+        "act-plan-intervention"
+      ],
+      "selection_strategy": "risk_score",
+      "selection_reason": "fixed order: next untaken step is read_state",
+      "evidence_refs": [
+        "i6-synthetic-control-001",
+        "completed"
+      ],
+      "cost_estimate": 0.1,
+      "actual_cost": 0.0,
+      "result_status": "completed",
+      "new_evidence": true,
+      "stop_reason": null,
+      "occurred_at": "2026-10-25T15:09:30.401037Z"
+    }
+  ],
+  "budget": {
+    "schema_version": "1.0",
+    "max_actions": 6,
+    "max_seconds": 60.0,
+    "max_model_calls": 4,
+    "no_new_evidence_rounds": 3
+  },
+  "metrics": {
+    "schema_version": "1.0",
+    "rounds_executed": 6,
+    "steps_to_first_evidence": 1,
+    "effective_action_ratio": 1.0,
+    "blocked_ratio": 0.0,
+    "unsupported_ratio": 0.0,
+    "redundant_action_count": 0,
+    "hypotheses_raised": 1,
+    "evidence_refs_collected": 8,
+    "model_calls_used": 0,
+    "elapsed_seconds": 0.047
+  },
+  "created_audit_request_ids": [],
+  "limitations": [
+    "Action costs are wall-clock based; the loop never exceeds its declared action, time or model-call budget.",
+    "Base investigation declares source_kind=synthetic; this loop does not establish a real model observation or real evidence."
+  ],
+  "started_at": "2026-10-25T15:09:30.402035Z",
+  "finished_at": "2026-10-25T15:09:30.402035Z",
+  "report_artifact_id": null
+}

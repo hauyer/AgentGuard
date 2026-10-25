@@ -96,9 +96,12 @@
 
 ## 当前执行状态
 
-- 五种策略与评价字段已在合同中定义；CLI/API 持久化链路有 synthetic 标记的端到端
+- 五种策略与评价字段已在合同中定义；CLI/API 持久化链路已有 synthetic 标记的端到端
   软件测试。
-- 本协议下没有可验证的 evaluation ID 和报告工件，因此尚无可报告的 I6 实验结果。
+- 已执行一组单案例 synthetic control 比较：5 策略 × 2 次技术重复。数据不是独立真实
+  观察，结果和全部原始工件见 `I_RESULTS.md`。
+- 尚无符合条件的 Recorded Observational、Live Observational 或 Interventional I6
+  结果；synthetic control 不支持真实性、准确率或策略泛化结论。
 - 真实 WARDEN 观察能力仍受 I5 的授权、幂等与远端持久化门控；真实模型实验未执行。
-- 旧 `docs/research/RESULTS.md` 中的 D5 摘要在本次检查中缺少可核验的 evaluation
-  ID 和本地可读报告工件，已从 I6 有效结果中排除，详情见 `I_RESULTS.md`。
+- 旧 `docs/research/RESULTS.md` 中的 D5 摘要缺少可核验的 evaluation ID 和本地可读
+  报告工件，已从 I6 有效结果中排除，详情见 `I_RESULTS.md`。

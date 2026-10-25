@@ -5,7 +5,7 @@
 | 项目 | 固定值 |
 | --- | --- |
 | AgentGuard 分支 | `feature/i-reliability-and-live-validation` |
-| API 实现 source SHA | `aa46f4c0461ba18b1a8b8d7728f9ebe4fa4f92a9` |
+| API 实现 source SHA | `ecd1cc3a74ee2ff5ee3e3595c382c6bb8f9affcf` |
 | 包版本 | `1.1.0rc1` |
 | Python 支持范围 | `>=3.11`；CI 矩阵为 3.11、3.12、3.13 |
 | OpenAPI 文件 | [`openapi-1.1.0rc1.json`](openapi-1.1.0rc1.json) |
