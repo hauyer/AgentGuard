@@ -75,6 +75,9 @@ def main() -> int:
     parser.add_argument("--max-seconds", type=float, default=BUDGET.max_seconds)
     parser.add_argument("--max-model-calls", type=int, default=BUDGET.max_model_calls)
     parser.add_argument("--partition", default="held_out_family")
+    parser.add_argument("--data-dir", default=None,
+                        help="Persistent data directory for workflows, artifacts, experiences, and evaluation index. "
+                             "If not specified, a temporary directory is used and results are not persisted.")
     args = parser.parse_args()
 
     strategies = (args.strategies.split(",") if args.strategies else STRATEGIES)
@@ -87,7 +90,14 @@ def main() -> int:
 
     live_url = os.environ.get("AGENTGUARD_LIVE_WARDEN_URL") \
         or os.environ.get("AGENTGUARD_WARDEN_URL")
-    data_dir = Path(tempfile.mkdtemp(prefix="g2-eval-"))
+
+    if args.data_dir:
+        data_dir = Path(args.data_dir).expanduser().resolve()
+        data_dir.mkdir(parents=True, exist_ok=True)
+        persisted = True
+    else:
+        data_dir = Path(tempfile.mkdtemp(prefix="g2-eval-"))
+        persisted = False
 
     workflows = WardenWorkflowStore(data_dir / "workflows.sqlite3")
     artifacts = LocalArtifactStore(data_dir / "artifacts")
@@ -216,7 +226,19 @@ def main() -> int:
         "当前不计算（null）；不得以工具调用成功率替代。"),
         "- 防御效果类指标需要真实干预与独立评价，当前不计算（null）。",
         f"- 完整逐轮记录：内容寻址工件 `{report.report_artifact_id}`。",
-        f"- 评价索引 ID：`eval-{report.comparison_id}`，可通过 GET /v1/research/strategy-evaluations 查询。",
+        f"- 评价索引 ID：`eval-{report.comparison_id}`。",
+    ]
+    if persisted:
+        lines += [
+            f"- 数据目录：`{data_dir}`（持久化模式）",
+            "- 评价索引与工件已保存到持久化目录，可通过 API 查询。",
+        ]
+    else:
+        lines += [
+            "- ⚠️ 临时模式：数据未持久化，服务重启后不可查询。",
+            "- 使用 --data-dir 指定持久化目录以保存实验结果。",
+        ]
+    lines += [
         "",
     ]
 
