@@ -12,6 +12,10 @@ from typing import Any
 from agentguard.services.warden_workflow_store import WardenWorkflowStore
 
 
+class EvaluationRegistryError(Exception):
+    """Raised when an evaluation index entry conflicts with existing data."""
+
+
 class EvaluationRegistry:
     """Create/list/read evaluation index entries over the workflow store."""
 
@@ -47,10 +51,28 @@ class EvaluationRegistry:
         executed_at: str,
         status: str = "available",
     ) -> None:
-        """Insert or replace an evaluation index entry."""
+        """Register an evaluation index entry.
+
+        Same ID with same content is idempotent.
+        Same ID with different content raises EvaluationRegistryError.
+        """
         with self.workflows._connect() as db:
+            existing = db.execute(
+                "SELECT * FROM strategy_evaluations WHERE evaluation_id=?",
+                (evaluation_id,),
+            ).fetchone()
+            if existing is not None:
+                # Idempotent check: same comparison_id and report_artifact_id
+                if (existing["comparison_id"] == comparison_id
+                        and existing["report_artifact_id"] == report_artifact_id):
+                    return
+                raise EvaluationRegistryError(
+                    f"evaluation_id '{evaluation_id}' already registered with "
+                    f"different content (existing comparison_id={existing['comparison_id']}, "
+                    f"artifact_id={existing['report_artifact_id']})"
+                )
             db.execute(
-                "INSERT OR REPLACE INTO strategy_evaluations "
+                "INSERT INTO strategy_evaluations "
                 "(evaluation_id, comparison_id, report_artifact_id, data_partition, "
                 "source_commit, executed_at, status, created_at) "
                 "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",

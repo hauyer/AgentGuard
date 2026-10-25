@@ -99,3 +99,56 @@ def test_evaluation_registry_persists_across_restart(tmp_path):
     body = resp.json()
     assert body["count"] == 1
     assert body["items"][0]["evaluation_id"] == "eval-test-001"
+
+
+def test_h2_register_same_id_same_content_is_idempotent(tmp_path):
+    """H2: Registering same ID with same content is idempotent."""
+    from agentguard.services.evaluation_registry import EvaluationRegistry
+    from agentguard.services.warden_workflow_store import WardenWorkflowStore
+
+    workflows = WardenWorkflowStore(tmp_path / "workflows.sqlite3")
+    registry = EvaluationRegistry(workflows)
+    kwargs = {
+        "evaluation_id": "eval-h2-001",
+        "comparison_id": "comparison-h2",
+        "report_artifact_id": "art-xxxx",
+        "data_partition": "held_out_family",
+        "source_commit": "abc123",
+        "executed_at": "2026-10-25T00:00:00+00:00",
+    }
+    registry.register(**kwargs)
+    # Second registration with same content should not raise
+    registry.register(**kwargs)
+    assert registry.get("eval-h2-001") is not None
+
+
+def test_h2_register_same_id_different_content_raises_conflict(tmp_path):
+    """H2: Registering same ID with different content raises conflict error."""
+    import pytest
+
+    from agentguard.services.evaluation_registry import (
+        EvaluationRegistry,
+        EvaluationRegistryError,
+    )
+    from agentguard.services.warden_workflow_store import WardenWorkflowStore
+
+    workflows = WardenWorkflowStore(tmp_path / "workflows.sqlite3")
+    registry = EvaluationRegistry(workflows)
+    registry.register(
+        evaluation_id="eval-h2-002",
+        comparison_id="comparison-a",
+        report_artifact_id="art-aaa",
+        data_partition="held_out_family",
+        source_commit="abc123",
+        executed_at="2026-10-25T00:00:00+00:00",
+    )
+    # Second registration with same ID but different content should raise
+    with pytest.raises(EvaluationRegistryError, match="already registered"):
+        registry.register(
+            evaluation_id="eval-h2-002",
+            comparison_id="comparison-b",
+            report_artifact_id="art-bbb",
+            data_partition="held_out_family",
+            source_commit="def456",
+            executed_at="2026-10-25T01:00:00+00:00",
+        )
