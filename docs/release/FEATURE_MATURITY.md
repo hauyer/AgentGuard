@@ -10,9 +10,9 @@
 | AgentGuard REST API、旧路径兼容与 OpenAPI 合同 | 是 | 是 | 是（TestClient + C0 基线加法性回归） | 不适用 | 不适用 | 业务 alias 与 legacy route 共享服务/生命周期；Probe route deprecated；C0 68 paths → 76 paths 纯加法 |
 | Python SDK | 是 | 是 | 是（假 HTTP transport 与 API 合同，含 C1–C6 新方法） | 否 | 不适用 | 未对部署中的服务做现场互通验收 |
 | MCP API facade | 是 | 是 | 是（假 MCP + 公共 SDK 边界） | 否 | 不适用 | 不持有运行时、数据库或 WARDEN 客户端 |
-| 消息级交互图谱 API（C1） | 是 | 是 | 是（TestClient + uvicorn 真实 HTTP） | 部分（真实 7B 观察载荷结构验证；未在 live WARDEN 会话回放） | 否 | 真实边仅来自 WARDEN run 元数据；合成报告恒标 synthetic；无来源返回 unavailable |
-| 只读实验索引与对比（C2） | 是 | 是 | 是（重启恢复、旧日志行、筛选分页） | 否 | 否 | 只聚合既有持久化记录；缺指标为 null；compare 仅描述性 |
-| 分层 readiness 与调查可选项（C3） | 是 | 是 | 是（伪内核 11 层检查 + 缓存来源） | 否 | 不适用 | health 不升级为可执行；intervention 无显式声明即 unsupported |
+| 消息级交互图谱 API（C1） | 是 | 是 | 是（TestClient + uvicorn 真实 HTTP） | 是（2026-10-24 live WARDEN + 7B 完整观察组合实跑：真实消息边 3 条投影，证据引用仅工件 ID） | 否（仅观察级；无因果结论） | 真实边仅来自 WARDEN run 元数据；合成报告恒标 synthetic；无来源返回 unavailable |
+| 只读实验索引与对比（C2） | 是 | 是 | 是（重启恢复、旧日志行、筛选分页） | 是（live WARDEN 会话中索引真实工作流并解析详情；compare 因脚本/数据限制未在 live 复跑） | 否 | 只聚合既有持久化记录；缺指标为 null；compare 仅描述性 |
+| 分层 readiness 与调查可选项（C3） | 是 | 是 | 是（伪内核 11 层检查 + 缓存来源） | 是（live WARDEN 两轮：能力/契约/运行时标识逐项一致） | 不适用 | health 不升级为可执行；intervention 无显式声明即 unsupported |
 | 调查时间线（C4） | 是 | 是 | 是（journal 投影、增量拉取、重启） | 不适用 | 不适用 | 仅投影真实事件，不合成步骤 |
 | 证据工件能力字段与报告索引（C5） | 是 | 是 | 是（本地核验/外部引用、重启重建报告） | 否 | 不适用 | integrity_verified 仅对本地哈希复验工件为 true；外部工件仍引用-only |
 | 防御能力描述字段（C6） | 是 | 是 | 是（审批后仍 unsupported、verified 候选标志） | **blocked** | **blocked** | 执行器/回滚 API 缺失（DEP-007/003）；审批不改变执行支持 |
@@ -24,7 +24,7 @@
 | 配对统计、研究注册与分析 | 是 | 是 | 是（固定测试数据） | 不适用 | 不适用 | 统计显著性本身不构成因果有效性证明 |
 | 防御候选、审批与效果评估合同 | 是 | 是 | 是（状态机/模拟数据） | **blocked** | **blocked** | 真实执行器与经验证的成对 WARDEN 重放未提供；审批后也可返回 unsupported |
 | 可选白盒/Activation 兼容代码 | 是 | 是（nanogpt：5 passed） | 否 | **blocked** | **blocked** | 仅旧兼容/离线工具，不属于 AgentGuard 生产审计内核 |
-| LLM 调查建议器 | 是 | 是（schema、fallback、transport） | 否 | 否 | **blocked** | 未验证真实本地 3B/7B 模型与端到端安全行为 |
+| LLM 调查建议器 | 是 | 是（schema、fallback、transport） | 否 | 否 | **blocked** | 建议器本身未接真实 LLM 提供商验证（本地 7B 观察运行验证的是 WARDEN 链路，不含建议器）；无配置时回退确定性策略 |
 | API 鉴权、审计、CORS、进程内限流 | 是 | 是 | 是（请求合同 + 新路径自动纳入审计） | 否 | 不适用 | 真实代理/集群拓扑未做部署验收；详见部署限制 |
 | Python 3.11/3.12/3.13 兼容 | 是 | 是 | 是（GitHub Actions run 40074638267，1.0.0-rc1 轮） | 不适用 | 不适用 | 1.1.0-rc1 的三版本矩阵在候选推送后按流程执行 |
 

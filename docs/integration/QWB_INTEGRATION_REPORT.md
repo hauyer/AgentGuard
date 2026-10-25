@@ -48,8 +48,9 @@
   3 条真实 Agent→Agent 消息边，options 发布内核声明的运行时标识，证据/实验索引/
   时间线全链路真实数据（TEST_REPORT §4a）；真实运行暴露并修复了经验记录的
   file:// URI 缺陷与 options 运行时标识缺失；② 第十阶段概念区分保障测试 8 项
-  （TEST_REPORT §2a）。全量更新为 **346 通过 / 0 失败 / 4 跳过**（live 类在未
-  配置 `AGENTGUARD_LIVE_WARDEN_URL` 时跳过并明示）。
+  （TEST_REPORT §2a）。全量为 **342 通过 / 0 失败 / 4 跳过**（收集 346 项；live
+  类在未配置 `AGENTGUARD_LIVE_WARDEN_URL` 时跳过并明示，配置后实测通过——分环境
+  计数见 TEST_REPORT §0）。
 - **应用层自带检查脚本兼容性复验（AgentGuard-QWB-App
   `scripts/live_agentguard_check.py`，只读运行，WARDEN 完整组合环境）**：
   对 `cacd15b` 得 **14 PASS / 0 FAIL / 1 BLOCKED_UPSTREAM / 0 UNSUPPORTED**

@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased — D0: CI and release validation repair
+
+- Replaced the CI wheel-install step's hardcoded `agentguard-1.0.0rc1-py3-none-any.whl` with `scripts/verify_wheel_install.py`: it discovers exactly one `agentguard-*.whl` in `dist/`, installs it into a fresh venv under `requirements/runtime.lock`, compares the `importlib.metadata` version with `pyproject.toml`, and verifies the CLI plus SDK import from inside the venv (running from outside the checkout so no source-path leak can pass). Verified locally on Python 3.12 and 3.14.
+- Aligned test reporting across environments: the full collection is 346 tests = 342 passed + 4 skipped; GitHub CI and the local suite agree once the junitxml collected total is no longer misread as passed. `docs/release/TEST_REPORT.md` now records GitHub CI, local unit, configured live-WARDEN, real-7B and not-run causal-experiment results in separate rows.
+- Updated stale docs to match the verified record: a real observational qwen2.5-7B run has executed (TEST_REPORT §4a); observational success does not lift the causal-intervention or defense-verification blockers, which remain recorded as not run.
+
 ## 1.1.0-rc1 — QWB application integration (C0–C8)
 
 - Candidate follow-up (same day): validated the full real chain AgentGuard → WARDEN →

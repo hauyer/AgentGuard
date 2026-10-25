@@ -6,8 +6,20 @@
 
 > **候选后追加（同日）：** ① 真实 WARDEN 内核 live 验证两轮（plan 级 + 完整 7B
 > 观察组合，见 §4a）；② 第十阶段研究概念区分保障测试 8 项（见 §2a）。
-> 全量更新为 **346 通过 / 0 失败 / 4 跳过**（torch 可选模块、live WARDEN 两类
-> 4 项在未配置 `AGENTGUARD_LIVE_WARDEN_URL` 时跳过并明示；配置后已实测通过）。
+
+## 0. 分环境测试记录（D0 统一，2026-10-25 核对）
+
+不同环境的收集/通过/跳过数量**分别记录，不混用**。全量收集恒为 346 项
+（= 342 通过 + 4 跳过）；两处环境数字一致源于同一收集集，差异只在 live 类是否
+配置真实后端：
+
+| 环境 | 提交 | 结果 | 说明 |
+| --- | --- | --- | --- |
+| GitHub Actions CI（ubuntu，3.11/3.12/3.13 矩阵） | `4c973c7`（D0 指令引用的 CI 记录） | 342 passed / 0 failed / 4 skipped | 无 torch、无 live WARDEN：跳过 `test_whitebox_activation`（1）+ `test_live_warden_http`（1）+ `test_live_warden_c_round`（2） |
+| 本地全量（Windows，Python 3.12.10，仓库 .venv） | `4c973c7` 及后续 D0 工作树 | 342 passed / 0 failed / 4 skipped（收集 346） | 跳过项同上；junitxml `tests=346` 为收集总数（含跳过），此前报告把该数误写为"通过数"，已更正 |
+| 本地 live-WARDEN 配置态（AGENTGUARD_LIVE_WARDEN_URL 指向本机内核） | `cacd15b` | live 类 3 项全部通过（含完整 7B 观察运行） | 见 §4a；此形态不计入上两行 |
+| 真实 7B 模型验证 | `cacd15b` | 通过（观察级） | qwen2.5:7b-instruct-q4_K_M，消息边 3 条；证据等级 observational |
+| 未运行的因果实验 | — | 未运行 | 真实因果干预、配对处理/对照重放、防御效果验证均未执行（DEP-006/007）；软件测试通过不代表其成立 |
 
 ## 4a. 真实 WARDEN 内核 live 验证（候选后追加，两轮）
 

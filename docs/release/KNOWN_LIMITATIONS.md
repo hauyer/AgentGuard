@@ -2,13 +2,16 @@
 
 ## 真实依赖阻塞
 
-- 当前环境没有配置 `AGENTGUARD_WARDEN_URL` 与 `AGENTGUARD_LIVE_WARDEN_URL`，所以真实
-  WARDEN HTTP 烟测、plan/run 生命周期与生产资源核验均为 blocked。C1 图谱与 C3
-  readiness/options 的真实分支仅在伪内核与既有真实 7B 观察载荷结构上验证。
+- 默认部署（未设置 `AGENTGUARD_WARDEN_URL`/`AGENTGUARD_LIVE_WARDEN_URL`）下真实
+  WARDEN HTTP 测试按设计跳过。2026-10-24 已在本机完成两轮配置态 live 验证
+  （plan 级 + 完整 7B 观察组合，TEST_REPORT §4a）；生产资源核验（真实
+  Activation/Probe/SAE）仍不可用，见下条。
 - 公开 WARDEN 组合未提供 AgentGuard 所需的 Activation/Probe/SAE 权重与成对因果重放
   执行器；消息边阻断、字段脱敏、工具权限改写等策略仍不能据此宣称已执行或有效。
-- 本轮未运行本地 3B/7B 模型；真实模型与真实因果防御均未验证。历史 7B 观察组
-  6/8 完成、2 失败、整体 failed，只能作为观察性记录。
+- 真实**观察性** 7B 运行已于 2026-10-24 完成一次（qwen2.5:7b-instruct-q4_K_M，
+  StegoPot 组合；见 TEST_REPORT §4a），其结果只支持 observational 证据等级。
+  真实**因果干预**、配对处理/对照重放与防御效果验证仍未运行；历史 7B 观察组
+  6/8 完成、2 失败、整体 failed，同样只是观察性记录。
 - WARDEN 工件下载与端到端完整性验证 API 未核实；AgentGuard 只保存/投影安全引用，
   不打开 `file://`、本地路径或不可信 URI。C5 的 `integrity_verified` 仅覆盖
   AgentGuard 本地内容寻址工件，外部工件保持 `read_only_reference`。

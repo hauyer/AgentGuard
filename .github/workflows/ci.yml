@@ -27,10 +27,7 @@ jobs:
         run: python -m pytest
       - name: Build release artifacts
         run: python -m build --no-isolation --sdist --wheel --outdir dist
-      - name: Install wheel in a clean environment
-        run: |
-          python -m venv "$RUNNER_TEMP/agentguard-release-venv"
-          "$RUNNER_TEMP/agentguard-release-venv/bin/python" -m pip install -c requirements/runtime.lock dist/agentguard-1.0.0rc1-py3-none-any.whl
-          "$RUNNER_TEMP/agentguard-release-venv/bin/agentguard" --help
+      - name: Install wheel in a clean environment and verify the release
+        run: python scripts/verify_wheel_install.py
       - name: Verify synthetic demo
         run: agentguard demo --no-auto-intervene
