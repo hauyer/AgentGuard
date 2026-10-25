@@ -58,6 +58,10 @@ class GraphEdge(ContractModel):
     timestamp: str | None = None
     source_id: str = Field(min_length=1, max_length=256)
     evidence_refs: list[str] = Field(default_factory=list, max_length=64)
+    # D2: risk objects mounted on recorded edges; populated only when the
+    # caller explicitly requests the finding enrichment.
+    finding_ids: list[str] = Field(default_factory=list, max_length=32)
+    hypothesis_ids: list[str] = Field(default_factory=list, max_length=32)
     metadata: dict[str, str | int | float | bool] = Field(default_factory=dict)
 
     @field_validator("metadata")

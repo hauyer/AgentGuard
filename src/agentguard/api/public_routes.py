@@ -134,16 +134,22 @@ def create_public_router(
 
     @router.get("/v1/investigations/{request_id}/interaction-graph")
     def get_public_interaction_graph(
-        request_id: str, run_id: str | None = Query(default=None)
+        request_id: str,
+        run_id: str | None = Query(default=None),
+        include_findings: bool = Query(default=False),
     ) -> dict[str, Any]:
         """Message-level interaction graph with explicit availability and provenance.
 
         Real edges come only from message metadata that WARDEN's public run
         response provided. Without it the response reports ``available=false``;
         an explicit ``run_id`` renders the synthetic engine report through the
-        same contract, always labelled ``agentguard_synthetic_report``.
+        same contract, always labelled ``agentguard_synthetic_report``. With
+        ``include_findings=true`` metadata-based risk findings are mounted as
+        ids on the recorded edges.
         """
-        return get_interaction_graph_handler(request_id, run_id)
+        return get_interaction_graph_handler(
+            request_id, run_id, include_findings,
+        )
 
     @router.get("/v1/experiments")
     def list_public_experiments(

@@ -92,6 +92,7 @@ from agentguard.services.experiment_index import ExperimentIndexService
 from agentguard.services.interaction_graph import InteractionGraphService
 from agentguard.services.investigation_timeline import InvestigationTimelineService
 from agentguard.services.report_index import ReportIndexService
+from agentguard.services.risk_findings import RiskFindingService
 from agentguard.services.system_readiness import SystemReadinessService
 from agentguard.services.warden_diagnostics import diagnose_kernel
 from agentguard.services.warden_lifecycle import WardenLifecycleService
@@ -238,6 +239,7 @@ def create_app(
         app.state.warden_workflows
     )
     app.state.report_index = ReportIndexService(app.state.artifacts)
+    app.state.risk_findings = RiskFindingService(app.state.interaction_graph)
     app.state.policy_engine = InterventionPolicyEngine()
     app.state.paired_runner = PairedExperimentRunner(app.state.engine.runtime, paired_executor=paired_executor)
 
@@ -706,19 +708,27 @@ def create_app(
             artifacts=app.state.artifacts,
         )
 
-    def get_interaction_graph(request_id: str, run_id: str | None = Query(default=None)) -> dict:
+    def get_interaction_graph(
+        request_id: str,
+        run_id: str | None = Query(default=None),
+        include_findings: bool = Query(default=False),
+    ) -> dict:
         """Project the recorded message-level interaction graph for one workflow.
 
         The WARDEN journal is authoritative for ``request_id``. When it holds no
         authorized message metadata the response reports ``available=false``; an
         explicitly requested synthetic ``run_id`` may be rendered through the same
-        contract but is always labelled ``agentguard_synthetic_report``.
+        contract but is always labelled ``agentguard_synthetic_report``. With
+        ``include_findings=true`` the metadata-based risk findings are analyzed
+        and mounted onto the recorded edges as ids only.
         """
         entry = app.state.warden_workflows.get(request_id)
         graph: InteractionGraphResponse | None = None
         if entry is not None:
             graph = app.state.interaction_graph.for_warden_workflow(entry)
             if graph.available:
+                if include_findings:
+                    graph = _mount_findings(graph)
                 return graph.model_dump(mode="json")
         if run_id is not None:
             with app.state.lock:
@@ -731,6 +741,21 @@ def create_app(
             raise HTTPException(status_code=404, detail={"error": "WORKFLOW_NOT_FOUND"})
         assert graph is not None
         return graph.model_dump(mode="json")
+
+    def _mount_findings(graph: InteractionGraphResponse) -> InteractionGraphResponse:
+        """Attach finding/hypothesis ids to the edges that evidence them."""
+        report = app.state.risk_findings.analyze_graph(graph)
+        finding_by_edge: dict[str, list[str]] = {}
+        hypothesis_ids = {item.finding_id: item.hypothesis_id for item in report.hypotheses}
+        for finding in report.findings:
+            for ref in finding.supporting_evidence_refs:
+                finding_by_edge.setdefault(ref, []).append(finding.finding_id)
+        for edge in graph.edges:
+            ids = finding_by_edge.get(edge.id, [])
+            edge.finding_ids = ids
+            edge.hypothesis_ids = [hypothesis_ids[i] for i in ids if i in hypothesis_ids]
+        graph.limitations.extend(report.limitations)
+        return graph
 
     def list_experiments(
         status: str | None = None,
