@@ -127,17 +127,37 @@ def test_unknown_base_and_unfinished_base_are_mapped(tmp_path, monkeypatch):
         missing = client.post(
             "/v1/investigation-loops",
             json={**PAYLOAD, "base_request_id": "inv-none"},
-            headers={"X-AgentGuard-Operator-Token": "operator-secret"},
+            headers={"X-AgentGuard-Operator-Token": "operator-secret",
+                     "X-Loop-Idempotency-Key": "k-missing-base"},
         )
         running = client.post(
             "/v1/investigation-loops",
             json={**PAYLOAD, "base_request_id": "inv-running"},
-            headers={"X-AgentGuard-Operator-Token": "operator-secret"},
+            headers={"X-AgentGuard-Operator-Token": "operator-secret",
+                     "X-Loop-Idempotency-Key": "k-running-base"},
         )
     assert missing.status_code == 404
     assert missing.json()["detail"]["error"] == "BASE_INVESTIGATION_NOT_FOUND"
     assert running.status_code == 409
     assert running.json()["detail"]["error"] == "BASE_INVESTIGATION_NOT_FINISHED"
+
+
+def test_missing_idempotency_key_returns_422(tmp_path, monkeypatch):
+    app = _seeded_app(tmp_path, monkeypatch=monkeypatch)
+    with TestClient(app) as client:
+        no_key = client.post(
+            "/v1/investigation-loops", json=PAYLOAD,
+            headers={"X-AgentGuard-Operator-Token": "operator-secret"},
+        )
+        empty_key = client.post(
+            "/v1/investigation-loops", json=PAYLOAD,
+            headers={"X-AgentGuard-Operator-Token": "operator-secret",
+                     "X-Loop-Idempotency-Key": "   "},
+        )
+    assert no_key.status_code == 422
+    assert no_key.json()["detail"]["error"] == "MISSING_IDEMPOTENCY_KEY"
+    assert empty_key.status_code == 422
+    assert empty_key.json()["detail"]["error"] == "MISSING_IDEMPOTENCY_KEY"
 
 
 def test_read_only_family_works_without_credentials(tmp_path, monkeypatch):

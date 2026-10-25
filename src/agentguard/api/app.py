@@ -835,22 +835,25 @@ def create_app(
     ) -> dict:
         """Run a multi-round investigation loop over a finished base workflow.
 
-        Requires the operator credential or a valid approval token; retries
-        with the same ``X-Loop-Idempotency-Key`` and payload return the
-        existing loop instead of a duplicate run.
+        Requires the operator credential or a valid approval token and a
+        mandatory ``X-Loop-Idempotency-Key`` header. Registration always
+        precedes execution so a crash or restart leaves a recoverable record
+        rather than a duplicate external audit.
         """
         authorized = require_loop_creation_credential(
             x_agentguard_operator_token, x_approval_token,
         )
+        if not x_loop_idempotency_key or not x_loop_idempotency_key.strip():
+            raise HTTPException(
+                status_code=422,
+                detail={"error": "MISSING_IDEMPOTENCY_KEY",
+                        "message": "X-Loop-Idempotency-Key header is required"},
+            )
         try:
-            if x_loop_idempotency_key:
-                return app.state.public_loops.create_with_idempotency_key(
-                    request,
-                    idempotency_key=x_loop_idempotency_key,
-                    authorization_valid=authorized,
-                )
-            return app.state.public_loops.create(
-                request, authorization_valid=authorized,
+            return app.state.public_loops.create_with_idempotency_key(
+                request,
+                idempotency_key=x_loop_idempotency_key.strip(),
+                authorization_valid=authorized,
             )
         except LoopServiceError as exc:
             code = str(exc)
