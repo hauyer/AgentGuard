@@ -1,7 +1,10 @@
 """Contract tests for the evidence-driven multi-round investigation loop (D3)."""
 
+import json
+
 import pytest
 
+from agentguard.adapters.warden import WardenKernelClient
 from agentguard.artifacts.local_store import LocalArtifactStore
 from agentguard.contracts.investigation_loop import (
     InvestigationLoopBudget,
@@ -176,8 +179,51 @@ def test_time_budget_stops_the_loop(tmp_path):
     assert len(report.decisions) < 9
 
 
-def test_audit_action_submits_real_observation_and_records_ids(tmp_path):
-    kernel = FakeKernel()
+def test_http_stub_observation_feedback_informs_the_next_decision(tmp_path, monkeypatch):
+    """The HTTP stub is contract evidence only, not a live WARDEN/model run."""
+
+    class WardenHTTPStub:
+        def __init__(self):
+            self.calls = []
+
+        def __call__(self, method, url, headers, body, timeout):
+            path = url.removeprefix("https://warden.stub")
+            payload = json.loads(body) if body else None
+            self.calls.append((method, path, payload))
+            if path == "/v1/health":
+                response = {"status": "ok", "version": "stub", "api_version": "v1"}
+            elif path == "/v1/contracts":
+                response = ["contract-loop"]
+            elif path == "/v1/capabilities":
+                response = [
+                    {"component_id": "agent.runtime", "available": True,
+                     "capabilities": [],
+                     "metadata": {"runtime_id": "stegopot.v1", "model_ids": ["model-7b"]}},
+                    {"component_id": "run.dispatcher", "available": True,
+                     "capabilities": []},
+                    {"component_id": "activation.backend", "available": False,
+                     "capabilities": []},
+                ]
+            elif method == "POST" and path == "/v1/audit-plans":
+                response = {"plan_id": "plan-http-stub", "status": "planned", "blockers": []}
+            elif method == "POST" and path == "/v1/runs":
+                response = {
+                    "run_id": "run-http-stub", "plan_id": "plan-http-stub",
+                    "status": "running",
+                }
+            elif method == "GET" and path == "/v1/runs/run-http-stub":
+                response = {
+                    "run_id": "run-http-stub", "plan_id": "plan-http-stub",
+                    "status": "completed",
+                    "evidence_refs": ["artifact://stub/observation-001"],
+                }
+            else:
+                raise AssertionError(f"Unexpected WARDEN API request: {method} {path}")
+            return 200, json.dumps(response).encode("utf-8")
+
+    transport = WardenHTTPStub()
+    kernel = WardenKernelClient("https://warden.stub", transport=transport)
+    monkeypatch.setattr("agentguard.services.warden_lifecycle.time.sleep", lambda _: None)
     service = _service(tmp_path, kernel=kernel)
     _seed_workflows(service.workflows)
     report = service.run(
@@ -192,6 +238,19 @@ def test_audit_action_submits_real_observation_and_records_ids(tmp_path):
     assert report.created_audit_request_ids
     audit_entry = service.workflows.get(report.created_audit_request_ids[0])
     assert audit_entry is not None and audit_entry["status"] == "finished"
+    audit_index = report.decisions.index(audit_round)
+    next_decision = report.decisions[audit_index + 1]
+    assert next_decision.selected_action == "act-read-evidence"
+    assert "artifact://stub/observation-001" in next_decision.evidence_refs
+    assert [path for _, path, _ in transport.calls].count("/v1/audit-plans") == 1
+    assert [path for _, path, _ in transport.calls].count("/v1/runs") == 1
+    assert [path for _, path, _ in transport.calls].count("/v1/runs/run-http-stub") == 1
+    submitted = next(payload for method, path, payload in transport.calls
+                     if method == "POST" and path == "/v1/audit-plans")
+    assert submitted["request_id"] == report.created_audit_request_ids[0]
+    assert submitted["mode"] == "observation"
+    assert "scenario_id" not in submitted
+    assert "authorization_ref" not in submitted
 
 
 def test_blocked_kernel_stops_with_capability_unavailable(tmp_path):

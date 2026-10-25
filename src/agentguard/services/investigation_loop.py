@@ -87,6 +87,7 @@ class InvestigationLoopService:
             "taken_types": set[str](),
             "evidence_signature": None,
             "discovered_refs": set[str](),
+            "dynamic_evidence_refs": set[str](),
             "steps_to_first_evidence": None,
             "redundant": 0,
             "model_calls": 0,
@@ -117,6 +118,7 @@ class InvestigationLoopService:
                 break
 
             summary = self._evidence_summary(base_request_id)
+            summary["new_evidence_refs"] = sorted(state["dynamic_evidence_refs"])[:32]
             actions = self._available_actions(entry, summary, state)
             executable = [a for a in actions if a.action_type not in state["taken_types"]]
             if not executable and not actions:
@@ -151,6 +153,8 @@ class InvestigationLoopService:
             result_status, evidence_delta, notes = self._execute_action(
                 chosen, entry, base_request_id, len(decisions) + 1, state, budget,
             )
+            if chosen.action_type == "submit_observation_audit" and result_status == "completed":
+                state["dynamic_evidence_refs"].update(evidence_delta)
             actual_cost = self._monotonic() - round_started
             state["phase"] = "ACTION_EXECUTED"
 
@@ -307,6 +311,7 @@ class InvestigationLoopService:
                 entry, artifacts=self.artifacts,
             )
             refs = [item["evidence_id"] for item in governed.get("items", [])][:32]
+            refs.extend(sorted(state["dynamic_evidence_refs"])[:32])
             return "completed", refs, []
         if action.action_type == "read_hypotheses":
             report = self.risk_findings.analyze_workflow(entry)

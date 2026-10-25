@@ -17,6 +17,7 @@ from agentguard.contracts.investigation_loop import LoopAction
 _EVIDENCE_SUMMARY_KEYS = (
     "graph_edges", "graph_available", "evidence_items", "findings",
     "hypotheses", "experiences", "experiment_entries", "kernel_configured",
+    "new_evidence_refs",
 )
 
 
@@ -100,8 +101,11 @@ def _information_value(
         weight = 3 if not evidence_summary.get("graph_available") else 1
         gaps.append((weight, "read_graph", "graph edges are still unknown"))
     if "read_evidence" in by_type and "read_evidence" not in taken_types:
-        weight = 3 if not evidence_summary.get("evidence_items") else 1
-        gaps.append((weight, "read_evidence", "governed evidence is still unknown"))
+        if evidence_summary.get("new_evidence_refs"):
+            gaps.append((4, "read_evidence", "the latest observation added evidence refs to review"))
+        else:
+            weight = 3 if not evidence_summary.get("evidence_items") else 1
+            gaps.append((weight, "read_evidence", "governed evidence is still unknown"))
     if "read_hypotheses" in by_type and "read_hypotheses" not in taken_types:
         weight = 3 if evidence_summary.get("findings") and not evidence_summary.get("hypotheses") else 1
         gaps.append((weight, "read_hypotheses", "findings exist without recorded hypotheses"))
@@ -140,7 +144,11 @@ def _risk_score(
     if "read_hypotheses" in by_type and "read_hypotheses" not in taken_types:
         scores.append((3.0, "read_hypotheses", "hypotheses rank where risk concentrates"))
     if "read_evidence" in by_type and "read_evidence" not in taken_types:
-        scores.append((2.0, "read_evidence", "governed evidence backs every risk claim"))
+        if evidence_summary.get("new_evidence_refs"):
+            scores.append((4.5, "read_evidence",
+                           "risk review follows the evidence refs added by the latest observation"))
+        else:
+            scores.append((2.0, "read_evidence", "governed evidence backs every risk claim"))
     if "read_experiences" in by_type and "read_experiences" not in taken_types:
         scores.append((1.5, "read_experiences", "past verified actions weight the ranking"))
     if "read_experiments" in by_type and "read_experiments" not in taken_types:
