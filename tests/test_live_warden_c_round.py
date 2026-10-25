@@ -27,16 +27,108 @@ def _live_client() -> WardenKernelClient:
         pytest.skip(f"live WARDEN unreachable: {type(exc).__name__}")
 
 
-def test_live_warden_c_round_readiness_options_graph_and_timeline(tmp_path, monkeypatch):
-    kernel = _live_client()
-    contracts = kernel.contracts()
-    if not contracts:
-        pytest.skip("The live WARDEN service has no threat contracts")
+def _live_app(tmp_path, monkeypatch, kernel):
     monkeypatch.setenv("AGENTGUARD_WARDEN_URL", kernel.base_url)
     app = create_app(data_dir=tmp_path / "data")
     app.state.system_readiness = type(app.state.system_readiness)(
         lambda: (kernel, None), ttl_seconds=0.001,
     )
+    return app
+
+
+def _runtime_available(kernel) -> bool:
+    report = next(
+        (item for item in kernel.capabilities() if item.get("component_id") == "agent.runtime"),
+        None,
+    )
+    return bool(report and report.get("available") is True)
+
+
+def _declared_runtime_ids(kernel) -> list[str]:
+    report = next(
+        (item for item in kernel.capabilities() if item.get("component_id") == "agent.runtime"),
+        None,
+    )
+    metadata = (report or {}).get("metadata") or {}
+    ids = []
+    if isinstance(metadata.get("runtime_id"), str):
+        ids.append(metadata["runtime_id"])
+    for model_id in metadata.get("model_ids") or []:
+        if isinstance(model_id, str):
+            ids.append(model_id)
+    return ids
+
+
+def test_live_warden_full_observation_run_projects_real_message_edges(tmp_path, monkeypatch):
+    """End-to-end real chain: AgentGuard -> WARDEN -> local model -> C1 graph.
+
+    Requires a live kernel with a working agent runtime (e.g. the StegoPot
+    observation composition). Skips honestly otherwise.
+    """
+    kernel = _live_client()
+    contracts = kernel.contracts()
+    if not contracts:
+        pytest.skip("The live WARDEN service has no threat contracts")
+    if not _runtime_available(kernel):
+        pytest.skip("live WARDEN has no available agent.runtime; full observation not executable")
+    runtime_ids = _declared_runtime_ids(kernel)
+    if not runtime_ids:
+        pytest.skip("live WARDEN declares no runtime identifiers")
+
+    app = _live_app(tmp_path, monkeypatch, kernel)
+    request_id = f"live-observation-{uuid4().hex[:8]}"
+    with TestClient(app) as client:
+        # The options endpoint surfaces the kernel-declared identifiers that
+        # the plan compiler actually validates against.
+        options = client.get("/v1/investigations/options", params={"force_refresh": "true"}).json()
+        assert options["confirmed_runtime_ids"] == runtime_ids
+
+        submission = client.post("/v1/investigations", json={
+            "request_id": request_id,
+            "contract_id": contracts[0],
+            "model_id": runtime_ids[-1],
+            "runtime_id": runtime_ids[0],
+            "mode": "observation",
+            "scenario_id": "release-family-live",
+            "risk_type": "secret_leak",
+            "start_run": True,
+            "wait_for_completion": True,
+            "timeout_seconds": 110,
+            "poll_interval_seconds": 2.0,
+        })
+        assert submission.status_code == 200, submission.text
+        result = submission.json()
+        assert result["status"] == "completed"
+        assert result["run"]["run_id"]
+
+        # The graph is built from the real WARDEN run payload's message edges.
+        graph = client.get(f"/v1/investigations/{request_id}/interaction-graph").json()
+        assert graph["available"] is True
+        assert graph["source"] == "warden_observation"
+        assert graph["edges"], "real observation must yield message edges"
+        for edge in graph["edges"]:
+            assert edge["type"] == "message"
+            assert edge["source"].startswith("agent:") and edge["target"].startswith("agent:")
+            assert edge["message_id"]
+        assert all("file:" not in ref for edge in graph["edges"] for ref in edge["evidence_refs"])
+
+        # The rest of the C-round surface reflects the completed run.
+        evidence = client.get(f"/v1/evidence/investigations/{request_id}").json()
+        assert evidence["items"]
+        experiment = client.get(f"/v1/experiments/{request_id}").json()
+        assert experiment["execution_status"] == "completed"
+        assert experiment["metrics_available"] is True
+        timeline = client.get(f"/v1/investigations/{request_id}/timeline").json()
+        assert "run_submission" in [event["event_type"] for event in timeline["items"]]
+        assert "run_status_change" in [event["event_type"] for event in timeline["items"]]
+
+
+def test_live_warden_c_round_readiness_options_graph_and_timeline(tmp_path, monkeypatch):
+    kernel = _live_client()
+    contracts = kernel.contracts()
+    if not contracts:
+        pytest.skip("The live WARDEN service has no threat contracts")
+    app = _live_app(tmp_path, monkeypatch, kernel)
 
     with TestClient(app) as client:
         # C3 readiness against the real kernel: layer statuses must come from

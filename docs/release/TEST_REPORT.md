@@ -4,32 +4,42 @@
 范围：仅 AgentGuard 上层；WARDEN、FRACTAL-Bench、StegoPot 与 AgentGuard-QWB-App
 保持只读。历史 A8 验收记录见 [A8_TEST_REPORT.md](A8_TEST_REPORT.md)，未覆盖。
 
-> **候选后追加（同日）：** ① 真实 WARDEN 内核 live 验证（见 §4a）；② 第十阶段
-> 研究概念区分保障测试 8 项（见 §2a）。全量更新为 **342 通过 / 0 失败 / 3 跳过**
-> （新增的第 3 项跳过 = `test_live_warden_c_round`，仅在未配置
-> `AGENTGUARD_LIVE_WARDEN_URL` 时跳过并明示）。
+> **候选后追加（同日）：** ① 真实 WARDEN 内核 live 验证两轮（plan 级 + 完整 7B
+> 观察组合，见 §4a）；② 第十阶段研究概念区分保障测试 8 项（见 §2a）。
+> 全量更新为 **346 通过 / 0 失败 / 4 跳过**（torch 可选模块、live WARDEN 两类
+> 4 项在未配置 `AGENTGUARD_LIVE_WARDEN_URL` 时跳过并明示；配置后已实测通过）。
 
-## 4a. 真实 WARDEN 内核 live 验证（候选后追加）
+## 4a. 真实 WARDEN 内核 live 验证（候选后追加，两轮）
 
-以本机 WARDEN 检出（`077f540`，0.2.0）启动真实 HTTP 服务（plan 级组合：
-`WARDEN_FRACTAL_DATASET=integration-data/dataset.json`，8 个契约实例，不注入
-模型运行时——agent.runtime 如实报 unavailable），`AGENTGUARD_LIVE_WARDEN_URL`
-指向该服务后运行 `tests/test_live_warden_c_round.py`，**通过**：
+**第一轮（plan 级组合）**：以本机 WARDEN 检出（`077f540`，0.2.0）+ FRACTAL 数据集
+（8 契约）启动，不注入模型运行时，`tests/test_live_warden_c_round.py` 通过：
+readiness 分层状态与内核能力报告逐项一致（model_runtime=unavailable 如实报告）、
+options 契约清单与内核一致、公共 API 真实提交计划、时间线/实验索引/图谱诚实语义。
 
-- readiness：warden_connectivity/available、api_compatibility/available、
-  available_contracts/available（contract_count=8 与内核一致）、
-  model_runtime/unavailable（与真实能力报告一致，非 health 推断）、
-  intervention_execution/unsupported。
-- options：threat_contracts 与内核 `/v1/contracts` 逐项一致；无运行时 →
-  全部模式 submittable=false 且 blocker 指明 COMPONENT_UNAVAILABLE:agent.runtime。
-- 公共 API 真实提交 observation 计划（start_run=false）→ journal 落盘 →
-  timeline 首事件 workflow_created、实验索引出现 warden_workflow 条目
-  （execution_status=planned）、图谱如实 available=false（无 run 载荷）。
-- 既有 `test_live_warden_http.py`（preflight/plan/幂等重放）同轮通过。
+**第二轮（完整 7B 观察组合）**：用户提供的本地模型库（qwen2.5 7b/3b
+instruct Q4_K_M）以专用 ollama 实例（127.0.0.1:11435）承载，WARDEN 以
+StegoPot 观察运行时组合启动（agent.runtime=available），执行
+`test_live_warden_full_observation_run_projects_real_message_edges`，**通过**：
 
-限制：完整观察运行（将产生 C1 真实消息边）需 StegoPot+本地模型；当前 ollama
-服务可达但无已加载模型，按诚实原则未拉取模型，该项保持不可执行并记录，
-不冒充通过。
+- 公共 API 提交 observation 调查（start_run=true、wait_for_completion）→ 真实
+  7B 多智能体观察运行（首次执行约 53s；同种子冻结观察复用约 3s）→ completed。
+- **C1 图谱从真实运行载荷投影出 3 条真实 Agent→Agent 消息边**
+  （performance/security/compliance_reviewer → release_chair，msg-000001..3），
+  source=warden_observation，证据引用只含工件 ID、不含 file:// URI。
+- options 的 confirmed_runtime_ids 与内核 agent.runtime metadata 声明的
+  runtime_id/model_ids 完全一致（stegopot.v1 / qwen2.5:7b-instruct-q4_K_M）。
+- 证据条目、实验索引（completed + metrics）、时间线（run_submission +
+  run_status_change 事件）全链路真实数据。
+
+**真实运行暴露并修复的两个缺陷**：
+
+1. `WardenLifecycleService._evidence_refs` 曾把 WARDEN 工件的 `file:///D:/...`
+   URI 置于 `artifact_id` 之前提取，导致真实完成的运行在记录经验时因
+   `ExperienceRecord`（正确的）本地路径拒绝而 500。修复为 artifact_id 优先并
+   过滤不安全引用（与 EvidenceGateway 规则对齐），附回归测试。
+2. C3 options 此前断言"WARDEN 不发布运行时标识"并返回空列表；真实内核的
+   agent.runtime capability metadata 实际声明 runtime_id/model_ids，且计划编译
+   器按其校验请求标识。修复为如实发布（含可用性门控），附三个测试。
 
 ## 2a. 第十阶段：研究概念区分保障（候选后追加）
 

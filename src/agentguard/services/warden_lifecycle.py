@@ -6,6 +6,7 @@ activation capture, causal execution, and low-level evidence generation remain i
 from __future__ import annotations
 
 import hashlib
+import re
 import time
 from collections.abc import Callable, Mapping
 from typing import Any
@@ -558,7 +559,20 @@ class WardenLifecycleService:
 
     @classmethod
     def _evidence_refs(cls, run: Mapping[str, Any]) -> list[str]:
-        """Extract only explicit evidence/artifact references from known response fields."""
+        """Extract only explicit evidence/artifact references from known response fields.
+
+        Artifact ids take precedence over URIs, and references that look like
+        local paths or ``file://`` links are dropped unopened: experience
+        records accept opaque references only, and a completed audit must not
+        crash on the kernel's local artifact layout.
+        """
+        def _safe(ref: str) -> bool:
+            lowered = ref.strip().lower()
+            return bool(lowered) and not (
+                lowered.startswith(("file:", "\\\\", "/"))
+                or re.match(r"^[a-z]:[\\/]", lowered)
+            )
+
         refs: list[str] = []
         for key in ("evidence_refs", "artifact_refs"):
             value = run.get(key)
@@ -571,7 +585,7 @@ class WardenLifecycleService:
                 if isinstance(artifacts, list):
                     for artifact in artifacts:
                         if isinstance(artifact, Mapping):
-                            ref = artifact.get("uri") or artifact.get("artifact_id")
+                            ref = artifact.get("artifact_id") or artifact.get("uri")
                             if isinstance(ref, str) and ref.strip():
                                 refs.append(ref.strip())
                 for ref_key in ("evidence_refs", "artifact_refs"):
@@ -591,7 +605,7 @@ class WardenLifecycleService:
                             ref = item.get(ref_key)
                             if isinstance(ref, str) and ref.strip():
                                 refs.append(ref.strip())
-        return list(dict.fromkeys(refs))
+        return list(dict.fromkeys(ref for ref in refs if _safe(ref)))
 
     @staticmethod
     def _status(value: Mapping[str, Any]) -> str:

@@ -17,7 +17,31 @@ def test_actual_warden_evidence_bundle_artifacts_are_referenced():
         "artifacts": [{"artifact_id": "artifact-1", "uri": "artifact://trace-1", "content_hash": "a" * 64}],
         "risk_scores": [], "findings": [], "metrics": {}, "limitations": [],
     }}
-    assert WardenLifecycleService._evidence_refs(run) == ["artifact://trace-1"]
+    # Artifact ids take precedence over URIs, matching the EvidenceGateway rule.
+    assert WardenLifecycleService._evidence_refs(run) == ["artifact-1"]
+
+
+def test_file_uris_are_dropped_unopened_and_never_crash_experience_recording():
+    run = {"run_id": "run-2", "plan_id": "plan-1", "status": "completed", "evidence": {
+        "artifacts": [
+            {"artifact_id": "observation-summary-" + "b" * 64,
+             "uri": "file:///D:/never/opened/summary.json"},
+            {"uri": "file:///C:/other/local.bin"},
+        ],
+        "findings": [], "metrics": {}, "limitations": [],
+    }}
+    refs = WardenLifecycleService._evidence_refs(run)
+    assert refs == ["observation-summary-" + "b" * 64]
+    assert all(not ref.lower().startswith(("file:", "\\\\", "/")) for ref in refs)
+    # The extracted refs must satisfy the ExperienceRecord contract that
+    # previously crashed real completed runs.
+    from agentguard.contracts.experience import ExperienceRecord
+
+    ExperienceRecord(
+        experience_id="exp-check", scenario_id="sc", risk_type="secret_leak",
+        hypothesis_summary="s", action_type="observe", action_summary="a",
+        outcome="inconclusive", evidence_grade="observational", evidence_refs=refs,
+    )
 
 
 def test_incompatible_warden_api_blocks_before_plan_submission():

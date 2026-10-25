@@ -332,6 +332,7 @@ class SystemReadinessService:
         for check in diagnosis.get("blockers") or []:
             missing.append(str(check))
         missing = list(dict.fromkeys(missing))[:64]
+        runtime_ids = self._confirmed_runtime_ids(diagnosis)
         return InvestigationOptionsResponse(
             available=reachable and bool(contracts) and not plan_blockers,
             error_code=None if reachable else (config_error or "WARDEN_URL_NOT_CONFIGURED"),
@@ -339,19 +340,24 @@ class SystemReadinessService:
             threat_contracts=[str(item) for item in contracts][:200],
             probe_resources=[self._resource_option(item, "probe") for item in resources if item.get("kind") == "probe"],
             sae_resources=[self._resource_option(item, "sae") for item in resources if item.get("kind") == "sae"],
-            confirmed_runtime_ids=[],
+            confirmed_runtime_ids=runtime_ids,
             capture_targets=CaptureTargetSupport(
                 accepted_fields=list(_CAPTURE_FIELDS),
                 activation_capture_available=activation is True,
                 note=(
                     "Capture targets follow the WardenCaptureTarget contract; activation "
-                    "capture requires the activation backend component."
+                    "capture requires the activation backend component. Runtime identifiers "
+                    "are exactly those the kernel's capability metadata declared."
                 ),
             ),
             missing_dependencies=missing,
             generated_at=cache.generated_at, cache=cache,
             limitations=[
-                _NOT_PUBLISHED_NOTE,
+                (
+                    "Runtime identifiers come from the kernel's agent.runtime capability "
+                    "metadata; caller-declared ids must match them or the plan is blocked."
+                    if runtime_ids else _NOT_PUBLISHED_NOTE
+                ),
                 _INTERVENTION_NOTE,
                 "Options reflect a point-in-time probe; each submission still runs its own preflight.",
             ],
@@ -381,3 +387,24 @@ class SystemReadinessService:
         return {name: availability(name) for name in (
             "agent.runtime", "run.dispatcher", "activation.backend",
         )}
+
+    @staticmethod
+    def _confirmed_runtime_ids(diagnosis: dict[str, Any]) -> list[str]:
+        """Runtime identifiers the kernel explicitly declared, never invented."""
+        for component in diagnosis.get("capabilities") or []:
+            if not isinstance(component, dict) or component.get("component_id") != "agent.runtime":
+                continue
+            if component.get("available") is not True:
+                return []
+            metadata = component.get("metadata")
+            if not isinstance(metadata, dict):
+                return []
+            ids: list[str] = []
+            runtime_id = metadata.get("runtime_id")
+            if isinstance(runtime_id, str) and runtime_id.strip():
+                ids.append(runtime_id.strip())
+            for model_id in metadata.get("model_ids") or []:
+                if isinstance(model_id, str) and model_id.strip():
+                    ids.append(model_id.strip())
+            return list(dict.fromkeys(ids))[:64]
+        return []

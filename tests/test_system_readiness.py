@@ -198,8 +198,41 @@ def test_options_report_per_mode_capability_and_real_resources():
     assert [s.state for s in options.sae_resources] == ["declared"]
     assert options.capture_targets.activation_capture_available is True
     assert "agent_ids" in options.capture_targets.accepted_fields
+    # Without capability metadata the runtime list stays empty and says so.
     assert options.confirmed_runtime_ids == []
     assert any("does not publish runtime identifiers" in note for note in options.limitations)
+
+
+def test_options_surface_runtime_ids_declared_by_kernel_metadata():
+    service, _ = _service(FakeWardenClient(capabilities=[
+        {"component_id": "agent.runtime", "available": True,
+         "capabilities": [], "metadata": {
+             "runtime_id": "stegopot.v1",
+             "model_ids": ["qwen2.5:7b-instruct-q4_K_M", "qwen2.5:3b-instruct-q4_K_M"],
+         }},
+        {"component_id": "run.dispatcher", "available": True, "capabilities": []},
+        {"component_id": "activation.backend", "available": True, "capabilities": []},
+        {"component_id": "stegopot.package", "available": True, "capabilities": []},
+        {"component_id": "fractal-bench.package", "available": True, "capabilities": []},
+    ]))
+    options = service.investigation_options()
+    assert options.confirmed_runtime_ids == [
+        "stegopot.v1", "qwen2.5:7b-instruct-q4_K_M", "qwen2.5:3b-instruct-q4_K_M",
+    ]
+    assert any("capability metadata" in note for note in options.limitations)
+
+
+def test_options_hide_runtime_ids_when_runtime_unavailable():
+    service, _ = _service(FakeWardenClient(capabilities=[
+        {"component_id": "agent.runtime", "available": False,
+         "capabilities": [], "metadata": {"runtime_id": "stegopot.v1"}},
+        {"component_id": "run.dispatcher", "available": True, "capabilities": []},
+        {"component_id": "activation.backend", "available": True, "capabilities": []},
+        {"component_id": "stegopot.package", "available": True, "capabilities": []},
+        {"component_id": "fractal-bench.package", "available": True, "capabilities": []},
+    ]))
+    options = service.investigation_options()
+    assert options.confirmed_runtime_ids == []
 
 
 def test_options_without_activation_backend_block_only_non_observation_modes():

@@ -2,6 +2,21 @@
 
 ## 1.1.0-rc1 — QWB application integration (C0–C8)
 
+- Candidate follow-up (same day): validated the full real chain AgentGuard → WARDEN →
+  local qwen2.5-7B observation runtime. The C1 graph now demonstrably projects real
+  agent-to-agent message edges from a live kernel run; live tests skip honestly when
+  `AGENTGUARD_LIVE_WARDEN_URL` is unset.
+- Fixed a real-run crash: `WardenLifecycleService._evidence_refs` preferred WARDEN
+  `file://` artifact URIs over artifact ids, so completed real runs failed while
+  recording their experience record. Artifact ids now take precedence (matching the
+  EvidenceGateway rule) and unsafe references are dropped unopened.
+- `GET /v1/investigations/options` now surfaces the runtime identifiers the kernel's
+  `agent.runtime` capability metadata declares (`confirmed_runtime_ids`), which the
+  plan compiler actually validates against; unavailable runtimes keep the list empty.
+- Added stage-10 concept-separation safeguards (8 tests) pinning Observation/Finding/
+  Hypothesis/Attribution/Intervention/Verification/Defense-Recommendation/Defense-
+  Effectiveness distinctions across the public API.
+
 - Added the message-level interaction graph API `GET /v1/investigations/{request_id}/interaction-graph` (QWB-INT-001). Real edges come only from WARDEN run payload message metadata recorded in the workflow journal; synthetic engine reports are served only under an explicit `run_id` and are always labelled `agentguard_synthetic_report`. Missing metadata returns `available=false` with `GRAPH_SOURCE_UNAVAILABLE` instead of fabricated edges.
 - Added the read-only experiment index `GET /v1/experiments`, `GET /v1/experiments/{experiment_id}` and `POST /v1/experiments/compare` (QWB-INT-006) over persisted WARDEN workflows and run-report artifacts. Missing metrics stay `null`, grouping-free runs keep `experiment_id=null`, and comparisons return `not_comparable` with reasons unless scenario, model version, data-source level and shared metrics all check out.
 - Added layered readiness `GET /v1/system/readiness` and investigation option discovery `GET /v1/investigations/options` (QWB-INT-005/007) with per-layer blockers, short-TTL cache provenance, and no promotion of WARDEN health into model-runtime, audit or intervention executability; intervention execution stays `unsupported` until a kernel executor is declared.
