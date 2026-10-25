@@ -35,6 +35,7 @@ def test_cli_to_api_evaluation_persistence(tmp_path):
         "runtime_id": "test-runtime",
         "mode": "observation",
         "scenario_id": "test-scenario",
+        "metadata": {"source_kind": "synthetic"},
     })
     workflows.update(
         request_id, "finished",

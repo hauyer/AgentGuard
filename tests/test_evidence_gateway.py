@@ -106,6 +106,30 @@ def test_warden_evidence_requires_completed_matching_run_and_filters_local_uris(
     assert failed["items"] == []
 
 
+@pytest.mark.parametrize("source_kind", ["synthetic", "stub"])
+def test_synthetic_or_stub_workflow_is_not_emitted_as_warden_evidence(tmp_path, source_kind):
+    entry = {
+        "request_id": "synthetic-workflow",
+        "workflow_status": "completed",
+        "run_id": "synthetic-run",
+        "request": {"metadata": {"source_kind": source_kind}},
+        "context": {"run": {
+            "run_id": "synthetic-run",
+            "status": "completed",
+            "evidence": {"findings": [{"id": "synthetic-finding"}]},
+        }},
+        "result": {"status": "completed"},
+    }
+
+    response = EvidenceGateway().for_warden_workflow(
+        entry, artifacts=LocalArtifactStore(tmp_path / source_kind),
+    )
+
+    assert response["run_status"] == "completed"
+    assert response["items"] == []
+    assert any(f"source_kind={source_kind}" in note for note in response["limitations"])
+
+
 def test_causal_validated_contract_requires_provenance_and_all_method_checks():
     with pytest.raises(ValidationError):
         GovernedEvidence(

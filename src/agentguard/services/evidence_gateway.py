@@ -120,6 +120,19 @@ class EvidenceGateway:
         actual_run_id = run.get("run_id") if isinstance(run, Mapping) else None
         raw_status = run.get("status") if isinstance(run, Mapping) else result.get("status")
         run_status = self._run_status(raw_status)
+        metadata = request.get("metadata") if isinstance(request.get("metadata"), Mapping) else {}
+        source_kind = metadata.get("source_kind")
+        if source_kind in {"synthetic", "stub"}:
+            return {
+                "request_id": entry.get("request_id"),
+                "workflow_status": entry.get("workflow_status", "unknown"),
+                "run_status": run_status,
+                "items": [],
+                "limitations": [
+                    (f"Workflow declares source_kind={source_kind}; synthetic or stub data "
+                     "was not emitted as WARDEN-produced evidence.")
+                ],
+            }
         notes: list[str] = []
         identity_valid = bool(
             isinstance(run, Mapping)
