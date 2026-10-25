@@ -936,6 +936,9 @@ def create_app(
             raise HTTPException(
                 status_code=410, detail={"error": "EVALUATION_ARTIFACT_UNAVAILABLE"},
             ) from None
+        # Ensure the report view includes the actual artifact_id from the index,
+        # since the artifact JSON may have been serialized before the id was assigned.
+        report["report_artifact_id"] = entry["report_artifact_id"]
         return report
 
 
