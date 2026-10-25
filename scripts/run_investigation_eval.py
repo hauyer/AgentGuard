@@ -172,7 +172,7 @@ def main() -> int:
             valid_request_ids.append(rid)
             print(f"OK: base request '{rid}' valid")
 
-    print(f"\nCase validation summary:")
+    print("\nCase validation summary:")
     print(f"  Total input cases: {len(base_request_ids)}")
     print(f"  Valid cases: {len(valid_request_ids)}")
     print(f"  Missing: {len(missing_request_ids)}")
