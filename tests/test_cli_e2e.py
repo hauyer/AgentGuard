@@ -99,7 +99,23 @@ def test_cli_to_api_evaluation_persistence(tmp_path):
         resp = client.get(f"/v1/research/strategy-evaluations/{evaluation_id}")
     assert resp.status_code == 200
     detail = resp.json()
+
+    # Verify all required fields are present and consistent
     assert detail["data_partition"] == "test"
+    assert "comparison_id" in detail
+    assert "strategies" in detail
+    assert "repetitions" in detail
+    assert "runs" in detail
+    assert "aggregates" in detail
+    assert "source_commit" in detail
+    assert "report_artifact_id" in detail
+
+    # Verify the evaluation_id matches what we expect
+    assert evaluation_id.startswith("eval-")
+    assert detail["comparison_id"] == evaluation_id.removeprefix("eval-")
+
+    # Verify runs count matches repetitions
+    assert len(detail["runs"]) >= 1
 
 
 def test_cli_no_input_returns_error(tmp_path):
