@@ -1,0 +1,329 @@
+"""Public investigation-loop service layer (E2).
+
+Bridges the durable loop registry to the D3 loop service. Creation validates
+the base investigation and runs the real loop; reads project persisted report
+artifacts without inventing fields. Route-level authorization (operator or
+approval credential) gates creation; this service never trusts client role
+claims.
+"""
+from __future__ import annotations
+
+import json
+import uuid
+from datetime import UTC, datetime
+from typing import Any
+
+from agentguard.artifacts.local_store import LocalArtifactStore
+from agentguard.contracts.investigation_loop import (
+    InvestigationLoopBudget,
+    InvestigationLoopReport,
+)
+from agentguard.contracts.loop_public import (
+    InvestigationLoopCreateRequest,
+    InvestigationLoopListResponse,
+    InvestigationLoopView,
+    LoopBudgetResponse,
+    LoopDecisionsResponse,
+    LoopDecisionView,
+    LoopEvidenceChangesResponse,
+)
+from agentguard.services.investigation_loop import (
+    InvestigationLoopError,
+    InvestigationLoopService,
+)
+from agentguard.services.loop_registry import InvestigationLoopRegistry
+
+
+class LoopServiceError(ValueError):
+    """Public loop failure mapped to a specific API error by the route."""
+
+
+class PublicInvestigationLoopService:
+    """Create and project investigation loops over the D3 service."""
+
+    def __init__(
+        self,
+        *,
+        loop: InvestigationLoopService,
+        registry: InvestigationLoopRegistry,
+        artifacts: LocalArtifactStore,
+    ) -> None:
+        self.loop = loop
+        self.registry = registry
+        self.artifacts = artifacts
+
+    # ------------------------------------------------------------------ #
+    # creation (authorization enforced by the route, not here)
+    # ------------------------------------------------------------------ #
+    def create(
+        self, request: InvestigationLoopCreateRequest, *, authorization_valid: bool,
+    ) -> dict[str, Any]:
+        if not authorization_valid:
+            raise LoopServiceError("LOOP_AUTHORIZATION_REQUIRED")
+        entry = self.loop.workflows.get(request.base_request_id)
+        if entry is None:
+            raise LoopServiceError("BASE_INVESTIGATION_NOT_FOUND")
+        if entry.get("status") not in {"finished", "completed"}:
+            raise LoopServiceError("BASE_INVESTIGATION_NOT_FINISHED")
+        budget = InvestigationLoopBudget(
+            max_actions=request.max_actions,
+            max_seconds=request.max_seconds,
+            max_model_calls=request.max_model_calls,
+            no_new_evidence_rounds=request.no_new_evidence_rounds,
+        )
+        request_payload = {
+            "base_request_id": request.base_request_id,
+            "strategy": request.strategy,
+            "max_actions": request.max_actions,
+            "max_seconds": request.max_seconds,
+            "max_model_calls": request.max_model_calls,
+            "no_new_evidence_rounds": request.no_new_evidence_rounds,
+            "data_partition": request.data_partition,
+        }
+        loop_id = f"loop-{request.base_request_id}-{uuid.uuid4().hex[:10]}"
+        now = datetime.now(UTC).isoformat()
+        report = self.loop.run(
+            request.base_request_id, strategy=request.strategy, budget=budget,
+        )
+        registration, created = self.registry.register(
+            loop_id=loop_id,
+            idempotency_key=None,  # route supplies the caller's key separately
+            base_request_id=request.base_request_id,
+            strategy=request.strategy,
+            phase=report.phase,
+            stop_reason=report.stop_reason,
+            request_payload=request_payload,
+            report_artifact_id=report.report_artifact_id or "",
+            created_at=now,
+        )
+        if not created:
+            # Deterministic replay of an identical request: return the existing
+            # loop instead of creating a duplicate.
+            return self.get_view(registration["loop_id"])
+        self.registry.update_outcome(
+            loop_id, phase=report.phase, stop_reason=report.stop_reason,
+            report_artifact_id=report.report_artifact_id or "",
+            updated_at=datetime.now(UTC).isoformat(),
+        )
+        return self.get_view(loop_id)
+
+    def create_with_idempotency_key(
+        self, request: InvestigationLoopCreateRequest, *,
+        idempotency_key: str, authorization_valid: bool,
+    ) -> dict[str, Any]:
+        """Register-then-run under the caller's idempotency key.
+
+        The registration row is inserted first (pre-run) so concurrent or
+        retried creations collapse onto one loop; identical payloads return
+        the existing loop, conflicting payloads raise.
+        """
+        if not authorization_valid:
+            raise LoopServiceError("LOOP_AUTHORIZATION_REQUIRED")
+        entry = self.loop.workflows.get(request.base_request_id)
+        if entry is None:
+            raise LoopServiceError("BASE_INVESTIGATION_NOT_FOUND")
+        if entry.get("status") not in {"finished", "completed"}:
+            raise LoopServiceError("BASE_INVESTIGATION_NOT_FINISHED")
+        request_payload = {
+            "base_request_id": request.base_request_id,
+            "strategy": request.strategy,
+            "max_actions": request.max_actions,
+            "max_seconds": request.max_seconds,
+            "max_model_calls": request.max_model_calls,
+            "no_new_evidence_rounds": request.no_new_evidence_rounds,
+            "data_partition": request.data_partition,
+        }
+        loop_id = f"loop-{request.base_request_id}-{uuid.uuid4().hex[:10]}"
+        now = datetime.now(UTC).isoformat()
+        registration, created = self.registry.register(
+            loop_id=loop_id,
+            idempotency_key=idempotency_key,
+            base_request_id=request.base_request_id,
+            strategy=request.strategy,
+            phase="CREATED",
+            stop_reason=None,
+            request_payload=request_payload,
+            report_artifact_id="pending",
+            created_at=now,
+        )
+        if not created:
+            return self.get_view(registration["loop_id"])
+        budget = InvestigationLoopBudget(
+            max_actions=request.max_actions,
+            max_seconds=request.max_seconds,
+            max_model_calls=request.max_model_calls,
+            no_new_evidence_rounds=request.no_new_evidence_rounds,
+        )
+        try:
+            report = self.loop.run(
+                request.base_request_id, strategy=request.strategy, budget=budget,
+            )
+        except InvestigationLoopError as exc:
+            self.registry.update_outcome(
+                loop_id, phase="BLOCKED", stop_reason="execution_error",
+                report_artifact_id="failed", updated_at=datetime.now(UTC).isoformat(),
+            )
+            raise LoopServiceError("LOOP_EXECUTION_FAILED") from exc
+        except Exception as exc:
+            self.registry.update_outcome(
+                loop_id, phase="BLOCKED", stop_reason="execution_error",
+                report_artifact_id="failed", updated_at=datetime.now(UTC).isoformat(),
+            )
+            raise LoopServiceError("LOOP_EXECUTION_FAILED") from exc
+        self.registry.update_outcome(
+            loop_id, phase=report.phase, stop_reason=report.stop_reason,
+            report_artifact_id=report.report_artifact_id or "",
+            updated_at=datetime.now(UTC).isoformat(),
+        )
+        return self.get_view(loop_id)
+
+    # ------------------------------------------------------------------ #
+    # reads
+    # ------------------------------------------------------------------ #
+    def get_view(self, loop_id: str) -> dict[str, Any]:
+        registration = self.registry.get(loop_id)
+        if registration is None:
+            raise LoopServiceError("LOOP_NOT_FOUND")
+        view = InvestigationLoopView(
+            loop_id=registration["loop_id"],
+            base_request_id=registration["base_request_id"],
+            strategy=registration["strategy"],
+            phase=registration["phase"],
+            stop_reason=registration["stop_reason"],
+            report_artifact_id=registration["report_artifact_id"],
+            created_at=registration["created_at"],
+            updated_at=registration["updated_at"],
+        )
+        report = self._load_report(registration["report_artifact_id"])
+        if report is not None:
+            view.rounds_executed = report.metrics.rounds_executed
+            view.created_audit_request_ids = list(report.created_audit_request_ids)
+            view.budget = report.budget.model_dump(mode="json")
+            view.metrics = report.metrics.model_dump(mode="json")
+            view.limitations = list(report.limitations)
+        else:
+            view.limitations = [
+                ("The loop report artifact is not available; only registry "
+                "metadata is shown.")
+            ]
+        return view.model_dump(mode="json")
+
+    def list_loops(
+        self, *, base_request_id: str | None = None,
+        limit: int = 50, offset: int = 0,
+    ) -> dict[str, Any]:
+        registrations = self.registry.list(
+            base_request_id=base_request_id, limit=limit, offset=offset,
+        )
+        items = []
+        for registration in registrations:
+            try:
+                items.append(self.get_view(registration["loop_id"]))
+            except LoopServiceError:
+                continue
+        return InvestigationLoopListResponse(
+            items=[InvestigationLoopView.model_validate(item) for item in items],
+            count=len(items), offset=offset, limit=limit,
+            next_offset=offset + len(items) if len(items) == limit else None,
+        ).model_dump(mode="json")
+
+    def decisions(self, loop_id: str) -> dict[str, Any]:
+        registration = self.registry.get(loop_id)
+        if registration is None:
+            raise LoopServiceError("LOOP_NOT_FOUND")
+        report = self._load_report(registration["report_artifact_id"])
+        if report is None:
+            return LoopDecisionsResponse(loop_id=loop_id, items=[], count=0).model_dump(mode="json")
+        items = [self._decision_view(loop_id, decision) for decision in report.decisions]
+        return LoopDecisionsResponse(
+            loop_id=loop_id, items=items, count=len(items),
+        ).model_dump(mode="json")
+
+    def evidence_changes(self, loop_id: str) -> dict[str, Any]:
+        registration = self.registry.get(loop_id)
+        if registration is None:
+            raise LoopServiceError("LOOP_NOT_FOUND")
+        report = self._load_report(registration["report_artifact_id"])
+        if report is None:
+            return LoopEvidenceChangesResponse(
+                loop_id=loop_id, items=[], count=0,
+                limitations=["loop report artifact unavailable"],
+            ).model_dump(mode="json")
+        items = [
+            self._decision_view(loop_id, decision)
+            for decision in report.decisions if decision.new_evidence
+        ]
+        return LoopEvidenceChangesResponse(
+            loop_id=loop_id, items=items, count=len(items),
+            limitations=[
+                ("Rounds without newly discovered evidence are omitted; the "
+                "authoritative per-round record is the decisions endpoint.")
+            ],
+        ).model_dump(mode="json")
+
+    def budget(self, loop_id: str) -> dict[str, Any]:
+        registration = self.registry.get(loop_id)
+        if registration is None:
+            raise LoopServiceError("LOOP_NOT_FOUND")
+        report = self._load_report(registration["report_artifact_id"])
+        if report is None:
+            return LoopBudgetResponse(
+                loop_id=loop_id, remaining={},
+            ).model_dump(mode="json")
+        remaining: dict[str, float | int | None] = {
+            "actions": max(
+                0, report.budget.max_actions - report.metrics.rounds_executed,
+            ),
+            "model_calls": max(
+                0, report.budget.max_model_calls - report.metrics.model_calls_used,
+            ),
+            "seconds": None,  # wall-clock budget is only meaningful during a run
+        }
+        return LoopBudgetResponse(
+            loop_id=loop_id,
+            budget=report.budget.model_dump(mode="json"),
+            metrics=report.metrics.model_dump(mode="json"),
+            remaining=remaining,
+        ).model_dump(mode="json")
+
+    # ------------------------------------------------------------------ #
+    # internals
+    # ------------------------------------------------------------------ #
+    def _load_report(self, artifact_id: str) -> InvestigationLoopReport | None:
+        if not artifact_id or artifact_id in {"pending", "failed"}:
+            return None
+        try:
+            payload = json.loads(
+                self.artifacts.get_bytes(artifact_id).decode("utf-8"),
+            )
+        except (ValueError, UnicodeDecodeError, OSError):
+            return None
+        try:
+            return InvestigationLoopReport.model_validate(payload)
+        except ValueError:
+            return None
+
+    @staticmethod
+    def _decision_view(loop_id: str, decision) -> LoopDecisionView:
+        evidence_refs = list(decision.evidence_refs)
+        after = evidence_refs
+        before: list[str] | None = None  # older artifacts did not record it
+        return LoopDecisionView(
+            decision_id=f"{loop_id}:round-{decision.round_index}",
+            round_index=decision.round_index,
+            phase=decision.phase,
+            strategy=decision.selection_strategy,
+            candidate_actions=list(decision.candidate_actions),
+            selected_action_id=decision.selected_action,
+            selection_reason=decision.selection_reason,
+            evidence_refs=evidence_refs,
+            evidence_refs_before=before,
+            evidence_refs_after=after,
+            new_evidence_count=len(evidence_refs) if decision.new_evidence else 0,
+            cost_estimate=decision.cost_estimate,
+            actual_cost=decision.actual_cost,
+            remaining_budget={},
+            result_status=decision.result_status,
+            new_evidence=decision.new_evidence,
+            stop_reason=decision.stop_reason,
+        )

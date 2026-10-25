@@ -61,6 +61,7 @@ from agentguard.contracts.experiment_index import ExperimentCompareRequest
 from agentguard.contracts.interaction_graph import InteractionGraphResponse
 from agentguard.contracts.intervention import InterventionRequest
 from agentguard.contracts.lifecycle import RunTimelineEvent
+from agentguard.contracts.loop_public import InvestigationLoopCreateRequest
 from agentguard.contracts.paired import PairedExperimentRunRequest
 from agentguard.contracts.probe import (
     BinaryProbePredictionReport,
@@ -90,7 +91,13 @@ from agentguard.research_registry import ResearchRegistry
 from agentguard.services.evidence_gateway import EvidenceGateway
 from agentguard.services.experiment_index import ExperimentIndexService
 from agentguard.services.interaction_graph import InteractionGraphService
+from agentguard.services.investigation_loop import InvestigationLoopService
 from agentguard.services.investigation_timeline import InvestigationTimelineService
+from agentguard.services.loop_public import (
+    LoopServiceError,
+    PublicInvestigationLoopService,
+)
+from agentguard.services.loop_registry import InvestigationLoopRegistry
 from agentguard.services.report_index import ReportIndexService
 from agentguard.services.risk_findings import RiskFindingService
 from agentguard.services.system_readiness import SystemReadinessService
@@ -240,6 +247,20 @@ def create_app(
     )
     app.state.report_index = ReportIndexService(app.state.artifacts)
     app.state.risk_findings = RiskFindingService(app.state.interaction_graph)
+    app.state.loop_registry = InvestigationLoopRegistry(app.state.warden_workflows)
+    app.state.public_loops = PublicInvestigationLoopService(
+        loop=InvestigationLoopService(
+            workflows=app.state.warden_workflows,
+            artifacts=app.state.artifacts,
+            evidence_gateway=app.state.evidence_gateway,
+            experiment_index=app.state.experiment_index,
+            risk_findings=app.state.risk_findings,
+            experiences=app.state.experiences,
+            observation=None,  # loop-created audits stay plan-gated in E2
+        ),
+        registry=app.state.loop_registry,
+        artifacts=app.state.artifacts,
+    )
     app.state.policy_engine = InterventionPolicyEngine()
     app.state.paired_runner = PairedExperimentRunner(app.state.engine.runtime, paired_executor=paired_executor)
 
@@ -780,6 +801,106 @@ def create_app(
             analysis = app.state.risk_findings.analyze_graph(graph)
             return analysis.model_dump(mode="json")
         raise HTTPException(status_code=404, detail={"error": "WORKFLOW_NOT_FOUND"})
+
+    def require_loop_creation_credential(
+        x_agentguard_operator_token: str | None,
+        x_approval_token: str | None,
+    ) -> bool:
+        """Creation authorization: operator credential or a valid approval token.
+
+        A plain API token never grants loop creation, and client role claims
+        are ignored; the check is against server-configured credentials only.
+        """
+        operator_expected = os.environ.get("AGENTGUARD_OPERATOR_API_TOKEN", "")
+        approval_expected = os.environ.get("AGENTGUARD_APPROVAL_TOKEN", "")
+        operator_ok = bool(
+            operator_expected and x_agentguard_operator_token
+            and secrets.compare_digest(operator_expected, x_agentguard_operator_token)
+        )
+        approval_ok = bool(
+            approval_expected and x_approval_token
+            and secrets.compare_digest(approval_expected, x_approval_token)
+        )
+        return operator_ok or approval_ok
+
+    def create_investigation_loop(
+        request: InvestigationLoopCreateRequest,
+        x_agentguard_operator_token: str | None = Header(
+            default=None, alias="X-AgentGuard-Operator-Token",
+        ),
+        x_approval_token: str | None = Header(default=None, alias="X-Approval-Token"),
+        x_loop_idempotency_key: str | None = Header(
+            default=None, alias="X-Loop-Idempotency-Key",
+        ),
+    ) -> dict:
+        """Run a multi-round investigation loop over a finished base workflow.
+
+        Requires the operator credential or a valid approval token; retries
+        with the same ``X-Loop-Idempotency-Key`` and payload return the
+        existing loop instead of a duplicate run.
+        """
+        authorized = require_loop_creation_credential(
+            x_agentguard_operator_token, x_approval_token,
+        )
+        try:
+            if x_loop_idempotency_key:
+                return app.state.public_loops.create_with_idempotency_key(
+                    request,
+                    idempotency_key=x_loop_idempotency_key,
+                    authorization_valid=authorized,
+                )
+            return app.state.public_loops.create(
+                request, authorization_valid=authorized,
+            )
+        except LoopServiceError as exc:
+            code = str(exc)
+            status = {
+                "LOOP_AUTHORIZATION_REQUIRED": 403,
+                "BASE_INVESTIGATION_NOT_FOUND": 404,
+                "BASE_INVESTIGATION_NOT_FINISHED": 409,
+                "LOOP_IDEMPOTENCY_CONFLICT": 409,
+                "LOOP_EXECUTION_FAILED": 502,
+            }.get(code, 400)
+            raise HTTPException(status_code=status, detail={"error": code}) from exc
+        except ValueError as exc:
+            # Registry conflicts surface as bare ValueError.
+            raise HTTPException(
+                status_code=409, detail={"error": "LOOP_IDEMPOTENCY_CONFLICT"},
+            ) from exc
+
+    def list_investigation_loops(
+        base_request_id: str | None = Query(default=None),
+        limit: int = Query(default=50, ge=1, le=500),
+        offset: int = Query(default=0, ge=0),
+    ) -> dict:
+        return app.state.public_loops.list_loops(
+            base_request_id=base_request_id, limit=limit, offset=offset,
+        )
+
+    def get_investigation_loop(loop_id: str) -> dict:
+        try:
+            return app.state.public_loops.get_view(loop_id)
+        except LoopServiceError:
+            raise HTTPException(status_code=404, detail={"error": "LOOP_NOT_FOUND"}) from None
+
+    def list_loop_decisions(loop_id: str) -> dict:
+        try:
+            return app.state.public_loops.decisions(loop_id)
+        except LoopServiceError:
+            raise HTTPException(status_code=404, detail={"error": "LOOP_NOT_FOUND"}) from None
+
+    def list_loop_evidence_changes(loop_id: str) -> dict:
+        try:
+            return app.state.public_loops.evidence_changes(loop_id)
+        except LoopServiceError:
+            raise HTTPException(status_code=404, detail={"error": "LOOP_NOT_FOUND"}) from None
+
+    def get_loop_budget(loop_id: str) -> dict:
+        try:
+            return app.state.public_loops.budget(loop_id)
+        except LoopServiceError:
+            raise HTTPException(status_code=404, detail={"error": "LOOP_NOT_FOUND"}) from None
+
 
     def list_experiments(
         status: str | None = None,
@@ -2070,6 +2191,12 @@ def create_app(
         get_investigation_timeline_handler=get_investigation_timeline,
         list_reports_handler=list_reports,
         get_risk_analysis_handler=get_risk_analysis,
+        create_loop_handler=create_investigation_loop,
+        list_loops_handler=list_investigation_loops,
+        get_loop_handler=get_investigation_loop,
+        list_loop_decisions_handler=list_loop_decisions,
+        list_loop_evidence_changes_handler=list_loop_evidence_changes,
+        get_loop_budget_handler=get_loop_budget,
     ))
     return app
 

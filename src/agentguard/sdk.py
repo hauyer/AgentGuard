@@ -84,6 +84,7 @@ class AgentGuardClient:
         body: Mapping[str, Any] | None = None,
         request_id: str | None = None,
         operator: bool = False,
+        extra_headers: Mapping[str, str] | None = None,
     ) -> dict[str, Any]:
         if not path.startswith("/v1/") or "?" in path or "#" in path:
             raise ValueError("path must be a versioned AgentGuard /v1 path")
@@ -101,6 +102,9 @@ class AgentGuardClient:
             headers["X-AgentGuard-Token"] = self.token
         if operator and self.operator_token:
             headers["X-AgentGuard-Operator-Token"] = self.operator_token
+        for key, value in (extra_headers or {}).items():
+            if value:
+                headers[key] = value
         data = None
         if body is not None:
             data = json.dumps(body, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
@@ -240,6 +244,60 @@ class AgentGuardClient:
     def get_api_audit_events(self, *, limit: int = 100, offset: int = 0) -> dict[str, Any]:
         return self.request(
             "GET", "/v1/system/audit-events", query={"limit": limit, "offset": offset}, operator=True,
+        )
+
+    def get_risk_analysis(self, request_id: str, *, run_id: str | None = None) -> dict[str, Any]:
+        return self.request(
+            "GET", f"/v1/investigations/{quote(request_id, safe='')}/risk-analysis",
+            query={"run_id": run_id},
+        )
+
+    def create_investigation_loop(
+        self, payload: Mapping[str, Any], *,
+        idempotency_key: str | None = None,
+        operator: bool = True,
+        approval_token: str | None = None,
+        request_id: str | None = None,
+    ) -> dict[str, Any]:
+        extra: dict[str, str] = {}
+        if approval_token:
+            extra["X-Approval-Token"] = approval_token
+        if idempotency_key:
+            extra["X-Loop-Idempotency-Key"] = idempotency_key
+        return self.request(
+            "POST", "/v1/investigation-loops", body=payload,
+            request_id=request_id, operator=operator, extra_headers=extra,
+        )
+
+    def list_investigation_loops(
+        self, *, base_request_id: str | None = None,
+        limit: int = 50, offset: int = 0,
+    ) -> dict[str, Any]:
+        return self.request(
+            "GET", "/v1/investigation-loops",
+            query={"base_request_id": base_request_id,
+                   "limit": limit, "offset": offset},
+        )
+
+    def get_investigation_loop(self, loop_id: str) -> dict[str, Any]:
+        return self.request(
+            "GET", f"/v1/investigation-loops/{quote(loop_id, safe='')}",
+        )
+
+    def list_investigation_decisions(self, loop_id: str) -> dict[str, Any]:
+        return self.request(
+            "GET", f"/v1/investigation-loops/{quote(loop_id, safe='')}/decisions",
+        )
+
+    def get_investigation_evidence_changes(self, loop_id: str) -> dict[str, Any]:
+        return self.request(
+            "GET",
+            f"/v1/investigation-loops/{quote(loop_id, safe='')}/evidence-changes",
+        )
+
+    def get_investigation_loop_budget(self, loop_id: str) -> dict[str, Any]:
+        return self.request(
+            "GET", f"/v1/investigation-loops/{quote(loop_id, safe='')}/budget",
         )
 
     def activate_experience_policy(self, payload: Mapping[str, Any], *, activate: bool = True) -> dict[str, Any]:

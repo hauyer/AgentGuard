@@ -9,6 +9,7 @@ from fastapi import APIRouter, Header, Query
 
 from agentguard.contracts.defense import DefensePreview
 from agentguard.contracts.experiment_index import ExperimentCompareRequest
+from agentguard.contracts.loop_public import InvestigationLoopCreateRequest
 from agentguard.contracts.warden import WardenAuditRequest, WardenDefenseExecuteRequest
 
 
@@ -34,6 +35,12 @@ def create_public_router(
     get_investigation_timeline_handler: Callable[..., dict[str, Any]],
     list_reports_handler: Callable[..., dict[str, Any]],
     get_risk_analysis_handler: Callable[..., dict[str, Any]],
+    create_loop_handler: Callable[..., dict[str, Any]],
+    list_loops_handler: Callable[..., dict[str, Any]],
+    get_loop_handler: Callable[[str], dict[str, Any]],
+    list_loop_decisions_handler: Callable[[str], dict[str, Any]],
+    list_loop_evidence_changes_handler: Callable[[str], dict[str, Any]],
+    get_loop_budget_handler: Callable[[str], dict[str, Any]],
 ) -> APIRouter:
     """Build stable aliases while keeping route definitions out of the app factory."""
     router = APIRouter()
@@ -129,6 +136,60 @@ def create_public_router(
         ``available=false`` / ``insufficient_evidence`` rather than fabricated.
         """
         return get_risk_analysis_handler(request_id, run_id)
+
+    @router.post("/v1/investigation-loops")
+    def create_public_investigation_loop(
+        request: InvestigationLoopCreateRequest,
+        x_agentguard_operator_token: str | None = Header(
+            default=None, alias="X-AgentGuard-Operator-Token",
+        ),
+        x_approval_token: str | None = Header(default=None, alias="X-Approval-Token"),
+        x_loop_idempotency_key: str | None = Header(
+            default=None, alias="X-Loop-Idempotency-Key",
+        ),
+    ) -> dict[str, Any]:
+        """Run a multi-round investigation loop (operator/approval credential).
+
+        Reads-only API tokens cannot create loops. Retries with the same
+        ``X-Loop-Idempotency-Key`` and payload return the existing loop.
+        """
+        return create_loop_handler(
+            request,
+            x_agentguard_operator_token=x_agentguard_operator_token,
+            x_approval_token=x_approval_token,
+            x_loop_idempotency_key=x_loop_idempotency_key,
+        )
+
+    @router.get("/v1/investigation-loops")
+    def list_public_investigation_loops(
+        base_request_id: str | None = Query(default=None),
+        limit: int = Query(default=50, ge=1, le=500),
+        offset: int = Query(default=0, ge=0),
+    ) -> dict[str, Any]:
+        """Read-only loop registry view; authorization mirrors the base data."""
+        return list_loops_handler(
+            base_request_id=base_request_id, limit=limit, offset=offset,
+        )
+
+    @router.get("/v1/investigation-loops/{loop_id}")
+    def get_public_investigation_loop(loop_id: str) -> dict[str, Any]:
+        """One loop's summary with its persisted report provenance."""
+        return get_loop_handler(loop_id)
+
+    @router.get("/v1/investigation-loops/{loop_id}/decisions")
+    def list_public_loop_decisions(loop_id: str) -> dict[str, Any]:
+        """Per-round decisions from the persisted loop report; no retrofits."""
+        return list_loop_decisions_handler(loop_id)
+
+    @router.get("/v1/investigation-loops/{loop_id}/evidence-changes")
+    def list_public_loop_evidence_changes(loop_id: str) -> dict[str, Any]:
+        """Rounds that discovered new evidence."""
+        return list_loop_evidence_changes_handler(loop_id)
+
+    @router.get("/v1/investigation-loops/{loop_id}/budget")
+    def get_public_loop_budget(loop_id: str) -> dict[str, Any]:
+        """Budget envelope, consumption and remaining allowance."""
+        return get_loop_budget_handler(loop_id)
 
     @router.get("/v1/reports")
     def list_public_reports(
