@@ -41,6 +41,8 @@ def create_public_router(
     list_loop_decisions_handler: Callable[[str], dict[str, Any]],
     list_loop_evidence_changes_handler: Callable[[str], dict[str, Any]],
     get_loop_budget_handler: Callable[[str], dict[str, Any]],
+    list_strategy_evaluations_handler: Callable[..., dict[str, Any]],
+    get_strategy_evaluation_handler: Callable[[str], dict[str, Any]],
 ) -> APIRouter:
     """Build stable aliases while keeping route definitions out of the app factory."""
     router = APIRouter()
@@ -190,6 +192,22 @@ def create_public_router(
     def get_public_loop_budget(loop_id: str) -> dict[str, Any]:
         """Budget envelope, consumption and remaining allowance."""
         return get_loop_budget_handler(loop_id)
+
+    @router.get("/v1/research/strategy-evaluations")
+    def list_public_strategy_evaluations(
+        data_partition: str | None = Query(default=None),
+        limit: int = Query(default=50, ge=1, le=500),
+        offset: int = Query(default=0, ge=0),
+    ) -> dict[str, Any]:
+        """Read-only index of persisted strategy evaluation reports."""
+        return list_strategy_evaluations_handler(
+            data_partition=data_partition, limit=limit, offset=offset,
+        )
+
+    @router.get("/v1/research/strategy-evaluations/{evaluation_id}")
+    def get_public_strategy_evaluation(evaluation_id: str) -> dict[str, Any]:
+        """Fetch one persisted strategy evaluation report by ID."""
+        return get_strategy_evaluation_handler(evaluation_id)
 
     @router.get("/v1/reports")
     def list_public_reports(

@@ -300,6 +300,23 @@ class AgentGuardClient:
             "GET", f"/v1/investigation-loops/{quote(loop_id, safe='')}/budget",
         )
 
+    def list_strategy_evaluations(
+        self,
+        *,
+        data_partition: str | None = None,
+        limit: int = 50,
+        offset: int = 0,
+    ) -> dict[str, Any]:
+        params: dict[str, Any] = {"limit": limit, "offset": offset}
+        if data_partition is not None:
+            params["data_partition"] = data_partition
+        return self.request("GET", "/v1/research/strategy-evaluations", query=params)
+
+    def get_strategy_evaluation(self, evaluation_id: str) -> dict[str, Any]:
+        return self.request(
+            "GET", f"/v1/research/strategy-evaluations/{quote(evaluation_id, safe='')}",
+        )
+
     def activate_experience_policy(self, payload: Mapping[str, Any], *, activate: bool = True) -> dict[str, Any]:
         return self.request(
             "POST", "/v1/experiences/recommendation-policies", query={"activate": str(activate).lower()},

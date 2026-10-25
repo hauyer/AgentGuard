@@ -27,9 +27,16 @@ from agentguard.contracts.investigation_loop import (
 class InvestigationEvaluationService:
     """Run and aggregate a fixed evaluation protocol."""
 
-    def __init__(self, artifacts: LocalArtifactStore, *, source_commit: str | None = None):
+    def __init__(
+        self,
+        artifacts: LocalArtifactStore,
+        *,
+        source_commit: str | None = None,
+        registry=None,
+    ):
         self.artifacts = artifacts
         self.source_commit = source_commit
+        self.registry = registry
 
     def run_comparison(
         self,
@@ -193,4 +200,14 @@ class InvestigationEvaluationService:
             media_type="application/json",
         )
         report.report_artifact_id = artifact.artifact_ref.artifact_id
+        if self.registry is not None:
+            evaluation_id = f"eval-{report.comparison_id}"
+            self.registry.register(
+                evaluation_id=evaluation_id,
+                comparison_id=report.comparison_id,
+                report_artifact_id=report.report_artifact_id,
+                data_partition=report.data_partition,
+                source_commit=report.source_commit,
+                executed_at=report.executed_at.isoformat(),
+            )
         return report

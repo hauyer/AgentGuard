@@ -88,6 +88,7 @@ from agentguard.core.policy import InterventionPolicyEngine
 from agentguard.core.study_analysis import analyze_registered_study
 from agentguard.memory.store import ExperienceStore
 from agentguard.research_registry import ResearchRegistry
+from agentguard.services.evaluation_registry import EvaluationRegistry
 from agentguard.services.evidence_gateway import EvidenceGateway
 from agentguard.services.experiment_index import ExperimentIndexService
 from agentguard.services.interaction_graph import InteractionGraphService
@@ -263,6 +264,7 @@ def create_app(
     )
     app.state.policy_engine = InterventionPolicyEngine()
     app.state.paired_runner = PairedExperimentRunner(app.state.engine.runtime, paired_executor=paired_executor)
+    app.state.evaluation_registry = EvaluationRegistry(app.state.warden_workflows)
 
     rate_lock = RLock()
     rate_windows: dict[str, deque[float]] = {}
@@ -903,6 +905,38 @@ def create_app(
             return app.state.public_loops.budget(loop_id)
         except LoopServiceError:
             raise HTTPException(status_code=404, detail={"error": "LOOP_NOT_FOUND"}) from None
+
+    def list_strategy_evaluations(
+        data_partition: str | None = Query(default=None),
+        limit: int = Query(default=50, ge=1, le=500),
+        offset: int = Query(default=0, ge=0),
+    ) -> dict:
+        """List persisted strategy evaluation reports from the durable index."""
+        entries = app.state.evaluation_registry.list(
+            data_partition=data_partition, limit=limit, offset=offset,
+        )
+        return {
+            "schema_version": "1.0",
+            "items": entries,
+            "count": len(entries),
+            "offset": offset,
+            "limit": limit,
+        }
+
+    def get_strategy_evaluation(evaluation_id: str) -> dict:
+        """Fetch one persisted strategy evaluation report by ID."""
+        entry = app.state.evaluation_registry.get(evaluation_id)
+        if entry is None:
+            raise HTTPException(status_code=404, detail={"error": "EVALUATION_NOT_FOUND"})
+        try:
+            payload = app.state.artifacts.get_bytes(entry["report_artifact_id"])
+            import json
+            report = json.loads(payload.decode("utf-8"))
+        except (ValueError, OSError):
+            raise HTTPException(
+                status_code=410, detail={"error": "EVALUATION_ARTIFACT_UNAVAILABLE"},
+            ) from None
+        return report
 
 
     def list_experiments(
@@ -2200,6 +2234,8 @@ def create_app(
         list_loop_decisions_handler=list_loop_decisions,
         list_loop_evidence_changes_handler=list_loop_evidence_changes,
         get_loop_budget_handler=get_loop_budget,
+        list_strategy_evaluations_handler=list_strategy_evaluations,
+        get_strategy_evaluation_handler=get_strategy_evaluation,
     ))
     return app
 
