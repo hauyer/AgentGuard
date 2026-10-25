@@ -1,4 +1,4 @@
-# AgentGuard 1.0.0-rc1 架构
+# AgentGuard 1.1.0-rc1 架构
 
 ```mermaid
 flowchart LR
@@ -12,8 +12,18 @@ flowchart LR
     Lifecycle --> Warden[WARDEN HTTP API\n唯一生产低层审计内核]
     Public --> Evidence[证据治理网关]
     Evidence --> Journal
+    Public --> Graph[交互图谱投影 C1/D2]
+    Graph --> RiskFind[风险发现与假设 D2]
+    Public --> ObsRun[标准化观察工作流 D1]
+    ObsRun --> Lifecycle
+    Public --> Loop[多轮调查循环 D3]
+    Loop --> Graph & Evidence & RiskFind
+    Loop --> ObsRun
+    Loop --> DefPlan[证据约束防御规划 D4]
+    Loop --> Eval[策略受控对比 D5]
     Public --> Synthetic[合成研究 / Demo]
     Synthetic --> Local[(本地报告、工件、经验与研究 SQLite)]
+    Loop --> Local
     Legacy[旧兼容 API] -. deprecated / offline .-> Compat[agentguard.compat]
     Compat -. compatibility only .-> Lower[旧 Probe / Activation / lower integrations]
     Warden -. public HTTP dependency .-> LowerRepos[WARDEN runtime / lower repositories]
@@ -31,6 +41,11 @@ flowchart LR
   WARDEN 的事务数据库，也不提供跨系统 exactly-once。
 - Evidence Gateway 只投影有治理的摘要与可引用工件，不读取任意 URI 或本地路径。
 - Demo/Mock 与真实 WARDEN 流程分离。合成或观察性结果不能升级为因果成功。
+- **D 轮层（1.1.0-rc1）**：标准化观察工作流（D1）复用生命周期服务并校验内核
+  声明的运行时标识；风险发现（D2）只消费图谱投影的结构元数据；多轮调查循环
+  （D3）组合只读服务与 D1，受四重预算约束，LLM 仅推荐；防御规划（D4）与策略
+  对比（D5）为纯上层投影/记录，不触碰内核。D 轮未新增 REST 路由，报告经
+  内容寻址工件持久化。
 
 ## 静态边界审计
 

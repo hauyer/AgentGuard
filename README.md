@@ -18,6 +18,14 @@ A8 验收材料：[测试报告](docs/release/A8_TEST_REPORT.md)、[成熟度矩
 [架构图](docs/release/ARCHITECTURE.md)、[API 参考](docs/release/API_REFERENCE.md)、
 [部署指南](docs/release/DEPLOYMENT.md)和[已知限制](docs/release/KNOWN_LIMITATIONS.md)。
 
+> **当前开发边界（2026-10-25，D0–D7）：** 在 C0–C8 之上完成"真实调查"轮次
+> （分支 `feature/d-real-investigation`）：版本化运行配置与标准化观察工作流、
+> 元数据风险发现与可证伪假设、证据驱动多轮调查循环（五策略 + 四重预算 +
+> LLM 仅推荐）、证据约束防御规划与验证计划、五策略受控对比（真实栈执行，
+> 见 `docs/research/`）与安全评审（`docs/release/SECURITY_REVIEW.md`）。
+> 全量 397 项测试，live 配置态仅 torch 可选模块跳过；真实 7B 观察链路
+> 已验证。真实因果干预与防御效果验证仍按依赖阻塞记录（DEP-006/007）。
+
 > **当前开发边界（2026-10-24，C0–C8）：** 在 `feature/qwb-public-api-integration`
 > 完成"强网杯应用层集成"轮次（C0 接口审计 → C8 候选发布）。新增消息级交互图谱、
 > 只读实验索引与对比、分层 readiness 与调查可选项、持久化调查时间线、证据/报告

@@ -7,7 +7,12 @@
 
 | 功能 | implemented | unit_tested | integration_tested | real_backend_validated | real_model_validated | 状态说明 |
 | --- | --- | --- | --- | --- | --- | --- |
-| AgentGuard REST API、旧路径兼容与 OpenAPI 合同 | 是 | 是 | 是（TestClient + C0 基线加法性回归） | 不适用 | 不适用 | 业务 alias 与 legacy route 共享服务/生命周期；Probe route deprecated；C0 68 paths → 76 paths 纯加法 |
+| 标准化观察运行配置（D1） | 是 | 是 | 是（幂等重放/重复执行/失败不盲试） | 是（live 7B 固定配置端到端 64s 实跑 + 幂等重放） | 否（观察级） | 标识从内核声明解析；AgentGuard 专有预算字段不发往 WARDEN |
+| 元数据风险发现与可证伪假设（D2） | 是 | 是 | 是（10 项合同测试 + 图谱挂载 API） | 部分（检测器在真实 7B 观察载荷上产出发现/假设；无独立真值可校准） | 否 | 不可检测项标 insufficient_evidence；发现≠因果；id 跨运行稳定 |
+| 多轮调查循环与五策略（D3） | 是 | 是 | 是（12 项：预算/停止/降级/审计/安全） | 是（live 两轮以上真实只读调查 + 自适应轮次演示） | 否 | LLM 仅推荐且降级路径经测试；干预仅为计划生成 |
+| 证据约束防御规划（D4） | 是 | 是 | 是（排序 unknown 传播、验证计划 not_executed） | 否（候选取自真实证据投影；执行/验证 blocked） | **blocked** | DEP-007：计划存在≠效果；expected_effect 为候选声明 |
+| 调查策略受控对比（D5） | 是 | 是 | 是（4 项：配对/失败计入/单次重复声明/无预填） | 是（live 栈 5 策略 × 2 重复真实执行，RESULTS.md 由真实记录生成） | 不适用 | 比较调查行为而非模型能力；风险/防御指标组恒 null |
+| AgentGuard REST API、旧路径兼容与 OpenAPI 合同 | 是 | 是 | 是（TestClient + C0 基线加法性回归） | 不适用 | 不适用 | 业务 alias 与 legacy route 共享服务/生命周期；Probe route deprecated；C0 68 paths → 76 paths 纯加法；D 轮零新增路由 |
 | Python SDK | 是 | 是 | 是（假 HTTP transport 与 API 合同，含 C1–C6 新方法） | 否 | 不适用 | 未对部署中的服务做现场互通验收 |
 | MCP API facade | 是 | 是 | 是（假 MCP + 公共 SDK 边界） | 否 | 不适用 | 不持有运行时、数据库或 WARDEN 客户端 |
 | 消息级交互图谱 API（C1） | 是 | 是 | 是（TestClient + uvicorn 真实 HTTP） | 是（2026-10-24 live WARDEN + 7B 完整观察组合实跑：真实消息边 3 条投影，证据引用仅工件 ID） | 否（仅观察级；无因果结论） | 真实边仅来自 WARDEN run 元数据；合成报告恒标 synthetic；无来源返回 unavailable |

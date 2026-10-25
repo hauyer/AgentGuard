@@ -42,5 +42,9 @@
   依赖 round_index。C2 实验索引中 WARDEN 工作流暂无稳定实验分组 ID
   （experiment_id=null），compare 结果是描述性差异，不构成防御效果测量。C6 能力
   字段中审批通过不改变 execution_supported_overall。
+- **D 轮限制**：风险发现是基于通信元数据的结构信号（单次观察、无基线校准，
+  不可检测项标 insufficient_evidence）；调查循环的动作成本是墙钟估计，干预动作
+  仅生成计划；策略对比在单一基础观察 × 2 重复上进行，聚合指标同质属预期，结论
+  范围见 docs/research/LIMITATIONS.md；LLM 策略未接真实提供商（按合同降级）。
 - GitHub Actions 的 Python 3.11/3.12/3.13 矩阵须在候选提交后全部通过，才完成 RC
   兼容性验收。矩阵通过也不能解除真实后端/模型阻塞。

@@ -4,8 +4,19 @@
 范围：仅 AgentGuard 上层；WARDEN、FRACTAL-Bench、StegoPot 与 AgentGuard-QWB-App
 保持只读。历史 A8 验收记录见 [A8_TEST_REPORT.md](A8_TEST_REPORT.md)，未覆盖。
 
-> **候选后追加（同日）：** ① 真实 WARDEN 内核 live 验证两轮（plan 级 + 完整 7B
-> 观察组合，见 §4a）；② 第十阶段研究概念区分保障测试 8 项（见 §2a）。
+> **D 轮追加（2026-10-25，分支 `feature/d-real-investigation`，D0–D7）：**
+> 最终态全量 **397 收集 / 0 失败 / live 配置态仅 1 跳过（torch 可选模块）**
+> ——所有 live WARDEN + 真实 7B 测试实跑通过（105s）；未配置态为 391 通过 +
+> 6 跳过（torch 1 + live 类 5）。构建 + 干净 wheel 安装 + CLI/SDK 导入 +
+> 版本一致性验证通过；Ruff/compileall/架构审计全绿。新增 D 轮能力：
+> 版本化运行配置与标准化观察工作流（D1）、元数据风险发现与可证伪假设
+>（D2，图谱挂载 include_findings）、证据驱动多轮调查循环与五策略
+>（D3，含 live 两轮以上自适应演示）、证据约束防御规划与验证计划（D4）、
+> 五策略受控对比协议与真实结果（D5，`docs/research/`）、安全加固含注入
+> 持久化通道修复（D6）。安全评审见 [SECURITY_REVIEW.md](SECURITY_REVIEW.md)。
+
+> **候选后追加（C 轮，同日）：** ① 真实 WARDEN 内核 live 验证两轮（plan 级 +
+> 完整 7B 观察组合，见 §4a）；② 第十阶段研究概念区分保障测试 8 项（见 §2a）。
 
 ## 0. 分环境测试记录（D0 统一，2026-10-25 核对）
 

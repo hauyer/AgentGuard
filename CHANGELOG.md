@@ -1,5 +1,16 @@
 # Changelog
 
+## Unreleased — D0–D7: real-investigation platform
+
+- D0: CI wheel-install step replaced by `scripts/verify_wheel_install.py` (single-wheel discovery, clean-venv install under the runtime lock, importlib.metadata version check against pyproject, CLI/SDK import verification from outside the checkout); per-environment test records aligned in `docs/release/TEST_REPORT.md`.
+- D1: versioned `InvestigationRunConfig` contract and `ObservationRunService` — standardized real WARDEN observation runs with kernel-declared runtime-id resolution, content-addressed config/record artifacts, idempotent fixed-config replay and no blind retry on ambiguous submissions. Live-verified end to end against a real qwen2.5-7B observation run.
+- D2: metadata-based risk findings (`RiskFinding`) and falsifiable hypotheses (`RiskHypothesis`) projected from the interaction graph; unsupported detections are recorded as `insufficient_evidence` rather than fabricated; findings mount onto recorded edges via `GET /v1/investigations/{id}/interaction-graph?include_findings=true`.
+- D3: evidence-driven multi-round investigation loop (`InvestigationLoopService`) with five strategies (`fixed_order`, `risk_score`, `information_value`, `experience`, `llm`), durable per-round decision records, four hard budgets (actions/time/model-calls/no-new-evidence), deterministic LLM degradation, and plan-only intervention actions. Live-demonstrated with adaptive read-only rounds over a real observation.
+- D4: evidence-constrained defense planning (`DefensePlanningService`) — transparent ranking factors with unknown propagation, upper-layer policy expressions, and per-candidate verification plans that stay `not_executed` without a kernel intervention executor.
+- D5: controlled strategy comparison (`InvestigationEvaluationService` + `scripts/run_investigation_eval.py`) executed for real on the live stack (5 strategies × 2 repetitions); results, protocol, metrics, baselines, ablation plan and limitations recorded in `docs/research/`.
+- D6: security hardening — D-round route auth pinned, forged role headers rejected, prompt-injection output can no longer reach persisted records (free-text model rationale is not stored), loop budgets proven unbreakable, journal consistency and separate model/audit billing tests added.
+- D7: full acceptance — 397 tests collected, 0 failures, live-configured suite skips only the torch-optional module; build, clean wheel install and quality gates all pass. New docs: `docs/release/SECURITY_REVIEW.md`, `docs/release/ARCHITECTURE.md` updated, research suite complete. No new REST routes; the published 1.1.0rc1 contract is unchanged.
+
 ## Unreleased — D0: CI and release validation repair
 
 - Replaced the CI wheel-install step's hardcoded `agentguard-1.0.0rc1-py3-none-any.whl` with `scripts/verify_wheel_install.py`: it discovers exactly one `agentguard-*.whl` in `dist/`, installs it into a fresh venv under `requirements/runtime.lock`, compares the `importlib.metadata` version with `pyproject.toml`, and verifies the CLI plus SDK import from inside the venv (running from outside the checkout so no source-path leak can pass). Verified locally on Python 3.12 and 3.14.
