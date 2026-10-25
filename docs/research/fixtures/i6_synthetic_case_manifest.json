@@ -1,0 +1,15 @@
+{
+  "schema_version": "1.0",
+  "dataset_name": "i6-synthetic-control-v1",
+  "data_partition": "test",
+  "description": "Synthetic WARDEN-journal fixture for software-level strategy comparison; no WARDEN or model was executed.",
+  "cases": [
+    {
+      "case_id": "i6-synthetic-control-001",
+      "case_family": "synthetic-control-family",
+      "seed": 7,
+      "base_request_id": "i6-synthetic-control-001",
+      "source_kind": "synthetic"
+    }
+  ]
+}

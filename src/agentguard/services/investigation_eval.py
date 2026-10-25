@@ -48,6 +48,7 @@ class InvestigationEvaluationService:
         budget: InvestigationLoopBudget,
         data_partition: str = "held_out_family",
         comparison_id: str | None = None,
+        provenance_notes: list[str] | None = None,
     ) -> StrategyComparisonReport:
         """Execute the protocol through the injected loop runner.
 
@@ -66,6 +67,7 @@ class InvestigationEvaluationService:
             ("Defense-effectiveness metrics require real interventions and are "
             "not computed (null)."),
         ]
+        limitations.extend(provenance_notes or [])
         for base_request_id in base_request_ids:
             for strategy in strategies:
                 for repetition in range(1, repetitions + 1):

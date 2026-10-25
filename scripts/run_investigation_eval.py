@@ -18,6 +18,7 @@ message and never fabricates results.
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
 import subprocess
@@ -54,7 +55,7 @@ BUDGET = InvestigationLoopBudget(
 def _source_commit() -> str | None:
     try:
         return subprocess.run(
-            ["git", "rev-parse", "--short", "HEAD"], capture_output=True,
+            ["git", "rev-parse", "HEAD"], capture_output=True,
             text=True, encoding="utf-8", cwd=PROJECT_ROOT, check=True,
         ).stdout.strip()
     except Exception:  # noqa: BLE001
@@ -108,16 +109,34 @@ def main() -> int:
 
     base_request_ids: list[str] = []
     base_source = None
+    manifest_sha256 = None
+    source_kinds: list[str] = []
+    provenance_notes: list[str] = []
 
     # Parse input cases
     if args.dataset_manifest:
-        manifest = json.loads(Path(args.dataset_manifest).read_text(encoding="utf-8"))
+        manifest_bytes = Path(args.dataset_manifest).read_bytes()
+        manifest_sha256 = hashlib.sha256(manifest_bytes).hexdigest()
+        manifest = json.loads(manifest_bytes.decode("utf-8"))
         cases = manifest.get("cases", [])
         base_request_ids = [c["base_request_id"] for c in cases]
         base_source = f"dataset manifest: {manifest.get('dataset_name', 'unnamed')}"
+        source_kinds = sorted({
+            str(case.get("source_kind", "unspecified")) for case in cases
+        }) or ["unspecified"]
+        provenance_notes.append(
+            f"Input manifest SHA-256: {manifest_sha256}; declared source_kind "
+            f"values: {', '.join(source_kinds)}. These labels are caller-supplied "
+            "and do not independently verify the source."
+        )
     elif args.base_request_ids:
         base_request_ids = args.base_request_ids.split(",")
         base_source = "command line"
+        source_kinds = ["unspecified"]
+        provenance_notes.append(
+            "Input source: command-line base_request_ids; source_kind and "
+            "manifest hash are not available."
+        )
     elif live_url:
         from agentguard.adapters.warden import WardenKernelClient
 
@@ -146,6 +165,11 @@ def main() -> int:
                     if record.execution_status == "completed":
                         base_request_ids = [record.request_id]
                         base_source = "live WARDEN observation run"
+                        source_kinds = ["live_observational"]
+                        provenance_notes.append(
+                            "Input source: this invocation's WARDEN observation; "
+                            "the WARDEN request and run IDs are listed in the cases."
+                        )
         except Exception as exc:  # noqa: BLE001 - fall through to journal mode
             print(f"live kernel unavailable ({type(exc).__name__}); trying journal")
 
@@ -213,6 +237,7 @@ def main() -> int:
         repetitions=args.repetitions,
         budget=budget,
         data_partition=args.partition,
+        provenance_notes=provenance_notes,
     )
 
     lines = [
@@ -221,6 +246,8 @@ def main() -> int:
         f"- 执行时间：{report.executed_at.isoformat()}",
         f"- 基础案例数：{len(valid_request_ids)}（来源：{base_source}）",
         f"- 案例 ID：{', '.join(valid_request_ids)}",
+        f"- 数据来源类别（manifest 声明）：{', '.join(source_kinds) or 'unspecified'}",
+        f"- manifest SHA-256：`{manifest_sha256 or 'not available'}`",
         f"- source_commit：`{report.source_commit}`",
         (f"- 协议：{len(strategies)} 策略 × {args.repetitions} 重复 × {len(valid_request_ids)} 案例"
         f"（max_actions={budget.max_actions}, {budget.max_seconds}s,"

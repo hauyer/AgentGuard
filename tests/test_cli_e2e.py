@@ -4,7 +4,9 @@ Runs the actual run_investigation_eval.py script as a subprocess, then
 verifies that the resulting evaluation is discoverable through the public API.
 """
 
+import hashlib
 import json
+import re
 import subprocess
 import sys
 from pathlib import Path
@@ -83,6 +85,14 @@ def test_cli_to_api_evaluation_persistence(tmp_path):
     assert report_path.exists()
     report_content = report_path.read_text(encoding="utf-8")
     assert "comparison" in report_content.lower() or "evaluation" in report_content.lower()
+    manifest_sha256 = hashlib.sha256(manifest_path.read_bytes()).hexdigest()
+    assert manifest_sha256 in report_content
+    assert "source_kind values: synthetic" in report_content
+    source_revision = subprocess.run(
+        ["git", "rev-parse", "HEAD"], cwd=str(PROJECT_ROOT), check=True,
+        capture_output=True, text=True,
+    ).stdout.strip()
+    assert f"source_commit：`{source_revision}`" in report_content
 
     # 4. Create a fresh API app with the same data_dir
     app = create_app(data_dir=data_dir)
@@ -114,6 +124,11 @@ def test_cli_to_api_evaluation_persistence(tmp_path):
     assert detail["comparison_id"] == report_payload["comparison_id"]
     assert detail["data_partition"] == report_payload["data_partition"] == "test"
     assert detail["source_commit"] == report_payload["source_commit"]
+    assert re.fullmatch(r"[0-9a-f]{40}", report_payload["source_commit"])
+    assert any(
+        manifest_sha256 in limitation and "source_kind values: synthetic" in limitation
+        for limitation in report_payload["limitations"]
+    )
     assert detail["strategies"] == report_payload["strategies"] == ["fixed_order"]
     assert detail["repetitions"] == report_payload["repetitions"] == 1
     assert detail["runs"] == report_payload["runs"]
