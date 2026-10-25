@@ -156,18 +156,43 @@ def main() -> int:
         )
         return 3
 
-    # Validate each base request exists
+    # Validate each base request exists and classify
     valid_request_ids = []
+    missing_request_ids = []
+    incomplete_request_ids = []
     for rid in base_request_ids:
         entry = workflows.get(rid)
-        if entry and entry.get("status") in {"finished", "completed"}:
-            valid_request_ids.append(rid)
+        if entry is None:
+            missing_request_ids.append(rid)
+            print(f"SKIP: base request '{rid}' not found (MISSING)")
+        elif entry.get("status") not in {"finished", "completed"}:
+            incomplete_request_ids.append(rid)
+            print(f"SKIP: base request '{rid}' status={entry.get('status')} (INCOMPLETE)")
         else:
-            print(f"SKIP: base request '{rid}' not found or not finished")
+            valid_request_ids.append(rid)
+            print(f"OK: base request '{rid}' valid")
+
+    print(f"\nCase validation summary:")
+    print(f"  Total input cases: {len(base_request_ids)}")
+    print(f"  Valid cases: {len(valid_request_ids)}")
+    print(f"  Missing: {len(missing_request_ids)}")
+    print(f"  Incomplete: {len(incomplete_request_ids)}")
 
     if not valid_request_ids:
         print("NOT EXECUTED: no valid base requests found")
         return 3
+
+    # Validate strategies
+    valid_strategies = ["fixed_order", "risk_score", "information_value", "experience", "llm"]
+    invalid_strategies = [s for s in strategies if s not in valid_strategies]
+    if invalid_strategies:
+        print(f"ERROR: invalid strategies: {invalid_strategies}")
+        print(f"  Valid strategies: {valid_strategies}")
+        return 2
+    # Check for duplicates
+    if len(strategies) != len(set(strategies)):
+        print(f"ERROR: duplicate strategies in list: {strategies}")
+        return 2
 
     loop = InvestigationLoopService(
         workflows=workflows,
