@@ -223,9 +223,14 @@ def _llm(
         valid_ids = {action.action_id for action in actions}
         if choice.selected_action_id in valid_ids:
             action = next(a for a in actions if a.action_id == choice.selected_action_id)
+            # Untrusted model prose is never persisted into decision records;
+            # the reason stays a neutral, service-authored description.
             return ActionSelection(
                 action_id=action.action_id,
-                reason=f"llm selection: {choice.rationale or 'no rationale provided'}",
+                reason=(
+                    f"llm selection: the provider chose {action.action_id} "
+                    "(its free-text rationale is untrusted and not persisted)"
+                ),
             )
         note = "llm returned an id outside the candidate set; fallback used"
     except (ValidationError, ValueError, KeyError, TypeError):
