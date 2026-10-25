@@ -96,6 +96,7 @@ def _seed_workflows(workflows, request_id="inv-loop"):
     workflows.begin(request_id, {
         "request_id": request_id, "contract_id": "contract-loop", "model_id": "model-7b",
         "runtime_id": "stegopot.v1", "mode": "observation", "scenario_id": "sc-loop",
+        "metadata": {"source_kind": "synthetic"},
     })
     workflows.update(request_id, "finished", context={"run": run},
                      result={"status": "completed", "run": run})
@@ -143,6 +144,7 @@ def test_multi_round_read_only_loop_records_adaptive_decisions(tmp_path):
     assert report.metrics.steps_to_first_evidence is not None
     assert report.metrics.effective_action_ratio == 1.0
     assert report.report_artifact_id
+    assert any("source_kind=synthetic" in item for item in report.limitations)
     # Intervention planning, when it runs, stays plan-only.
     intervention_rounds = [
         d for d in report.decisions if d.selected_action == "act-plan-intervention"

@@ -102,6 +102,14 @@ class InvestigationLoopService:
                 ),
             ],
         }
+        request = entry.get("request") if isinstance(entry.get("request"), dict) else {}
+        metadata = request.get("metadata") if isinstance(request.get("metadata"), dict) else {}
+        source_kind = metadata.get("source_kind")
+        if source_kind in {"synthetic", "stub"}:
+            state["limitations"].append(
+                f"Base investigation declares source_kind={source_kind}; this loop "
+                "does not establish a real model observation or real evidence."
+            )
         decisions: list[LoopDecisionRecord] = []
         stop_reason = "no_executable_actions"
 
