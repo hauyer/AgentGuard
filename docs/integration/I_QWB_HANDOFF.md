@@ -5,12 +5,13 @@
 | 项目 | 固定值 |
 | --- | --- |
 | AgentGuard 分支 | `feature/i-reliability-and-live-validation` |
-| API 实现 source SHA | `ecd1cc3a74ee2ff5ee3e3595c382c6bb8f9affcf` |
+| API 实现 source SHA | `66dae883fb75cf90ef735b94d2f5c9b565ba5ad3` |
 | 包版本 | `1.1.0rc1` |
 | Python 支持范围 | `>=3.11`；CI 矩阵为 3.11、3.12、3.13 |
 | OpenAPI 文件 | [`openapi-1.1.0rc1.json`](openapi-1.1.0rc1.json) |
-| OpenAPI SHA-256 | `eaf8c7fb5d0d005dd608e3d900b2358ea66a0417d134b0de0fbdca6a9f703fc7` |
+| OpenAPI SHA-256 | `b7c4e197ffa53531308102bddc40dda5a31bda8be81b816ecb8ddfa19e40b211` |
 | OpenAPI 版本 | `3.1.0` |
+| OpenAPI 路径数 | `84` |
 
 SHA 指向冻结的 API 实现代码快照。后续纯文档提交不会改变该快照的 API 行为。部署
 应校验 OpenAPI 文件 SHA-256，并以运行服务的 `/openapi.json` 与该文件比对。
@@ -46,7 +47,7 @@ QWB 专用别名；以 OpenAPI 文件为完整路由合同。
 | `max_model_calls` | 整数 0–64 | 4 |
 | `no_new_evidence_rounds` | 整数 1–10 | 2 |
 | `data_partition` | `training`、`validation`、`test`、`held_out_family` | `held_out_family` |
-| `authorization_ref` | 字符串或 `null`，最多 256 字符 | `null` |
+| `authorization_ref` | 字符串或 `null`，最多 256 字符；参与幂等参数比较 | `null` |
 
 当 `max_seconds > 600` 且 `max_actions > 20` 时，服务端会拒绝超出服务预算包络的
 请求。请求体中没有额外属性；未知字段会触发 422 校验错误。
@@ -60,13 +61,24 @@ QWB 专用别名；以 OpenAPI 文件为完整路由合同。
 | `X-Approval-Token` | 可替代 Operator 凭证的审批凭证 |
 | `X-AgentGuard-Token` | 配置全局 API 鉴权时用于 API 访问；本身不授予 Loop 创建权限 |
 
-若配置 `AGENTGUARD_API_TOKEN`，全局中间件要求 `X-AgentGuard-Token`。若配置
-`AGENTGUARD_OPERATOR_API_TOKEN`，也可用 `X-AgentGuard-Operator-Token` 通过全局门禁。
-Loop 创建还需路由级 Operator 凭证或有效审批凭证。仅配置 API token 时，使用审批头
-还需同时提供 `X-AgentGuard-Token`；用 Operator 凭证时，全局 API 门禁仍需
-`X-AgentGuard-Token`，且路由需 `X-AgentGuard-Operator-Token`（未配置独立 Operator
-token 时可使用同一 API token 值）。未配置全局 token 时，不启用该层 token 检查；生产
-部署应按环境要求配置认证。跨域浏览器请求的 CORS allow-list 包含以上认证头与
+`X-Loop-Idempotency-Key` 在运行时和 OpenAPI 中均为必需。缺失或仅含空白字符时返回
+422 `MISSING_IDEMPOTENCY_KEY`。同键、同参数返回已登记 Loop；同键、不同参数返回
+409 `LOOP_IDEMPOTENCY_CONFLICT`。所有会影响执行的请求字段（含非空
+`authorization_ref`）参与参数指纹；省略或 `null` 的 `authorization_ref` 保持兼容。
+
+`authorization_ref` 只是调用方提供的审计引用，不构成授权凭据。Loop 创建的路由级
+权限只接受已配置的 `AGENTGUARD_OPERATOR_API_TOKEN` 对应的
+`X-AgentGuard-Operator-Token`，或已配置的 `AGENTGUARD_APPROVAL_TOKEN` 对应的
+`X-Approval-Token`。API token 本身不会授予 Loop 创建权限；当前实现没有“未配置独立
+Operator token 时回退到 API token 值”的路由级规则。
+
+全局 API 鉴权与路由级 Loop 权限是两层独立检查。若设置
+`AGENTGUARD_API_TOKEN`，全局门禁接受有效 `X-AgentGuard-Token`；若另行设置
+`AGENTGUARD_OPERATOR_API_TOKEN`，有效 `X-AgentGuard-Operator-Token` 也可通过全局
+门禁。只有全局 API token 时，Operator 头不能替代 `X-AgentGuard-Token` 通过全局门禁；
+但若配置了全局 API token 且路由凭据是有效审批 token，请求仍需提供有效
+`X-AgentGuard-Token`。若未配置全局 API token，则不执行该层 token 检查。部署应按
+环境要求配置认证。跨域浏览器请求的 CORS allow-list 包含以上认证头与
 `X-Loop-Idempotency-Key`；部署还需显式设置允许的 `AGENTGUARD_CORS_ORIGINS`，不允许
 通配符。
 
@@ -178,6 +190,9 @@ token 时可使用同一 API token 值）。未配置全局 token 时，不启�
   恢复与提交幂等语义；真实 Live Loop 保持 **BLOCKED**，未知 POST 结果不能盲目重试。
 - 本轮 I5 只完成 HTTP Stub 合同/证据反馈测试。没有真实 WARDEN Loop、真实模型观察或
   本轮产生的真实新增证据。Stub 引用不会作为真实证据展示。
+- WARDEN 的远端提交幂等、重启后持久状态、可验证授权与证据来源能力尚不能从当前公开
+  API 合同中确认；Live 保持 BLOCKED。逐项审查和验收状态见
+  [`I5_WARDEN_LIVE_GATE.md`](I5_WARDEN_LIVE_GATE.md)。
 - 没有独立真值时不提供检测准确率；没有真实干预和独立评价时不提供防御成功率。
 
 ## 已知限制
@@ -190,4 +205,7 @@ token 时可使用同一 API token 值）。未配置全局 token 时，不启�
 - 评价详情依赖本地内容寻址报告工件。索引有记录而工件缺失时返回 410；调用方应报告
   工件不可用，不得静默丢弃来源或自行重建字段。
 - CORS 需显式配置允许域名。使用的 headers、token 环境变量和幂等语义见本页。
-- I6 多策略研究执行尚无可验证评价 ID/报告工件；不得将旧未核验摘要当成新结果。
+- I6 synthetic control 已登记 comparison `eval-2e181b7fb8`、evaluation
+  `eval-eval-2e181b7fb8` 和可核验报告工件，详见
+  [`I_RESULTS.md`](../research/I_RESULTS.md)。该组结果只验证合成输入上的软件行为；没有
+  真实 WARDEN 执行、真实模型调用、真实新增证据或独立真值，不得解释为真实实验结果。
