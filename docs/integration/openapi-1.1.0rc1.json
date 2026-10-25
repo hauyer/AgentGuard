@@ -3917,6 +3917,507 @@
         }
       }
     },
+    "/v1/investigations/{request_id}/risk-analysis": {
+      "get": {
+        "summary": "Get Public Risk Analysis",
+        "description": "Metadata-based risk findings and falsifiable hypotheses.\n\nFindings are structural signals over recorded interaction metadata.\nUncalibrated scores are never attack probabilities, candidates are not\ncausal claims, and missing evidence is reported as\n``available=false`` / ``insufficient_evidence`` rather than fabricated.",
+        "operationId": "get_public_risk_analysis_v1_investigations__request_id__risk_analysis_get",
+        "parameters": [
+          {
+            "name": "request_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Request Id"
+            }
+          },
+          {
+            "name": "run_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Run Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Get Public Risk Analysis V1 Investigations  Request Id  Risk Analysis Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/investigation-loops": {
+      "post": {
+        "summary": "Create Public Investigation Loop",
+        "description": "Run a multi-round investigation loop (operator/approval credential).\n\nReads-only API tokens cannot create loops. Retries with the same\n``X-Loop-Idempotency-Key`` and payload return the existing loop.",
+        "operationId": "create_public_investigation_loop_v1_investigation_loops_post",
+        "parameters": [
+          {
+            "name": "X-AgentGuard-Operator-Token",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Agentguard-Operator-Token"
+            }
+          },
+          {
+            "name": "X-Approval-Token",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Approval-Token"
+            }
+          },
+          {
+            "name": "X-Loop-Idempotency-Key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Loop-Idempotency-Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/InvestigationLoopCreateRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Create Public Investigation Loop V1 Investigation Loops Post"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "get": {
+        "summary": "List Public Investigation Loops",
+        "description": "Read-only loop registry view; authorization mirrors the base data.",
+        "operationId": "list_public_investigation_loops_v1_investigation_loops_get",
+        "parameters": [
+          {
+            "name": "base_request_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Base Request Id"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 500,
+              "minimum": 1,
+              "default": 50,
+              "title": "Limit"
+            }
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 0,
+              "default": 0,
+              "title": "Offset"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response List Public Investigation Loops V1 Investigation Loops Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/investigation-loops/{loop_id}": {
+      "get": {
+        "summary": "Get Public Investigation Loop",
+        "description": "One loop's summary with its persisted report provenance.",
+        "operationId": "get_public_investigation_loop_v1_investigation_loops__loop_id__get",
+        "parameters": [
+          {
+            "name": "loop_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Loop Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Get Public Investigation Loop V1 Investigation Loops  Loop Id  Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/investigation-loops/{loop_id}/decisions": {
+      "get": {
+        "summary": "List Public Loop Decisions",
+        "description": "Per-round decisions from the persisted loop report; no retrofits.",
+        "operationId": "list_public_loop_decisions_v1_investigation_loops__loop_id__decisions_get",
+        "parameters": [
+          {
+            "name": "loop_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Loop Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response List Public Loop Decisions V1 Investigation Loops  Loop Id  Decisions Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/investigation-loops/{loop_id}/evidence-changes": {
+      "get": {
+        "summary": "List Public Loop Evidence Changes",
+        "description": "Rounds that discovered new evidence.",
+        "operationId": "list_public_loop_evidence_changes_v1_investigation_loops__loop_id__evidence_changes_get",
+        "parameters": [
+          {
+            "name": "loop_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Loop Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response List Public Loop Evidence Changes V1 Investigation Loops  Loop Id  Evidence Changes Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/investigation-loops/{loop_id}/budget": {
+      "get": {
+        "summary": "Get Public Loop Budget",
+        "description": "Budget envelope, consumption and remaining allowance.",
+        "operationId": "get_public_loop_budget_v1_investigation_loops__loop_id__budget_get",
+        "parameters": [
+          {
+            "name": "loop_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Loop Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Get Public Loop Budget V1 Investigation Loops  Loop Id  Budget Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/research/strategy-evaluations": {
+      "get": {
+        "summary": "List Public Strategy Evaluations",
+        "description": "Read-only index of persisted strategy evaluation reports.",
+        "operationId": "list_public_strategy_evaluations_v1_research_strategy_evaluations_get",
+        "parameters": [
+          {
+            "name": "data_partition",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Data Partition"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 500,
+              "minimum": 1,
+              "default": 50,
+              "title": "Limit"
+            }
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 0,
+              "default": 0,
+              "title": "Offset"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response List Public Strategy Evaluations V1 Research Strategy Evaluations Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/research/strategy-evaluations/{evaluation_id}": {
+      "get": {
+        "summary": "Get Public Strategy Evaluation",
+        "description": "Fetch one persisted strategy evaluation report by ID.",
+        "operationId": "get_public_strategy_evaluation_v1_research_strategy_evaluations__evaluation_id__get",
+        "parameters": [
+          {
+            "name": "evaluation_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Evaluation Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Get Public Strategy Evaluation V1 Research Strategy Evaluations  Evaluation Id  Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/v1/reports": {
       "get": {
         "summary": "List Public Reports",
@@ -4049,7 +4550,7 @@
     "/v1/investigations/{request_id}/interaction-graph": {
       "get": {
         "summary": "Get Public Interaction Graph",
-        "description": "Message-level interaction graph with explicit availability and provenance.\n\nReal edges come only from message metadata that WARDEN's public run\nresponse provided. Without it the response reports ``available=false``;\nan explicit ``run_id`` renders the synthetic engine report through the\nsame contract, always labelled ``agentguard_synthetic_report``.",
+        "description": "Message-level interaction graph with explicit availability and provenance.\n\nReal edges come only from message metadata that WARDEN's public run\nresponse provided. Without it the response reports ``available=false``;\nan explicit ``run_id`` renders the synthetic engine report through the\nsame contract, always labelled ``agentguard_synthetic_report``. With\n``include_findings=true`` metadata-based risk findings are mounted as\nids on the recorded edges.",
         "operationId": "get_public_interaction_graph_v1_investigations__request_id__interaction_graph_get",
         "parameters": [
           {
@@ -4075,6 +4576,16 @@
                 }
               ],
               "title": "Run Id"
+            }
+          },
+          {
+            "name": "include_findings",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": false,
+              "title": "Include Findings"
             }
           }
         ],
@@ -6138,6 +6649,92 @@
           "operation"
         ],
         "title": "InterventionRequest"
+      },
+      "InvestigationLoopCreateRequest": {
+        "properties": {
+          "schema_version": {
+            "type": "string",
+            "const": "1.0",
+            "title": "Schema Version",
+            "default": "1.0"
+          },
+          "base_request_id": {
+            "type": "string",
+            "maxLength": 256,
+            "minLength": 1,
+            "title": "Base Request Id"
+          },
+          "strategy": {
+            "type": "string",
+            "enum": [
+              "fixed_order",
+              "risk_score",
+              "information_value",
+              "experience",
+              "llm"
+            ],
+            "title": "Strategy",
+            "default": "information_value"
+          },
+          "max_actions": {
+            "type": "integer",
+            "maximum": 100.0,
+            "minimum": 1.0,
+            "title": "Max Actions",
+            "default": 8
+          },
+          "max_seconds": {
+            "type": "number",
+            "maximum": 3600.0,
+            "exclusiveMinimum": 0.0,
+            "title": "Max Seconds",
+            "default": 300.0
+          },
+          "max_model_calls": {
+            "type": "integer",
+            "maximum": 64.0,
+            "minimum": 0.0,
+            "title": "Max Model Calls",
+            "default": 4
+          },
+          "no_new_evidence_rounds": {
+            "type": "integer",
+            "maximum": 10.0,
+            "minimum": 1.0,
+            "title": "No New Evidence Rounds",
+            "default": 2
+          },
+          "data_partition": {
+            "type": "string",
+            "enum": [
+              "training",
+              "validation",
+              "test",
+              "held_out_family"
+            ],
+            "title": "Data Partition",
+            "default": "held_out_family"
+          },
+          "authorization_ref": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 256
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Authorization Ref"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "base_request_id"
+        ],
+        "title": "InvestigationLoopCreateRequest",
+        "description": "Creation request; the loop idempotency key makes retries safe."
       },
       "JsonValue": {},
       "OutcomePairs": {
