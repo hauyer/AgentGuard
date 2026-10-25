@@ -99,7 +99,9 @@ def main() -> int:
         data_dir = Path(tempfile.mkdtemp(prefix="g2-eval-"))
         persisted = False
 
-    workflows = WardenWorkflowStore(data_dir / "workflows.sqlite3")
+    # Use the same filenames as the production API so that CLI-generated
+    # evaluations are discoverable through the public research endpoints.
+    workflows = WardenWorkflowStore(data_dir / "warden_workflows.sqlite3")
     artifacts = LocalArtifactStore(data_dir / "artifacts")
     experiences = ExperienceStore(data_dir / "experiences.sqlite3")
     eval_registry = EvaluationRegistry(workflows)
