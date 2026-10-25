@@ -63,6 +63,7 @@ class RiskFindingService:
             return RiskAnalysisReport(
                 investigation_id=investigation_id, run_id=graph.run_id,
                 available=False, limitations=limitations,
+                data_source="none", evidence_level="unknown",
             )
 
         findings: list[RiskFinding] = []
@@ -82,11 +83,50 @@ class RiskFindingService:
                 "Current metadata supports no structural detection; recorded "
                 "as insufficient evidence rather than a fabricated risk."
             )
+        evidence_level = (
+            "observational" if graph.source == "warden_observation" else "synthetic"
+        )
+        for finding in findings:
+            finding.evidence_level = evidence_level  # type: ignore[assignment]
+        self._mount_graph_anchors(graph, findings)
         return RiskAnalysisReport(
             investigation_id=investigation_id, run_id=graph.run_id,
             available=True, findings=findings, hypotheses=hypotheses,
             limitations=limitations,
+            data_source=(
+                "warden_observation"
+                if graph.source == "warden_observation" else "none"
+            ),
+            evidence_level=evidence_level,
         )
+
+    @staticmethod
+    def _mount_graph_anchors(
+        graph: InteractionGraphResponse, findings: list[RiskFinding],
+    ) -> None:
+        """Attach the graph nodes/edges each finding's evidence points at."""
+        node_types = {node.id: node.type for node in graph.nodes}
+        for finding in findings:
+            targets = {finding.target_ref}
+            for ref in finding.supporting_evidence_refs:
+                if ref.startswith("edge:"):
+                    finding.graph_edge_refs.append(ref)
+                    for edge in graph.edges:
+                        if edge.id == ref:
+                            targets.update({edge.source, edge.target})
+                elif ref in node_types:
+                    finding.graph_node_refs.append(ref)
+            for target in targets:
+                if target in node_types:
+                    finding.graph_node_refs.append(target)
+            finding.graph_edge_refs = list(dict.fromkeys(finding.graph_edge_refs))
+            finding.graph_node_refs = list(dict.fromkeys(finding.graph_node_refs))[:64]
+            if finding.status == "insufficient_evidence":
+                finding.severity = "unknown"
+            elif finding.risk_type in {"relay_path_candidate", "external_data_flow"}:
+                finding.severity = "medium"
+            elif finding.risk_type == "collaboration_concentration":
+                finding.severity = "low"
 
     @staticmethod
     def _raw_round_sequence(entry: Mapping[str, Any]) -> list[tuple[int, str]]:

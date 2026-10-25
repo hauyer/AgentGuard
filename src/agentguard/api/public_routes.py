@@ -33,6 +33,7 @@ def create_public_router(
     get_investigation_options_handler: Callable[..., dict[str, Any]],
     get_investigation_timeline_handler: Callable[..., dict[str, Any]],
     list_reports_handler: Callable[..., dict[str, Any]],
+    get_risk_analysis_handler: Callable[..., dict[str, Any]],
 ) -> APIRouter:
     """Build stable aliases while keeping route definitions out of the app factory."""
     router = APIRouter()
@@ -115,6 +116,19 @@ def create_public_router(
         x_approval_token: str | None = Header(default=None, alias="X-Approval-Token"),
     ) -> dict[str, Any]:
         return execute_defense_handler(request_id, request, x_approval_token)
+
+    @router.get("/v1/investigations/{request_id}/risk-analysis")
+    def get_public_risk_analysis(
+        request_id: str, run_id: str | None = Query(default=None)
+    ) -> dict[str, Any]:
+        """Metadata-based risk findings and falsifiable hypotheses.
+
+        Findings are structural signals over recorded interaction metadata.
+        Uncalibrated scores are never attack probabilities, candidates are not
+        causal claims, and missing evidence is reported as
+        ``available=false`` / ``insufficient_evidence`` rather than fabricated.
+        """
+        return get_risk_analysis_handler(request_id, run_id)
 
     @router.get("/v1/reports")
     def list_public_reports(

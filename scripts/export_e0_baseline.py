@@ -7,8 +7,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
-from agentguard import __version__  # noqa: E402
-from agentguard.api.app import create_app  # noqa: E402
+from agentguard.api.app import create_app
 
 FOCUS = [
     "/v1/investigations",
@@ -36,4 +35,4 @@ for path in FOCUS:
     for method in spec["paths"].get(path, {}).values():
         for parameter in method.get("parameters", []):
             params.append(parameter.get("name"))
-    print(f"  {methods:8s} {path}  params={sorted(set(p for p in params if p))}")
+    print(f"  {methods:8s} {path}  params={sorted({p for p in params if p})}")

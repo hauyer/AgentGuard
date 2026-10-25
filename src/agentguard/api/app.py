@@ -757,6 +757,30 @@ def create_app(
         graph.limitations.extend(report.limitations)
         return graph
 
+    def get_risk_analysis(request_id: str, run_id: str | None = Query(default=None)) -> dict:
+        """Project the metadata-based risk analysis for one investigation workflow.
+
+        Findings are structural signals over recorded interaction metadata;
+        uncalibrated scores are never presented as attack probabilities and no
+        causal claim is made. Without compliant metadata the response reports
+        ``available=false`` with its limitations.
+        """
+        entry = app.state.warden_workflows.get(request_id)
+        if entry is not None:
+            report = app.state.risk_findings.analyze_workflow(entry)
+            return report.model_dump(mode="json")
+        if run_id is not None:
+            with app.state.lock:
+                engine_report = app.state.reports.get(run_id)
+            if engine_report is None:
+                raise HTTPException(status_code=404, detail={"error": "RUN_ID_NOT_FOUND"})
+            graph = app.state.interaction_graph.for_run_report(
+                engine_report, request_id=request_id,
+            )
+            analysis = app.state.risk_findings.analyze_graph(graph)
+            return analysis.model_dump(mode="json")
+        raise HTTPException(status_code=404, detail={"error": "WORKFLOW_NOT_FOUND"})
+
     def list_experiments(
         status: str | None = None,
         scenario_id: str | None = None,
@@ -2045,6 +2069,7 @@ def create_app(
         get_investigation_options_handler=get_investigation_options,
         get_investigation_timeline_handler=get_investigation_timeline,
         list_reports_handler=list_reports,
+        get_risk_analysis_handler=get_risk_analysis,
     ))
     return app
 

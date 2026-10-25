@@ -41,6 +41,16 @@ class RiskFinding(ContractModel):
     verification_status: Literal["unverified"] = "unverified"
     limitations: list[str] = Field(default_factory=list, max_length=32)
     created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+    # E1 additive fields: graph anchors and a severity screen. `severity` is a
+    # structural signal band, never an attack probability; `score` stays None
+    # until a calibrated detector exists.
+    severity: Literal["low", "medium", "high", "unknown"] = "unknown"
+    score: float | None = Field(default=None, ge=0.0, le=1.0)
+    score_calibration_status: Literal[
+        "uncalibrated", "not_applicable"
+    ] = "uncalibrated"
+    graph_node_refs: list[str] = Field(default_factory=list, max_length=64)
+    graph_edge_refs: list[str] = Field(default_factory=list, max_length=64)
 
 
 class RiskHypothesis(ContractModel):
@@ -71,3 +81,10 @@ class RiskAnalysisReport(ContractModel):
     findings: list[RiskFinding] = Field(default_factory=list, max_length=128)
     hypotheses: list[RiskHypothesis] = Field(default_factory=list, max_length=128)
     limitations: list[str] = Field(default_factory=list, max_length=32)
+    # E1 additive provenance fields for the public risk-analysis endpoint.
+    data_source: Literal[
+        "warden_observation", "none"
+    ] = "none"
+    evidence_level: Literal[
+        "observational", "synthetic", "unknown"
+    ] = "unknown"
