@@ -50,6 +50,15 @@
   file:// URI 缺陷与 options 运行时标识缺失；② 第十阶段概念区分保障测试 8 项
   （TEST_REPORT §2a）。全量更新为 **346 通过 / 0 失败 / 4 跳过**（live 类在未
   配置 `AGENTGUARD_LIVE_WARDEN_URL` 时跳过并明示）。
+- **应用层自带检查脚本兼容性复验（AgentGuard-QWB-App
+  `scripts/live_agentguard_check.py`，只读运行，WARDEN 完整组合环境）**：
+  对 `cacd15b` 得 **14 PASS / 0 FAIL / 1 BLOCKED_UPSTREAM / 0 UNSUPPORTED**
+  （App 记录的 `907aa19` 基线为 12 PASS / 2 BLOCKED / 1 UNSUPPORTED）。变化：
+  defense_policies 由 QWB-INT-008 的 500 转 PASS（C6 修复确认）；
+  interaction_graph 与 investigation_timeline 由 UNSUPPORTED（未发布）转 PASS
+  （已发布且脚本形状验证通过）；唯一剩余 BLOCKED 为 report_read——脚本硬编码
+  演示标识（contract-qwb-001/agent-suite-2.1/runtime-b11）在本内核上被 preflight
+  如实拒绝，属 App 侧测试数据选择，采用 C3 options 的真实标识后即可跑通。
 - 三版本 CI 矩阵待推送后在 Actions 执行（发布流程最后一步，未获推送授权前不执行）。
 
 ## 5. 阶段提交记录
