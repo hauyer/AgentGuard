@@ -1,4 +1,4 @@
-"""Contract tests for the public investigation-loop API (E2)."""
+﻿"""Contract tests for the public investigation-loop API (E2)."""
 
 import threading
 
@@ -389,3 +389,34 @@ def test_evidence_changes_only_include_new_evidence_rounds(tmp_path, monkeypatch
         assert changes["count"] <= decisions["count"]
         # The endpoint lists its own limitation note.
         assert changes["limitations"]
+
+
+def test_g3_idempotent_repeat_does_not_create_second_loop(tmp_path, monkeypatch):
+    """G3: Same idempotency key returns same loop_id, no duplicate creation."""
+    monkeypatch.setenv("AGENTGUARD_OPERATOR_API_TOKEN", "operator-secret")
+    app = _seeded_app(tmp_path, request_id="inv-loop-api")
+    with TestClient(app) as client:
+        headers = {"X-AgentGuard-Operator-Token": "operator-secret",
+                   "X-Loop-Idempotency-Key": "g3-idem-key-001"}
+        resp1 = client.post("/v1/investigation-loops", json=PAYLOAD, headers=headers)
+        assert resp1.status_code == 200
+        loop_id_1 = resp1.json()["loop_id"]
+        # Second call with same key and same payload
+        resp2 = client.post("/v1/investigation-loops", json=PAYLOAD, headers=headers)
+        assert resp2.status_code == 200
+        loop_id_2 = resp2.json()["loop_id"]
+        assert loop_id_1 == loop_id_2
+
+
+def test_g3_unknown_loop_id_returns_404(tmp_path, monkeypatch):
+    """G3: Unknown loop ID must return 404, not 500 or fabricated data."""
+    monkeypatch.setenv("AGENTGUARD_OPERATOR_API_TOKEN", "operator-secret")
+    app = _seeded_app(tmp_path, request_id="inv-g3-404")
+    with TestClient(app) as client:
+        resp = client.get(
+            "/v1/investigation-loops/loop-does-not-exist",
+            headers={"X-AgentGuard-Operator-Token": "operator-secret"},
+        )
+        assert resp.status_code == 404
+        assert resp.json()["detail"]["error"] == "LOOP_NOT_FOUND"
+
