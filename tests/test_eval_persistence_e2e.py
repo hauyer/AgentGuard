@@ -5,8 +5,6 @@ the production API is discoverable through the read-only research endpoints.
 """
 
 import json
-import tempfile
-from pathlib import Path
 
 from fastapi.testclient import TestClient
 
