@@ -32,8 +32,8 @@ from agentguard.artifacts.local_store import LocalArtifactStore
 from agentguard.contracts.investigation_loop import InvestigationLoopBudget
 from agentguard.contracts.run_config import InvestigationRunConfig
 from agentguard.memory.store import ExperienceStore
-from agentguard.services.evidence_gateway import EvidenceGateway
 from agentguard.services.evaluation_registry import EvaluationRegistry
+from agentguard.services.evidence_gateway import EvidenceGateway
 from agentguard.services.experiment_index import ExperimentIndexService
 from agentguard.services.interaction_graph import InteractionGraphService
 from agentguard.services.investigation_eval import (
