@@ -87,7 +87,8 @@ def test_ready_kernel_reports_layers_without_promoting_health():
     assert set(checks) == {
         "agentguard_api", "warden_connectivity", "warden_api_compatibility",
         "contract_source", "available_contracts", "model_runtime", "probe_resources",
-        "sae_resources", "audit_execution", "intervention_execution", "evidence_access",
+        "sae_resources", "audit_execution", "live_loop_execution",
+        "intervention_execution", "evidence_access",
     }
     assert checks["agentguard_api"].status == "available"
     assert checks["agentguard_api"].capability_version
@@ -98,6 +99,12 @@ def test_ready_kernel_reports_layers_without_promoting_health():
     assert checks["probe_resources"].status == "available"
     assert checks["sae_resources"].status == "blocked"  # declared but not ready
     assert checks["audit_execution"].status == "available"
+    live_loop = checks["live_loop_execution"]
+    assert live_loop.status == "blocked"
+    assert "WARDEN_REMOTE_SUBMISSION_IDEMPOTENCY_UNSUPPORTED" in live_loop.blockers
+    assert "WARDEN_REMOTE_STATE_NOT_DURABLE" in live_loop.blockers
+    assert "WARDEN_REMOTE_AUTHORIZATION_UNVERIFIED" in live_loop.blockers
+    assert "WARDEN_EVIDENCE_PROVENANCE_UNVERIFIED" in live_loop.blockers
     # Health success never implies an intervention executor exists.
     assert checks["intervention_execution"].status == "unsupported"
     assert "DEP-007" in " ".join(checks["intervention_execution"].blockers)
@@ -113,6 +120,9 @@ def test_unconfigured_warden_reports_unavailable_with_blocker():
     assert "WARDEN_URL_NOT_CONFIGURED" in checks["warden_connectivity"].blockers
     for name in ("model_runtime", "audit_execution", "available_contracts"):
         assert checks[name].status == "unknown"
+    assert checks["live_loop_execution"].status == "blocked"
+    assert "WARDEN_URL_NOT_CONFIGURED" in checks["live_loop_execution"].blockers
+    assert "AGENTGUARD_LOOP_OBSERVATION_DISABLED" in checks["live_loop_execution"].blockers
     assert checks["agentguard_api"].status == "available"
 
 

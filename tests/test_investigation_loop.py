@@ -253,6 +253,35 @@ def test_http_stub_observation_feedback_informs_the_next_decision(tmp_path, monk
     assert submitted["mode"] == "observation"
     assert "scenario_id" not in submitted
     assert "authorization_ref" not in submitted
+    submitted = next(payload for method, path, payload in transport.calls
+                     if method == "POST" and path == "/v1/audit-plans")
+    assert submitted["request_id"] == report.created_audit_request_ids[0]
+
+
+def test_completed_run_without_evidence_refs_blocks_loop_completion(tmp_path):
+    kernel = FakeKernel()
+    kernel.run = {
+        "run_id": "run-loop-without-evidence",
+        "plan_id": "plan-loop-1",
+        "status": "completed",
+        "evidence": {"artifacts": [], "findings": []},
+    }
+    service = _service(tmp_path, kernel=kernel)
+    _seed_workflows(service.workflows)
+
+    report = service.run(
+        "inv-loop", strategy="risk_score",
+        budget=InvestigationLoopBudget(max_actions=9, max_seconds=300),
+    )
+
+    audit_action = next(
+        item for item in report.decisions if item.selected_action == "act-submit-audit"
+    )
+    assert audit_action.result_status == "blocked"
+    assert audit_action.evidence_refs == []
+    assert report.phase == "BLOCKED"
+    assert report.stop_reason == "capability_unavailable"
+    assert any("WARDEN_RESULT_EVIDENCE_MISSING" in item for item in report.limitations)
 
 
 def test_blocked_kernel_stops_with_capability_unavailable(tmp_path):

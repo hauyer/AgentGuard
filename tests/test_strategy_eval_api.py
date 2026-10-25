@@ -29,6 +29,25 @@ def test_evaluation_not_found(tmp_path):
     assert resp.json()["detail"]["error"] == "EVALUATION_NOT_FOUND"
 
 
+def test_missing_evaluation_artifact_returns_410_without_rebuilding(tmp_path):
+    app = _app(tmp_path)
+    app.state.evaluation_registry.register(
+        evaluation_id="eval-missing-artifact",
+        comparison_id="comparison-missing-artifact",
+        report_artifact_id="art-not-present",
+        data_partition="held_out_family",
+        source_commit="abc123",
+        executed_at="2026-10-25T00:00:00+00:00",
+    )
+    with TestClient(app) as client:
+        response = client.get(
+            "/v1/research/strategy-evaluations/eval-missing-artifact",
+        )
+    assert response.status_code == 410
+    assert response.json()["detail"]["error"] == "EVALUATION_ARTIFACT_UNAVAILABLE"
+    assert app.state.evaluation_registry.get("eval-missing-artifact")["report_artifact_id"] == "art-not-present"
+
+
 def test_evaluation_list_pagination(tmp_path):
     """Pagination parameters are accepted."""
     with TestClient(_app(tmp_path)) as client:

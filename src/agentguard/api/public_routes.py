@@ -12,6 +12,68 @@ from agentguard.contracts.experiment_index import ExperimentCompareRequest
 from agentguard.contracts.loop_public import InvestigationLoopCreateRequest
 from agentguard.contracts.warden import WardenAuditRequest, WardenDefenseExecuteRequest
 
+_ERROR_DETAIL_SCHEMA = {
+    "type": "object",
+    "required": ["detail"],
+    "properties": {
+        "detail": {
+            "type": "object",
+            "required": ["error"],
+            "properties": {
+                "error": {"type": "string"},
+                "message": {"type": "string"},
+                "request_id": {"type": "string"},
+            },
+            "additionalProperties": True,
+        },
+    },
+}
+_VALIDATION_DETAIL_SCHEMA = {
+    "type": "object",
+    "required": ["detail"],
+    "properties": {
+        "detail": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "required": ["type", "loc", "msg"],
+                "properties": {
+                    "type": {"type": "string"},
+                    "loc": {"type": "array", "items": {"type": ["string", "integer"]}},
+                    "msg": {"type": "string"},
+                },
+            },
+        },
+    },
+}
+
+
+def _loop_error_response(description: str, *, validation: bool = False) -> dict[str, Any]:
+    schema: dict[str, Any] = _ERROR_DETAIL_SCHEMA
+    if validation:
+        schema = {"oneOf": [_ERROR_DETAIL_SCHEMA, _VALIDATION_DETAIL_SCHEMA]}
+    return {
+        "description": description,
+        "content": {"application/json": {"schema": schema}},
+    }
+
+
+_LOOP_CREATE_RESPONSES = {
+    400: _loop_error_response("Loop registration could not be read; execution did not start."),
+    401: _loop_error_response("Global API token is required when global authentication is enabled."),
+    403: _loop_error_response("A configured Operator or approval credential is required."),
+    404: _loop_error_response("The base investigation does not exist."),
+    409: _loop_error_response("The base investigation is unfinished or the idempotency key conflicts."),
+    422: _loop_error_response(
+        "The idempotency header is missing/blank or the request body is invalid.",
+        validation=True,
+    ),
+    429: _loop_error_response("The configured API request rate limit was exceeded."),
+    500: _loop_error_response("An unexpected API error occurred."),
+    502: _loop_error_response("Loop execution failed."),
+    503: _loop_error_response("The API audit event could not be persisted."),
+}
+
 
 def create_public_router(
     *,
@@ -139,21 +201,37 @@ def create_public_router(
         """
         return get_risk_analysis_handler(request_id, run_id)
 
-    @router.post("/v1/investigation-loops")
+    @router.post("/v1/investigation-loops", responses=_LOOP_CREATE_RESPONSES)
     def create_public_investigation_loop(
         request: InvestigationLoopCreateRequest,
         x_agentguard_operator_token: str | None = Header(
             default=None, alias="X-AgentGuard-Operator-Token",
+            description=("Configured route-level Operator credential. Either this "
+                         "header or a valid X-Approval-Token is required."),
         ),
-        x_approval_token: str | None = Header(default=None, alias="X-Approval-Token"),
-        x_loop_idempotency_key: str | None = Header(
-            default=None, alias="X-Loop-Idempotency-Key",
+        x_approval_token: str | None = Header(
+            default=None, alias="X-Approval-Token",
+            description=("Configured route-level approval credential. Either this "
+                         "header or a valid X-AgentGuard-Operator-Token is required."),
+        ),
+        x_loop_idempotency_key: str = Header(
+            ..., alias="X-Loop-Idempotency-Key",
+            description=("Required stable retry key. The same key and same request "
+                         "returns the existing Loop; changed request fields conflict."),
+        ),
+        x_agentguard_token: str | None = Header(
+            default=None, alias="X-AgentGuard-Token",
+            description=("Conditional global API credential: required when "
+                         "AGENTGUARD_API_TOKEN is configured. Does not grant Loop "
+                         "creation permission."),
         ),
     ) -> dict[str, Any]:
         """Run a multi-round investigation loop (operator/approval credential).
 
-        Reads-only API tokens cannot create loops. Retries with the same
-        ``X-Loop-Idempotency-Key`` and payload return the existing loop.
+        Requires the configured Operator credential or approval token. A plain
+        API token only passes the optional global API gate. The idempotency
+        header is required; retries with the same key and payload return the
+        existing loop.
         """
         return create_loop_handler(
             request,

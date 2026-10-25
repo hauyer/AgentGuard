@@ -538,6 +538,43 @@ def test_uncertain_run_submission_is_never_retried_automatically(tmp_path):
     assert len([call for call in kernel.calls if call[0] == "start_run"]) == 1
 
 
+def test_restart_with_unknown_remote_run_never_resubmits(tmp_path):
+    from agentguard.adapters.warden import WardenKernelError
+    from agentguard.services.warden_workflow_store import WardenWorkflowStore
+
+    database = tmp_path / "warden_workflows.sqlite3"
+    request_value = request()
+
+    class LostRunResponseKernel(FakeKernel):
+        def start_run(self, plan_id):
+            self.calls.append(("start_run", plan_id))
+            raise WardenKernelError("response lost", code="WARDEN_TIMEOUT")
+
+    first_store = WardenWorkflowStore(database)
+    first_kernel = LostRunResponseKernel()
+    with pytest.raises(WardenKernelError):
+        WardenLifecycleService(first_kernel, workflows=first_store).execute(request_value)
+    assert first_store.get(request_value.request_id)["status"] == "submission_uncertain"
+
+    class RestartedKernel(FakeKernel):
+        def get_audit_plan(self, plan_id):
+            self.calls.append(("get_audit_plan", plan_id))
+            raise WardenKernelError(
+                "plan is no longer visible after WARDEN restart",
+                status_code=404,
+                code="WARDEN_NOT_FOUND",
+            )
+
+    restarted_store = WardenWorkflowStore(database)
+    restarted_kernel = RestartedKernel()
+    recovered = WardenLifecycleService(
+        restarted_kernel, workflows=restarted_store,
+    ).execute(request_value)
+    assert recovered["status"] == "reconciliation_required"
+    assert not any(call[0] in {"create_audit_plan", "start_run"}
+                   for call in restarted_kernel.calls)
+
+
 def test_uncertain_run_submission_reconciles_one_matching_warden_run(tmp_path):
     from agentguard.adapters.warden import WardenKernelError
     from agentguard.services.warden_workflow_store import WardenWorkflowStore

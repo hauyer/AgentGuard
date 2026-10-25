@@ -366,6 +366,20 @@ class InvestigationLoopService:
         record = self.observation.execute(config, request_id=request_id)
         state["audit_ids"].append(request_id)
         if record.execution_status == "completed":
+            if not record.run_id:
+                return "blocked", [], [
+                    (
+                        "WARDEN_OPERATION_ID_UNAVAILABLE: WARDEN reported completion "
+                        "without a queryable run ID; the audit was not accepted as a result."
+                    )
+                ]
+            if not record.evidence_refs:
+                return "blocked", [], [
+                    (
+                        "WARDEN_RESULT_EVIDENCE_MISSING: WARDEN reported completion "
+                        "without evidence references; the loop remains blocked."
+                    )
+                ]
             return "completed", list(record.evidence_refs)[:32], []
         if record.execution_status == "blocked":
             return "blocked", [], [

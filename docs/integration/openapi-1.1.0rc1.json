@@ -3978,7 +3978,7 @@
     "/v1/investigation-loops": {
       "post": {
         "summary": "Create Public Investigation Loop",
-        "description": "Run a multi-round investigation loop (operator/approval credential).\n\nReads-only API tokens cannot create loops. Retries with the same\n``X-Loop-Idempotency-Key`` and payload return the existing loop.",
+        "description": "Run a multi-round investigation loop (operator/approval credential).\n\nRequires the configured Operator credential or approval token. A plain\nAPI token only passes the optional global API gate. The idempotency\nheader is required; retries with the same key and payload return the\nexisting loop.",
         "operationId": "create_public_investigation_loop_v1_investigation_loops_post",
         "parameters": [
           {
@@ -3994,8 +3994,10 @@
                   "type": "null"
                 }
               ],
+              "description": "Configured route-level Operator credential. Either this header or a valid X-Approval-Token is required.",
               "title": "X-Agentguard-Operator-Token"
-            }
+            },
+            "description": "Configured route-level Operator credential. Either this header or a valid X-Approval-Token is required."
           },
           {
             "name": "X-Approval-Token",
@@ -4010,11 +4012,24 @@
                   "type": "null"
                 }
               ],
+              "description": "Configured route-level approval credential. Either this header or a valid X-AgentGuard-Operator-Token is required.",
               "title": "X-Approval-Token"
-            }
+            },
+            "description": "Configured route-level approval credential. Either this header or a valid X-AgentGuard-Operator-Token is required."
           },
           {
             "name": "X-Loop-Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "description": "Required stable retry key. The same key and same request returns the existing Loop; changed request fields conflict.",
+              "title": "X-Loop-Idempotency-Key"
+            },
+            "description": "Required stable retry key. The same key and same request returns the existing Loop; changed request fields conflict."
+          },
+          {
+            "name": "X-AgentGuard-Token",
             "in": "header",
             "required": false,
             "schema": {
@@ -4026,8 +4041,10 @@
                   "type": "null"
                 }
               ],
-              "title": "X-Loop-Idempotency-Key"
-            }
+              "description": "Conditional global API credential: required when AGENTGUARD_API_TOKEN is configured. Does not grant Loop creation permission.",
+              "title": "X-Agentguard-Token"
+            },
+            "description": "Conditional global API credential: required when AGENTGUARD_API_TOKEN is configured. Does not grant Loop creation permission."
           }
         ],
         "requestBody": {
@@ -4053,12 +4070,372 @@
               }
             }
           },
-          "422": {
-            "description": "Validation Error",
+          "400": {
+            "description": "Loop registration could not be read; execution did not start.",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "type": "object",
+                  "required": [
+                    "detail"
+                  ],
+                  "properties": {
+                    "detail": {
+                      "type": "object",
+                      "required": [
+                        "error"
+                      ],
+                      "properties": {
+                        "error": {
+                          "type": "string"
+                        },
+                        "message": {
+                          "type": "string"
+                        },
+                        "request_id": {
+                          "type": "string"
+                        }
+                      },
+                      "additionalProperties": true
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Global API token is required when global authentication is enabled.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "detail"
+                  ],
+                  "properties": {
+                    "detail": {
+                      "type": "object",
+                      "required": [
+                        "error"
+                      ],
+                      "properties": {
+                        "error": {
+                          "type": "string"
+                        },
+                        "message": {
+                          "type": "string"
+                        },
+                        "request_id": {
+                          "type": "string"
+                        }
+                      },
+                      "additionalProperties": true
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "A configured Operator or approval credential is required.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "detail"
+                  ],
+                  "properties": {
+                    "detail": {
+                      "type": "object",
+                      "required": [
+                        "error"
+                      ],
+                      "properties": {
+                        "error": {
+                          "type": "string"
+                        },
+                        "message": {
+                          "type": "string"
+                        },
+                        "request_id": {
+                          "type": "string"
+                        }
+                      },
+                      "additionalProperties": true
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The base investigation does not exist.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "detail"
+                  ],
+                  "properties": {
+                    "detail": {
+                      "type": "object",
+                      "required": [
+                        "error"
+                      ],
+                      "properties": {
+                        "error": {
+                          "type": "string"
+                        },
+                        "message": {
+                          "type": "string"
+                        },
+                        "request_id": {
+                          "type": "string"
+                        }
+                      },
+                      "additionalProperties": true
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The base investigation is unfinished or the idempotency key conflicts.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "detail"
+                  ],
+                  "properties": {
+                    "detail": {
+                      "type": "object",
+                      "required": [
+                        "error"
+                      ],
+                      "properties": {
+                        "error": {
+                          "type": "string"
+                        },
+                        "message": {
+                          "type": "string"
+                        },
+                        "request_id": {
+                          "type": "string"
+                        }
+                      },
+                      "additionalProperties": true
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "The idempotency header is missing/blank or the request body is invalid.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "oneOf": [
+                    {
+                      "type": "object",
+                      "required": [
+                        "detail"
+                      ],
+                      "properties": {
+                        "detail": {
+                          "type": "object",
+                          "required": [
+                            "error"
+                          ],
+                          "properties": {
+                            "error": {
+                              "type": "string"
+                            },
+                            "message": {
+                              "type": "string"
+                            },
+                            "request_id": {
+                              "type": "string"
+                            }
+                          },
+                          "additionalProperties": true
+                        }
+                      }
+                    },
+                    {
+                      "type": "object",
+                      "required": [
+                        "detail"
+                      ],
+                      "properties": {
+                        "detail": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "required": [
+                              "type",
+                              "loc",
+                              "msg"
+                            ],
+                            "properties": {
+                              "type": {
+                                "type": "string"
+                              },
+                              "loc": {
+                                "type": "array",
+                                "items": {
+                                  "type": [
+                                    "string",
+                                    "integer"
+                                  ]
+                                }
+                              },
+                              "msg": {
+                                "type": "string"
+                              }
+                            }
+                          }
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "The configured API request rate limit was exceeded.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "detail"
+                  ],
+                  "properties": {
+                    "detail": {
+                      "type": "object",
+                      "required": [
+                        "error"
+                      ],
+                      "properties": {
+                        "error": {
+                          "type": "string"
+                        },
+                        "message": {
+                          "type": "string"
+                        },
+                        "request_id": {
+                          "type": "string"
+                        }
+                      },
+                      "additionalProperties": true
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "An unexpected API error occurred.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "detail"
+                  ],
+                  "properties": {
+                    "detail": {
+                      "type": "object",
+                      "required": [
+                        "error"
+                      ],
+                      "properties": {
+                        "error": {
+                          "type": "string"
+                        },
+                        "message": {
+                          "type": "string"
+                        },
+                        "request_id": {
+                          "type": "string"
+                        }
+                      },
+                      "additionalProperties": true
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "Loop execution failed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "detail"
+                  ],
+                  "properties": {
+                    "detail": {
+                      "type": "object",
+                      "required": [
+                        "error"
+                      ],
+                      "properties": {
+                        "error": {
+                          "type": "string"
+                        },
+                        "message": {
+                          "type": "string"
+                        },
+                        "request_id": {
+                          "type": "string"
+                        }
+                      },
+                      "additionalProperties": true
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "The API audit event could not be persisted.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "detail"
+                  ],
+                  "properties": {
+                    "detail": {
+                      "type": "object",
+                      "required": [
+                        "error"
+                      ],
+                      "properties": {
+                        "error": {
+                          "type": "string"
+                        },
+                        "message": {
+                          "type": "string"
+                        },
+                        "request_id": {
+                          "type": "string"
+                        }
+                      },
+                      "additionalProperties": true
+                    }
+                  }
                 }
               }
             }

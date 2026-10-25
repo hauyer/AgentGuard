@@ -1,7 +1,9 @@
 ﻿"""Contract tests for the public investigation-loop API (E2)."""
 
+import json
 import sqlite3
 import threading
+from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
@@ -105,6 +107,50 @@ def test_post_requires_operator_or_approval_credential(tmp_path, monkeypatch):
     assert wrong.status_code == 401
 
 
+def test_global_api_gate_and_loop_operator_gate_are_composed(tmp_path, monkeypatch):
+    monkeypatch.setenv("AGENTGUARD_API_TOKEN", "api-secret")
+    monkeypatch.setenv("AGENTGUARD_OPERATOR_API_TOKEN", "operator-secret")
+    monkeypatch.setenv("AGENTGUARD_APPROVAL_TOKEN", "approval-secret")
+    app = _seeded_app(tmp_path)
+    with TestClient(app) as client:
+        api_only = client.post(
+            "/v1/investigation-loops", json=PAYLOAD,
+            headers={"X-AgentGuard-Token": "api-secret",
+                     "X-Loop-Idempotency-Key": "k-api-only"},
+        )
+        api_with_approval = client.post(
+            "/v1/investigation-loops", json=PAYLOAD,
+            headers={"X-AgentGuard-Token": "api-secret",
+                     "X-Approval-Token": "approval-secret",
+                     "X-Loop-Idempotency-Key": "k-api-approval"},
+        )
+        operator_only = client.post(
+            "/v1/investigation-loops", json=PAYLOAD,
+            headers={"X-AgentGuard-Operator-Token": "operator-secret",
+                     "X-Loop-Idempotency-Key": "k-operator"},
+        )
+    assert api_only.status_code == 403
+    assert api_only.json()["detail"]["error"] == "LOOP_AUTHORIZATION_REQUIRED"
+    assert api_with_approval.status_code == 200
+    assert operator_only.status_code == 200
+
+
+def test_api_token_is_not_operator_fallback_for_loop_creation(tmp_path, monkeypatch):
+    monkeypatch.setenv("AGENTGUARD_API_TOKEN", "api-secret")
+    monkeypatch.delenv("AGENTGUARD_OPERATOR_API_TOKEN", raising=False)
+    monkeypatch.delenv("AGENTGUARD_APPROVAL_TOKEN", raising=False)
+    app = _seeded_app(tmp_path)
+    with TestClient(app) as client:
+        response = client.post(
+            "/v1/investigation-loops", json=PAYLOAD,
+            headers={"X-AgentGuard-Token": "api-secret",
+                     "X-AgentGuard-Operator-Token": "api-secret",
+                     "X-Loop-Idempotency-Key": "k-no-operator-fallback"},
+        )
+    assert response.status_code == 403
+    assert response.json()["detail"]["error"] == "LOOP_AUTHORIZATION_REQUIRED"
+
+
 def test_post_creates_loop_with_operator_credential(tmp_path, monkeypatch):
     app = _seeded_app(tmp_path, monkeypatch=monkeypatch)
     with TestClient(app) as client:
@@ -161,6 +207,22 @@ def test_conflicting_payload_on_same_key_is_rejected(tmp_path, monkeypatch):
     assert conflict.json()["detail"]["error"] == "LOOP_IDEMPOTENCY_CONFLICT"
 
 
+def test_authorization_reference_participates_in_idempotency_payload(tmp_path, monkeypatch):
+    app = _seeded_app(tmp_path, monkeypatch=monkeypatch)
+    headers = {"X-AgentGuard-Operator-Token": "operator-secret",
+               "X-Loop-Idempotency-Key": "k-auth-ref-conflict"}
+    with TestClient(app) as client:
+        first = client.post("/v1/investigation-loops", json=PAYLOAD, headers=headers)
+        conflict = client.post(
+            "/v1/investigation-loops",
+            json={**PAYLOAD, "authorization_ref": "approval-record-2"},
+            headers=headers,
+        )
+    assert first.status_code == 200
+    assert conflict.status_code == 409
+    assert conflict.json()["detail"]["error"] == "LOOP_IDEMPOTENCY_CONFLICT"
+
+
 def test_unknown_base_and_unfinished_base_are_mapped(tmp_path, monkeypatch):
     app = _seeded_app(tmp_path, monkeypatch=monkeypatch)
     app.state.warden_workflows.begin("inv-running", {"request_id": "inv-running"})
@@ -204,6 +266,15 @@ def test_missing_idempotency_key_returns_422(tmp_path, monkeypatch):
 def test_read_only_family_works_without_credentials(tmp_path, monkeypatch):
     app = _seeded_app(tmp_path, monkeypatch=monkeypatch)
     headers = {"X-AgentGuard-Operator-Token": "operator-secret"}
+    run_calls = 0
+    run = app.state.public_loops.loop.run
+
+    def counted_run(*args, **kwargs):
+        nonlocal run_calls
+        run_calls += 1
+        return run(*args, **kwargs)
+
+    app.state.public_loops.loop.run = counted_run
     with TestClient(app) as client:
         created = client.post(
             "/v1/investigation-loops", json=PAYLOAD,
@@ -225,6 +296,10 @@ def test_read_only_family_works_without_credentials(tmp_path, monkeypatch):
             "/v1/investigation-loops", params={"base_request_id": "inv-loop-api"},
             headers=headers,
         )
+        evaluations = client.get("/v1/research/strategy-evaluations", headers=headers)
+        missing_evaluation = client.get(
+            "/v1/research/strategy-evaluations/eval-not-present", headers=headers,
+        )
     assert view.status_code == 200
     assert view.json()["loop_id"] == loop_id
     assert decisions.status_code == 200
@@ -242,6 +317,9 @@ def test_read_only_family_works_without_credentials(tmp_path, monkeypatch):
     assert budget.json()["budget"]["max_actions"] == 3
     assert listing.status_code == 200
     assert scoped.json()["count"] == 1
+    assert evaluations.status_code == 200
+    assert missing_evaluation.status_code == 404
+    assert run_calls == 1  # all GETs after creation remain read-only
 
 
 def test_decisions_reflect_adaptive_rounds(tmp_path, monkeypatch):
@@ -557,6 +635,32 @@ def test_openapi_registers_loop_routes(tmp_path):
     assert "get" in schema["paths"]["/v1/investigation-loops/{loop_id}/decisions"]
     assert "get" in schema["paths"]["/v1/investigation-loops/{loop_id}/evidence-changes"]
     assert "get" in schema["paths"]["/v1/investigation-loops/{loop_id}/budget"]
+    parameters = schema["paths"]["/v1/investigation-loops"]["post"]["parameters"]
+    by_name = {item["name"]: item for item in parameters}
+    assert {
+        "X-AgentGuard-Token", "X-AgentGuard-Operator-Token",
+        "X-Approval-Token", "X-Loop-Idempotency-Key",
+    } <= by_name.keys()
+    idempotency = next(
+        item for item in parameters
+        if item["name"] == "X-Loop-Idempotency-Key" and item["in"] == "header"
+    )
+    assert idempotency["required"] is True
+    assert "Loop creation permission" in by_name["X-AgentGuard-Token"]["description"]
+    operation = schema["paths"]["/v1/investigation-loops"]["post"]
+    assert {"400", "401", "403", "404", "409", "422", "429", "500", "502", "503"} <= operation["responses"].keys()
+    assert "oneOf" in operation["responses"]["422"]["content"]["application/json"]["schema"]
+    request_schema = schema["components"]["schemas"]["InvestigationLoopCreateRequest"]
+    assert request_schema["properties"]["strategy"]["enum"] == [
+        "fixed_order", "risk_score", "information_value", "experience", "llm",
+    ]
+    assert request_schema["properties"]["max_actions"]["default"] == 8
+    assert request_schema["properties"]["max_actions"]["maximum"] == 100.0
+    assert request_schema["properties"]["max_seconds"]["default"] == 300.0
+    assert request_schema["properties"]["max_model_calls"]["default"] == 4
+    assert request_schema["properties"]["no_new_evidence_rounds"]["default"] == 2
+    snapshot = Path(__file__).resolve().parents[1] / "docs/integration/openapi-1.1.0rc1.json"
+    assert schema == json.loads(snapshot.read_text(encoding="utf-8"))
 
 
 def test_id_semantics_are_strictly_separated(tmp_path, monkeypatch):

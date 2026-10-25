@@ -52,6 +52,26 @@ class PublicInvestigationLoopService:
         self.registry = registry
         self.artifacts = artifacts
 
+    @staticmethod
+    def _request_payload(request: InvestigationLoopCreateRequest) -> dict[str, Any]:
+        """Return every behavior-bearing request field for idempotency checks.
+
+        ``authorization_ref`` is included only when supplied so registrations
+        created by earlier releases with the default ``null`` remain replayable.
+        """
+        payload: dict[str, Any] = {
+            "base_request_id": request.base_request_id,
+            "strategy": request.strategy,
+            "max_actions": request.max_actions,
+            "max_seconds": request.max_seconds,
+            "max_model_calls": request.max_model_calls,
+            "no_new_evidence_rounds": request.no_new_evidence_rounds,
+            "data_partition": request.data_partition,
+        }
+        if request.authorization_ref is not None:
+            payload["authorization_ref"] = request.authorization_ref
+        return payload
+
     # ------------------------------------------------------------------ #
     # creation (authorization enforced by the route, not here)
     # ------------------------------------------------------------------ #
@@ -71,15 +91,7 @@ class PublicInvestigationLoopService:
             max_model_calls=request.max_model_calls,
             no_new_evidence_rounds=request.no_new_evidence_rounds,
         )
-        request_payload = {
-            "base_request_id": request.base_request_id,
-            "strategy": request.strategy,
-            "max_actions": request.max_actions,
-            "max_seconds": request.max_seconds,
-            "max_model_calls": request.max_model_calls,
-            "no_new_evidence_rounds": request.no_new_evidence_rounds,
-            "data_partition": request.data_partition,
-        }
+        request_payload = self._request_payload(request)
         loop_id = f"loop-{request.base_request_id}-{uuid.uuid4().hex[:10]}"
         now = datetime.now(UTC).isoformat()
         report = self.loop.run(
@@ -125,15 +137,7 @@ class PublicInvestigationLoopService:
             raise LoopServiceError("BASE_INVESTIGATION_NOT_FOUND")
         if entry.get("status") not in {"finished", "completed"}:
             raise LoopServiceError("BASE_INVESTIGATION_NOT_FINISHED")
-        request_payload = {
-            "base_request_id": request.base_request_id,
-            "strategy": request.strategy,
-            "max_actions": request.max_actions,
-            "max_seconds": request.max_seconds,
-            "max_model_calls": request.max_model_calls,
-            "no_new_evidence_rounds": request.no_new_evidence_rounds,
-            "data_partition": request.data_partition,
-        }
+        request_payload = self._request_payload(request)
         loop_id = f"loop-{request.base_request_id}-{uuid.uuid4().hex[:10]}"
         now = datetime.now(UTC).isoformat()
         registration, _ = self.registry.register(

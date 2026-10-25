@@ -192,6 +192,18 @@ def create_app(
     async def sanitized_request_validation_error(
         _request: Request, exc: RequestValidationError
     ) -> JSONResponse:
+        if any(
+            error.get("type") == "missing"
+            and error.get("loc") == ("header", "X-Loop-Idempotency-Key")
+            for error in exc.errors()
+        ):
+            return JSONResponse(
+                status_code=422,
+                content={"detail": {
+                    "error": "MISSING_IDEMPOTENCY_KEY",
+                    "message": "X-Loop-Idempotency-Key header is required",
+                }},
+            )
         errors = [
             {
                 "type": str(error.get("type", "validation_error")),
@@ -832,9 +844,7 @@ def create_app(
             default=None, alias="X-AgentGuard-Operator-Token",
         ),
         x_approval_token: str | None = Header(default=None, alias="X-Approval-Token"),
-        x_loop_idempotency_key: str | None = Header(
-            default=None, alias="X-Loop-Idempotency-Key",
-        ),
+        x_loop_idempotency_key: str = Header(..., alias="X-Loop-Idempotency-Key"),
     ) -> dict:
         """Run a multi-round investigation loop over a finished base workflow.
 

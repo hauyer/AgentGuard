@@ -45,6 +45,18 @@ _EVIDENCE_NOTE = (
     "external artifact download remains without a public API (DEP-004)."
 )
 _HEALTH_NOTE = "WARDEN health success never implies audit or intervention executability."
+_LIVE_LOOP_GATE_BLOCKERS = (
+    "AGENTGUARD_LOOP_OBSERVATION_DISABLED",
+    "WARDEN_REMOTE_SUBMISSION_IDEMPOTENCY_UNSUPPORTED",
+    "WARDEN_REMOTE_STATE_NOT_DURABLE",
+    "WARDEN_REMOTE_AUTHORIZATION_UNVERIFIED",
+    "WARDEN_EVIDENCE_PROVENANCE_UNVERIFIED",
+)
+_LIVE_LOOP_NOTE = (
+    "Live investigation loops remain blocked: the loop has no observation adapter, "
+    "and the reviewed WARDEN v1 API lacks remote submission idempotency, durable "
+    "run state, verifiable remote authorization, and verifiable evidence provenance."
+)
 
 
 def client_from_env() -> tuple[WardenKernelClient | None, str | None]:
@@ -226,6 +238,34 @@ class SystemReadinessService:
                 diagnostics={"reference_mode": "causal_audit"},
             ))
 
+        live_loop_blockers = list(_LIVE_LOOP_GATE_BLOCKERS)
+        if status in {"not_configured", "unavailable"}:
+            live_loop_blockers.extend(
+                str(item) for item in diagnosis.get("blockers", [])
+                if str(item) in {
+                    "WARDEN_URL_NOT_CONFIGURED", "WARDEN_CONFIGURATION_ERROR",
+                    "WARDEN_UNREACHABLE", "WARDEN_TIMEOUT", "WARDEN_TRANSPORT_ERROR",
+                }
+            )
+        elif diagnosis.get("kernel_status") != "ok":
+            live_loop_blockers.append("WARDEN_HEALTH_NOT_OK")
+        if diagnosis.get("api_compatible") is not True and status not in {"not_configured", "unavailable"}:
+            live_loop_blockers.append("WARDEN_API_VERSION_INCOMPATIBLE")
+        checks.append(ReadinessCheck(
+            name="live_loop_execution", status="blocked",
+            last_checked_at=cache.generated_at,
+            source="agentguard:warden_live_gate",
+            blockers=list(dict.fromkeys(live_loop_blockers)),
+            diagnostics={
+                "observation_adapter": "disabled",
+                "remote_submission_idempotency": "unsupported",
+                "remote_run_state_after_restart": "unsupported",
+                "remote_authorization": "unverified",
+                "evidence_provenance": "unverified",
+            },
+            capability_version="AgentGuard I5 gate / WARDEN v1",
+        ))
+
         intervention = self._intervention_status(diagnosis)
         checks.append(warden_check(
             "intervention_execution", intervention["status"],
@@ -242,7 +282,7 @@ class SystemReadinessService:
         ))
         return SystemReadinessResponse(
             checks=checks, generated_at=cache.generated_at, cache=cache,
-            limitations=[_HEALTH_NOTE, _INTERVENTION_NOTE, _EVIDENCE_NOTE],
+            limitations=[_HEALTH_NOTE, _INTERVENTION_NOTE, _EVIDENCE_NOTE, _LIVE_LOOP_NOTE],
         )
 
     @staticmethod
