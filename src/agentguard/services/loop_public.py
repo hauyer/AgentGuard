@@ -103,6 +103,7 @@ class PublicInvestigationLoopService:
         self.registry.update_outcome(
             loop_id, phase=report.phase, stop_reason=report.stop_reason,
             report_artifact_id=report.report_artifact_id or "",
+            execution_state="finished",
             updated_at=datetime.now(UTC).isoformat(),
         )
         return self.get_view(loop_id)
@@ -135,7 +136,7 @@ class PublicInvestigationLoopService:
         }
         loop_id = f"loop-{request.base_request_id}-{uuid.uuid4().hex[:10]}"
         now = datetime.now(UTC).isoformat()
-        registration, created = self.registry.register(
+        registration, _ = self.registry.register(
             loop_id=loop_id,
             idempotency_key=idempotency_key,
             base_request_id=request.base_request_id,
@@ -146,8 +147,48 @@ class PublicInvestigationLoopService:
             report_artifact_id="pending",
             created_at=now,
         )
-        if not created:
-            return self.get_view(registration["loop_id"])
+
+        # The key lock spans the entire execution. If another process owns it,
+        # return its durable state without starting a duplicate loop.
+        with self.loop.workflows.execution_lock(
+            f"public-investigation-loop:{idempotency_key}"
+        ) as acquired:
+            if not acquired:
+                return self.get_view(registration["loop_id"])
+
+            current = self.registry.get(registration["loop_id"])
+            if current is None:
+                raise LoopServiceError("LOOP_REGISTRATION_LOST")
+            execution_state = current["execution_state"]
+            if execution_state == "finished":
+                return self.get_view(registration["loop_id"])
+            if execution_state in {"running", "unknown"}:
+                # A prior process may have spent budget or submitted an audit.
+                # Keep the outcome unknown and require reconciliation; never
+                # infer completion or submit the action again.
+                self.registry.update_outcome(
+                    registration["loop_id"], phase="BLOCKED",
+                    stop_reason="reconciliation_required",
+                    report_artifact_id="pending",
+                    execution_state="unknown",
+                    updated_at=datetime.now(UTC).isoformat(),
+                )
+                return self.get_view(registration["loop_id"])
+            if execution_state != "not_started":
+                return self.get_view(registration["loop_id"])
+
+            # This durable marker separates a never-started registration from
+            # a process that may have been interrupted mid-run.
+            self.registry.update_outcome(
+                registration["loop_id"], phase="RUNNING", stop_reason=None,
+                report_artifact_id="pending", execution_state="running",
+                updated_at=datetime.now(UTC).isoformat(),
+            )
+            return self._run_registered_loop(registration["loop_id"], request)
+
+    def _run_registered_loop(
+        self, loop_id: str, request: InvestigationLoopCreateRequest,
+    ) -> dict[str, Any]:
         budget = InvestigationLoopBudget(
             max_actions=request.max_actions,
             max_seconds=request.max_seconds,
@@ -161,18 +202,21 @@ class PublicInvestigationLoopService:
         except InvestigationLoopError as exc:
             self.registry.update_outcome(
                 loop_id, phase="BLOCKED", stop_reason="execution_error",
-                report_artifact_id="failed", updated_at=datetime.now(UTC).isoformat(),
+                report_artifact_id="failed", execution_state="failed",
+                updated_at=datetime.now(UTC).isoformat(),
             )
             raise LoopServiceError("LOOP_EXECUTION_FAILED") from exc
         except Exception as exc:
             self.registry.update_outcome(
                 loop_id, phase="BLOCKED", stop_reason="execution_error",
-                report_artifact_id="failed", updated_at=datetime.now(UTC).isoformat(),
+                report_artifact_id="failed", execution_state="failed",
+                updated_at=datetime.now(UTC).isoformat(),
             )
             raise LoopServiceError("LOOP_EXECUTION_FAILED") from exc
         self.registry.update_outcome(
             loop_id, phase=report.phase, stop_reason=report.stop_reason,
             report_artifact_id=report.report_artifact_id or "",
+            execution_state="finished",
             updated_at=datetime.now(UTC).isoformat(),
         )
         return self.get_view(loop_id)
@@ -201,6 +245,12 @@ class PublicInvestigationLoopService:
             view.budget = report.budget.model_dump(mode="json")
             view.metrics = report.metrics.model_dump(mode="json")
             view.limitations = list(report.limitations)
+        elif registration["stop_reason"] == "reconciliation_required":
+            view.limitations = [
+                ("A prior process stopped while this loop was running. Action "
+                 "outcome and consumed budget are unknown; the request was not "
+                 "replayed and requires reconciliation.")
+            ]
         else:
             view.limitations = [
                 ("The loop report artifact is not available; only registry "
@@ -268,7 +318,8 @@ class PublicInvestigationLoopService:
         report = self._load_report(registration["report_artifact_id"])
         if report is None:
             return LoopBudgetResponse(
-                loop_id=loop_id, remaining={},
+                loop_id=loop_id,
+                remaining={"actions": None, "model_calls": None, "seconds": None},
             ).model_dump(mode="json")
         remaining: dict[str, float | int | None] = {
             "actions": max(

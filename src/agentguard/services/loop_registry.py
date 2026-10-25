@@ -30,9 +30,21 @@ class InvestigationLoopRegistry:
                 stop_reason TEXT,
                 request_hash TEXT NOT NULL,
                 report_artifact_id TEXT NOT NULL,
+                execution_state TEXT NOT NULL DEFAULT 'unknown',
                 created_at TEXT NOT NULL,
                 updated_at TEXT NOT NULL
             )""")
+            columns = {
+                row["name"]
+                for row in db.execute("PRAGMA table_info(investigation_loops)")
+            }
+            if "execution_state" not in columns:
+                # Legacy CREATED/pending rows may already have executed actions.
+                # Keep their state unknown so recovery never repeats them blindly.
+                db.execute(
+                    "ALTER TABLE investigation_loops ADD COLUMN "
+                    "execution_state TEXT NOT NULL DEFAULT 'unknown'"
+                )
             db.execute(
                 "CREATE INDEX IF NOT EXISTS idx_loops_base "
                 "ON investigation_loops(base_request_id, created_at)"
@@ -77,8 +89,8 @@ class InvestigationLoopRegistry:
                 db.execute(
                     "INSERT INTO investigation_loops (loop_id, idempotency_key, "
                     "base_request_id, strategy, phase, stop_reason, request_hash, "
-                    "report_artifact_id, created_at, updated_at) "
-                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                    "report_artifact_id, execution_state, created_at, updated_at) "
+                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'not_started', ?, ?)",
                     (loop_id, idempotency_key, base_request_id, strategy, phase,
                      stop_reason, request_hash, report_artifact_id,
                      created_at, created_at),
@@ -104,12 +116,15 @@ class InvestigationLoopRegistry:
     def update_outcome(
         self, loop_id: str, *, phase: str, stop_reason: str | None,
         report_artifact_id: str, updated_at: str,
+        execution_state: str | None = None,
     ) -> None:
         with self.workflows._connect() as db:
             db.execute(
                 "UPDATE investigation_loops SET phase=?, stop_reason=?, "
-                "report_artifact_id=?, updated_at=? WHERE loop_id=?",
-                (phase, stop_reason, report_artifact_id, updated_at, loop_id),
+                "report_artifact_id=?, execution_state=COALESCE(?, execution_state), "
+                "updated_at=? WHERE loop_id=?",
+                (phase, stop_reason, report_artifact_id, execution_state,
+                 updated_at, loop_id),
             )
 
     def get(self, loop_id: str) -> dict[str, Any] | None:
@@ -153,6 +168,7 @@ class InvestigationLoopRegistry:
             "phase": row["phase"],
             "stop_reason": row["stop_reason"],
             "report_artifact_id": row["report_artifact_id"],
+            "execution_state": row["execution_state"],
             "created_at": row["created_at"],
             "updated_at": row["updated_at"],
         }

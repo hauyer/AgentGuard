@@ -16,7 +16,7 @@ from collections.abc import Iterator, Mapping
 from contextlib import contextmanager
 from datetime import UTC, datetime
 from pathlib import Path
-from threading import RLock
+from threading import Lock, RLock
 from typing import Any
 
 from agentguard.services.workflow_state import (
@@ -29,6 +29,10 @@ from agentguard.services.workflow_state import (
 
 class WorkflowConflictError(ValueError):
     """A request ID was reused for a different canonical request payload."""
+
+
+_PROCESS_EXECUTION_LOCKS: dict[str, Lock] = {}
+_PROCESS_EXECUTION_LOCKS_GUARD = Lock()
 
 
 class WardenWorkflowStore:
@@ -63,37 +67,46 @@ class WardenWorkflowStore:
         directory = self.path.parent / (self.path.name + ".locks")
         directory.mkdir(parents=True, exist_ok=True)
         path = directory / hashlib.sha256(request_id.encode("utf-8")).hexdigest()
-        with path.open("a+b") as handle:
-            if path.stat().st_size == 0:
-                handle.write(b"\0")
-                handle.flush()
-            handle.seek(0)
-            try:
-                if os.name == "nt":
-                    import msvcrt
-
-                    msvcrt.locking(handle.fileno(), msvcrt.LK_NBLCK, 1)
-                else:
-                    import fcntl
-
-                    fcntl.flock(handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
-            except OSError as exc:
-                if exc.errno not in {errno.EACCES, errno.EAGAIN}:
-                    raise
-                yield False
-                return
-            try:
-                yield True
-            finally:
+        lock_key = str(path.resolve())
+        with _PROCESS_EXECUTION_LOCKS_GUARD:
+            process_lock = _PROCESS_EXECUTION_LOCKS.setdefault(lock_key, Lock())
+        if not process_lock.acquire(blocking=False):
+            yield False
+            return
+        try:
+            with path.open("a+b") as handle:
+                if path.stat().st_size == 0:
+                    handle.write(b"\0")
+                    handle.flush()
                 handle.seek(0)
-                if os.name == "nt":
-                    import msvcrt
+                try:
+                    if os.name == "nt":
+                        import msvcrt
 
-                    msvcrt.locking(handle.fileno(), msvcrt.LK_UNLCK, 1)
-                else:
-                    import fcntl
+                        msvcrt.locking(handle.fileno(), msvcrt.LK_NBLCK, 1)
+                    else:
+                        import fcntl
 
-                    fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
+                        fcntl.flock(handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+                except OSError as exc:
+                    if exc.errno not in {errno.EACCES, errno.EAGAIN}:
+                        raise
+                    yield False
+                    return
+                try:
+                    yield True
+                finally:
+                    handle.seek(0)
+                    if os.name == "nt":
+                        import msvcrt
+
+                        msvcrt.locking(handle.fileno(), msvcrt.LK_UNLCK, 1)
+                    else:
+                        import fcntl
+
+                        fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
+        finally:
+            process_lock.release()
 
     def _initialize(self) -> None:
         with self._connect() as db:
