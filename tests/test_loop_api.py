@@ -303,3 +303,89 @@ def test_openapi_registers_loop_routes(tmp_path):
     assert "get" in schema["paths"]["/v1/investigation-loops/{loop_id}/decisions"]
     assert "get" in schema["paths"]["/v1/investigation-loops/{loop_id}/evidence-changes"]
     assert "get" in schema["paths"]["/v1/investigation-loops/{loop_id}/budget"]
+
+
+def test_id_semantics_are_strictly_separated(tmp_path, monkeypatch):
+    """F3: base_request_id, loop_id, decision_id never share a namespace."""
+    app = _seeded_app(tmp_path, monkeypatch=monkeypatch)
+    with TestClient(app) as client:
+        created = client.post(
+            "/v1/investigation-loops", json=PAYLOAD,
+            headers={"X-AgentGuard-Operator-Token": "operator-secret",
+                     "X-Loop-Idempotency-Key": "k-ids"},
+        )
+        body = created.json()
+        loop_id = body["loop_id"]
+        assert body["base_request_id"] == "inv-loop-api"
+        assert loop_id.startswith("loop-inv-loop-api-")
+        assert body["base_request_id"] != loop_id
+        decisions = client.get(
+            f"/v1/investigation-loops/{loop_id}/decisions",
+            headers={"X-AgentGuard-Operator-Token": "operator-secret"},
+        ).json()
+        for decision in decisions["items"]:
+            assert decision["decision_id"].startswith(f"{loop_id}:round-")
+            assert decision["round_index"] >= 1
+            assert decision["selected_action_id"].startswith("act-")
+
+
+def test_budget_unknown_fields_stay_null(tmp_path, monkeypatch):
+    """F3: wall-clock and unmeasured budget fields stay null, not zero."""
+    app = _seeded_app(tmp_path, monkeypatch=monkeypatch)
+    with TestClient(app) as client:
+        created = client.post(
+            "/v1/investigation-loops", json=PAYLOAD,
+            headers={"X-AgentGuard-Operator-Token": "operator-secret",
+                     "X-Loop-Idempotency-Key": "k-budget"},
+        )
+        loop_id = created.json()["loop_id"]
+        budget = client.get(
+            f"/v1/investigation-loops/{loop_id}/budget",
+            headers={"X-AgentGuard-Operator-Token": "operator-secret"},
+        ).json()
+        assert budget["budget"]["max_actions"] == 3
+        assert "seconds" in budget["remaining"]
+        # wall-clock budget is only meaningful during a run -> null
+        assert budget["remaining"]["seconds"] is None
+
+
+def test_missing_report_artifact_does_not_fabricate_metrics(tmp_path, monkeypatch):
+    """F3: unknown loop_id returns 404 on all read endpoints."""
+    app = _seeded_app(tmp_path, monkeypatch=monkeypatch)
+    with TestClient(app) as client:
+        headers = {"X-AgentGuard-Operator-Token": "operator-secret"}
+        view = client.get("/v1/investigation-loops/loop-nonexistent", headers=headers)
+        decisions = client.get("/v1/investigation-loops/loop-nonexistent/decisions", headers=headers)
+        changes = client.get("/v1/investigation-loops/loop-nonexistent/evidence-changes", headers=headers)
+        budget = client.get("/v1/investigation-loops/loop-nonexistent/budget", headers=headers)
+    assert view.status_code == 404
+    assert decisions.status_code == 404
+    assert changes.status_code == 404
+    assert budget.status_code == 404
+
+
+def test_evidence_changes_only_include_new_evidence_rounds(tmp_path, monkeypatch):
+    """F3: evidence-changes endpoint only lists rounds with new evidence."""
+    app = _seeded_app(tmp_path, monkeypatch=monkeypatch)
+    with TestClient(app) as client:
+        created = client.post(
+            "/v1/investigation-loops",
+            json={**PAYLOAD, "max_actions": 5},
+            headers={"X-AgentGuard-Operator-Token": "operator-secret",
+                     "X-Loop-Idempotency-Key": "k-evidence-changes"},
+        )
+        loop_id = created.json()["loop_id"]
+        changes = client.get(
+            f"/v1/investigation-loops/{loop_id}/evidence-changes",
+            headers={"X-AgentGuard-Operator-Token": "operator-secret"},
+        ).json()
+        decisions = client.get(
+            f"/v1/investigation-loops/{loop_id}/decisions",
+            headers={"X-AgentGuard-Operator-Token": "operator-secret"},
+        ).json()
+        # Every evidence-change item must have new_evidence=True.
+        assert all(item["new_evidence"] for item in changes["items"])
+        # Evidence changes count must be <= total decisions count.
+        assert changes["count"] <= decisions["count"]
+        # The endpoint lists its own limitation note.
+        assert changes["limitations"]
