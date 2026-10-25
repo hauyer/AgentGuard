@@ -128,7 +128,16 @@ def test_e2e_duplicate_id_same_content_is_idempotent(tmp_path):
     registry.register(**kwargs)
     # Second registration with same content should not raise
     registry.register(**kwargs)
-    assert registry.get("eval-dup-001") is not None
+    assert registry.get("eval-dup-001") == {
+        "evaluation_id": "eval-dup-001",
+        "comparison_id": "comparison-dup",
+        "report_artifact_id": "art-xxx",
+        "data_partition": "held_out_family",
+        "source_commit": "abc123",
+        "executed_at": "2026-10-25T00:00:00+00:00",
+        "status": "available",
+    }
+    assert registry.list(limit=10) == [registry.get("eval-dup-001")]
 
 
 def test_i2_detail_response_includes_index_artifact_id(tmp_path):

@@ -1,5 +1,7 @@
 """Contract tests for controlled investigation-strategy evaluation (D5)."""
 
+import json
+
 from agentguard.artifacts.local_store import LocalArtifactStore
 from agentguard.contracts.investigation_eval import StrategyComparisonReport
 from agentguard.contracts.investigation_loop import InvestigationLoopBudget
@@ -100,6 +102,15 @@ def test_aggregates_include_failures_and_degradations(tmp_path):
     failed = [r for r in report.runs if r.strategy == "information_value"]
     assert all(r.execution_status == "failed" for r in failed)
     assert all("loop raised" in note for r in failed for note in r.limitations)
+    assert report.report_artifact_id
+    persisted = json.loads(artifacts.get_bytes(report.report_artifact_id))
+    assert len(persisted["runs"]) == 4
+    assert [run["execution_status"] for run in persisted["runs"]] == [
+        "completed", "completed", "failed", "failed",
+    ]
+    assert persisted["aggregates"] == [
+        aggregate.model_dump(mode="json") for aggregate in report.aggregates
+    ]
 
 
 def test_single_repetition_flags_missing_dispersion(tmp_path):

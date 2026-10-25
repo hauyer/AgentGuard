@@ -1,4 +1,4 @@
-"""I1: End-to-end test for CLI -> persistence -> API evaluation visibility.
+"""End-to-end persistence checks using synthetic journal data (no live model).
 
 Runs the actual run_investigation_eval.py script as a subprocess, then
 verifies that the resulting evaluation is discoverable through the public API.
@@ -12,6 +12,7 @@ from pathlib import Path
 from fastapi.testclient import TestClient
 
 from agentguard.api.app import create_app
+from agentguard.artifacts.local_store import LocalArtifactStore
 from agentguard.services.warden_workflow_store import WardenWorkflowStore
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
@@ -91,31 +92,44 @@ def test_cli_to_api_evaluation_persistence(tmp_path):
         resp = client.get("/v1/research/strategy-evaluations")
     assert resp.status_code == 200
     body = resp.json()
-    assert body["count"] >= 1, f"No evaluations found: {body}"
+    assert body["count"] == 1, f"Expected one CLI evaluation: {body}"
 
-    # 6. Query the first evaluation detail
-    evaluation_id = body["items"][0]["evaluation_id"]
+    # 6. Query the evaluation created by the CLI
+    index_entry = body["items"][0]
+    evaluation_id = index_entry["evaluation_id"]
     with TestClient(app) as client:
         resp = client.get(f"/v1/research/strategy-evaluations/{evaluation_id}")
     assert resp.status_code == 200
     detail = resp.json()
 
-    # Verify all required fields are present and consistent
-    assert detail["data_partition"] == "test"
-    assert "comparison_id" in detail
-    assert "strategies" in detail
-    assert "repetitions" in detail
-    assert "runs" in detail
-    assert "aggregates" in detail
-    assert "source_commit" in detail
-    assert "report_artifact_id" in detail
+    # Read the exact content-addressed artifact produced by this CLI execution.
+    artifact_id = index_entry["report_artifact_id"]
+    assert artifact_id in report_content
+    report_payload = json.loads(
+        LocalArtifactStore(data_dir / "artifacts").get_bytes(artifact_id)
+    )
 
-    # Verify the evaluation_id matches what we expect
-    assert evaluation_id.startswith("eval-")
-    assert detail["comparison_id"] == evaluation_id.removeprefix("eval-")
-
-    # Verify runs count matches repetitions
-    assert len(detail["runs"]) >= 1
+    # The index, API detail, and artifact must all refer to this one execution.
+    assert evaluation_id == f"eval-{report_payload['comparison_id']}"
+    assert detail["comparison_id"] == report_payload["comparison_id"]
+    assert detail["data_partition"] == report_payload["data_partition"] == "test"
+    assert detail["source_commit"] == report_payload["source_commit"]
+    assert detail["strategies"] == report_payload["strategies"] == ["fixed_order"]
+    assert detail["repetitions"] == report_payload["repetitions"] == 1
+    assert detail["runs"] == report_payload["runs"]
+    assert detail["aggregates"] == report_payload["aggregates"]
+    assert report_payload["base_request_ids"] == [request_id]
+    assert len(detail["runs"]) == 1
+    assert detail["runs"][0]["strategy"] == "fixed_order"
+    assert detail["runs"][0]["base_request_id"] == request_id
+    assert detail["runs"][0]["repetition"] == 1
+    assert detail["report_artifact_id"] == artifact_id
+    assert index_entry["evaluation_id"] == evaluation_id
+    assert index_entry["comparison_id"] == report_payload["comparison_id"]
+    assert index_entry["data_partition"] == report_payload["data_partition"]
+    assert index_entry["source_commit"] == report_payload["source_commit"]
+    assert index_entry["report_artifact_id"] == artifact_id
+    assert manifest["cases"][0]["source_kind"] == "synthetic"
 
 
 def test_cli_no_input_returns_error(tmp_path):
@@ -157,3 +171,114 @@ def test_cli_no_input_returns_error(tmp_path):
 
     # CLI should exit with non-zero code when no valid base requests
     assert result.returncode != 0
+    assert "MISSING" in result.stdout
+    assert not (tmp_path / "report.md").exists()
+
+
+def test_cli_rejects_missing_and_malformed_manifests(tmp_path):
+    """Missing and invalid JSON manifests fail before an evaluation is written."""
+    data_dir = tmp_path / "data"
+    data_dir.mkdir()
+    report_path = tmp_path / "report.md"
+    missing_manifest = tmp_path / "missing.json"
+    malformed_manifest = tmp_path / "malformed.json"
+    malformed_manifest.write_text("{not valid json", encoding="utf-8")
+
+    for manifest_path in (missing_manifest, malformed_manifest):
+        result = subprocess.run(
+            [
+                sys.executable,
+                str(PROJECT_ROOT / "scripts" / "run_investigation_eval.py"),
+                "--data-dir", str(data_dir),
+                "--dataset-manifest", str(manifest_path),
+                "--strategies", "fixed_order",
+                "--repetitions", "1",
+                "--partition", "test",
+                "--out", str(report_path),
+            ],
+            check=False,
+            capture_output=True,
+            text=True,
+            cwd=str(PROJECT_ROOT),
+            timeout=30,
+        )
+        assert result.returncode != 0
+        assert not report_path.exists()
+
+
+def test_cli_rejects_incomplete_base_investigation(tmp_path):
+    """A journal record that has not completed is not used as a test case."""
+    data_dir = tmp_path / "data"
+    data_dir.mkdir()
+    workflows = WardenWorkflowStore(data_dir / "warden_workflows.sqlite3")
+    request_id = "e2e-incomplete-base"
+    workflows.begin(request_id, {
+        "request_id": request_id,
+        "contract_id": "test-contract",
+        "model_id": "test-model",
+        "runtime_id": "test-runtime",
+        "mode": "observation",
+        "scenario_id": "synthetic-test-scenario",
+    })
+    manifest_path = tmp_path / "manifest.json"
+    manifest_path.write_text(json.dumps({
+        "dataset_name": "synthetic-incomplete-case",
+        "data_partition": "test",
+        "cases": [{
+            "case_id": "case-incomplete",
+            "base_request_id": request_id,
+            "source_kind": "synthetic",
+        }],
+    }), encoding="utf-8")
+    report_path = tmp_path / "report.md"
+
+    result = subprocess.run(
+        [
+            sys.executable,
+            str(PROJECT_ROOT / "scripts" / "run_investigation_eval.py"),
+            "--data-dir", str(data_dir),
+            "--dataset-manifest", str(manifest_path),
+            "--strategies", "fixed_order",
+            "--repetitions", "1",
+            "--partition", "test",
+            "--out", str(report_path),
+        ],
+        check=False,
+        capture_output=True,
+        text=True,
+        cwd=str(PROJECT_ROOT),
+        timeout=30,
+    )
+
+    assert result.returncode == 3
+    assert "INCOMPLETE" in result.stdout
+    assert not report_path.exists()
+
+
+def test_cli_rejects_unusable_data_directory(tmp_path):
+    """A file where the persistent data directory should be fails closed."""
+    data_dir = tmp_path / "not-a-directory"
+    data_dir.write_text("occupied", encoding="utf-8")
+    manifest_path = tmp_path / "manifest.json"
+    manifest_path.write_text(json.dumps({"cases": []}), encoding="utf-8")
+    report_path = tmp_path / "report.md"
+
+    result = subprocess.run(
+        [
+            sys.executable,
+            str(PROJECT_ROOT / "scripts" / "run_investigation_eval.py"),
+            "--data-dir", str(data_dir),
+            "--dataset-manifest", str(manifest_path),
+            "--strategies", "fixed_order",
+            "--repetitions", "1",
+            "--out", str(report_path),
+        ],
+        check=False,
+        capture_output=True,
+        text=True,
+        cwd=str(PROJECT_ROOT),
+        timeout=30,
+    )
+
+    assert result.returncode != 0
+    assert not report_path.exists()
