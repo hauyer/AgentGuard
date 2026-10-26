@@ -102,7 +102,11 @@ class FakeKernel:
 
     def get_audit_plan(self, plan_id):
         self.calls.append(("get_audit_plan", plan_id))
-        return {"plan_id": plan_id, "request": request().to_warden_payload()}
+        return {
+            **dict(self.plan),
+            "plan_id": plan_id,
+            "request": request().to_warden_payload(),
+        }
 
 
 def request(**overrides):
@@ -236,7 +240,15 @@ def test_journaled_unknown_plan_status_is_reconciled_without_resubmission(tmp_pa
 
         def get_audit_plan(self, plan_id):
             self.calls.append(("get_audit_plan", plan_id))
-            return {"plan_id": plan_id, "status": self.remote_plan_status}
+            return {
+                "plan_id": plan_id,
+                "status": self.remote_plan_status,
+                "request": request().to_warden_payload(),
+            }
+
+        def list_runs(self):
+            self.calls.append(("list_runs",))
+            return [dict(self.initial_run)] if self.remote_plan_status == "planned" else []
 
     kernel = UnknownPlanKernel()
     journal = WardenWorkflowStore(tmp_path / "warden_workflows.sqlite3")
@@ -258,7 +270,8 @@ def test_journaled_unknown_plan_status_is_reconciled_without_resubmission(tmp_pa
     assert reconciled["status"] == "completed"
     assert journal.get("req-1")["status"] == "finished"
     assert len([call for call in kernel.calls if call[0] == "create_audit_plan"]) == 1
-    assert len([call for call in kernel.calls if call[0] == "start_run"]) == 1
+    assert len([call for call in kernel.calls if call[0] == "start_run"]) == 0
+    assert len([call for call in kernel.calls if call[0] == "get_run"]) == 1
 
 
 def test_unknown_journal_without_remote_id_never_resubmits(tmp_path):
@@ -949,3 +962,81 @@ def test_non_waiting_workflow_rechecks_same_active_run_on_retry(tmp_path):
     assert second["recovered"] is True
     assert len([call for call in kernel.calls if call[0] == "start_run"]) == 1
     assert len([call for call in kernel.calls if call[0] == "get_run"]) == 1
+
+
+def test_operator_reconciliation_queries_known_run_without_any_submission(tmp_path):
+    from agentguard.services.warden_workflow_store import WardenWorkflowStore
+
+    journal = WardenWorkflowStore(tmp_path / "reconcile.sqlite3")
+    value = request()
+    journal.begin(value.request_id, value.model_dump(mode="json"))
+    journal.update(value.request_id, "preflighting")
+    journal.update(value.request_id, "plan_submitting")
+    journal.update(value.request_id, "plan_created", context={
+        "plan": {"plan_id": "plan-1"}, "preflight": {"status": "ready", "blockers": []},
+    })
+    journal.update(value.request_id, "run_submitting")
+    journal.update(value.request_id, "run_submitted", context={
+        "plan": {"plan_id": "plan-1"},
+        "run": {"run_id": "run-1", "plan_id": "plan-1", "status": "running"},
+    })
+    kernel = FakeKernel(run={
+        "run_id": "run-1", "plan_id": "plan-1", "status": "completed",
+        "evidence_refs": ["artifact://observed"],
+    })
+
+    result = WardenLifecycleService(kernel, workflows=journal).reconcile_existing(value.request_id)
+
+    assert result["status"] == "completed"
+    assert result["reconciled"] is True
+    assert journal.get(value.request_id)["status"] == "finished"
+    assert [call[0] for call in kernel.calls] == ["get_run"]
+
+
+def test_query_only_reconciliation_never_starts_a_run_from_a_planned_plan(tmp_path):
+    from agentguard.services.warden_workflow_store import WardenWorkflowStore
+
+    journal = WardenWorkflowStore(tmp_path / "planned.sqlite3")
+    value = request()
+    journal.begin(value.request_id, value.model_dump(mode="json"))
+    journal.update(value.request_id, "plan_created", context={
+        "plan": {"plan_id": "plan-1"},
+    })
+    kernel = FakeKernel()
+
+    result = WardenLifecycleService(kernel, workflows=journal).reconcile_existing(value.request_id)
+
+    assert result["status"] == "reconciliation_required"
+    assert "WARDEN_RUN_NOT_FOUND" in result["blockers"]
+    assert journal.get(value.request_id)["status"] == "plan_created"
+    assert [call[0] for call in kernel.calls] == ["get_audit_plan", "list_runs"]
+
+
+def test_unavailable_known_run_stays_unknown_and_is_not_resubmitted(tmp_path):
+    from agentguard.adapters.warden import WardenKernelError
+    from agentguard.services.warden_workflow_store import WardenWorkflowStore
+
+    journal = WardenWorkflowStore(tmp_path / "unknown-run.sqlite3")
+    value = request()
+    journal.begin(value.request_id, value.model_dump(mode="json"))
+    journal.update(value.request_id, "preflighting")
+    journal.update(value.request_id, "plan_submitting")
+    journal.update(value.request_id, "plan_created", context={"plan": {"plan_id": "plan-1"}})
+    journal.update(value.request_id, "run_submitting")
+    journal.update(value.request_id, "run_submitted", context={"plan": {"plan_id": "plan-1"},
+        "run": {"run_id": "run-1", "plan_id": "plan-1", "status": "running"}})
+    journal.update(value.request_id, "unknown", context={
+        "plan": {"plan_id": "plan-1"},
+        "run": {"run_id": "run-1", "plan_id": "plan-1", "status": "mystery"},
+    })
+
+    class MissingRun(FakeKernel):
+        def get_run(self, run_id):
+            self.calls.append(("get_run", run_id))
+            raise WardenKernelError("not found", status_code=404, code="WARDEN_HTTP_ERROR")
+
+    kernel = MissingRun()
+    result = WardenLifecycleService(kernel, workflows=journal).reconcile_existing(value.request_id)
+    assert result["status"] == "reconciliation_required"
+    assert journal.get(value.request_id)["status"] == "unknown"
+    assert [call[0] for call in kernel.calls] == ["get_run"]

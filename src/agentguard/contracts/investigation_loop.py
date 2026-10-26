@@ -97,6 +97,7 @@ class InvestigationLoopReport(ContractModel):
 
     schema_version: Literal["1.0"] = "1.0"
     investigation_id: str = Field(min_length=1, max_length=256)
+    registration_id: str | None = Field(default=None, max_length=256)
     base_request_id: str = Field(min_length=1, max_length=256)
     strategy: SelectionStrategy
     strategy_degraded: bool = False

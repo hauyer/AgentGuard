@@ -5,16 +5,20 @@
 | 项目 | 固定值 |
 | --- | --- |
 | AgentGuard 分支 | `feature/i-reliability-and-live-validation` |
-| API 实现 source SHA | `66dae883fb75cf90ef735b94d2f5c9b565ba5ad3` |
-| 包版本 | `1.1.0rc1` |
+| 代码基线 SHA | `8a7c154116ca48c80e2dbf5291e1ff70f5dbdd25`（本轮实现尚未提交） |
+| 包版本 | `1.1.0rc2` |
 | Python 支持范围 | `>=3.11`；CI 矩阵为 3.11、3.12、3.13 |
-| OpenAPI 文件 | [`openapi-1.1.0rc1.json`](openapi-1.1.0rc1.json) |
-| OpenAPI SHA-256 | `b7c4e197ffa53531308102bddc40dda5a31bda8be81b816ecb8ddfa19e40b211` |
+| OpenAPI 文件 | [`openapi-1.1.0rc2.json`](openapi-1.1.0rc2.json) |
+| OpenAPI 文件 SHA-256 | `19889a15afa0ba0c41873ce4a6f2fb3cf59b284f0795b037aded56cc9cbad906` |
+| 规范化运行时 OpenAPI SHA-256 | `d0a04af3d87c9dca3b30aa7feed89f84447103ed9e8c32c063257c8214a25834` |
 | OpenAPI 版本 | `3.1.0` |
-| OpenAPI 路径数 | `84` |
+| OpenAPI 路径数 | `86` |
 
-SHA 指向冻结的 API 实现代码快照。后续纯文档提交不会改变该快照的 API 行为。部署
-应校验 OpenAPI 文件 SHA-256，并以运行服务的 `/openapi.json` 与该文件比对。
+仓库 HEAD 是上述基线；本轮代码和合同尚未提交，因此不能将基线 SHA 描述为本轮实现
+的 commit。发布构建应通过 `AGENTGUARD_BUILD_COMMIT` 注入实际 40 位 commit SHA；本地
+开发构建会明确返回 `unknown`。`GET /v1/system/identity` 返回软件/API 版本、提交身份、
+能力状态和规范化 OpenAPI SHA。规范化算法为 UTF-8 JSON、键排序、紧凑分隔符、不转义
+Unicode，再计算 SHA-256。部署应分别核验快照文件 SHA 与运行时身份返回值。
 
 ## 路由
 
@@ -26,11 +30,20 @@ SHA 指向冻结的 API 实现代码快照。后续纯文档提交不会改变�
 | `GET` | `/v1/investigation-loops/{loop_id}/decisions` | 每轮决策 |
 | `GET` | `/v1/investigation-loops/{loop_id}/evidence-changes` | 发现新增证据的轮次 |
 | `GET` | `/v1/investigation-loops/{loop_id}/budget` | 预算、使用量和剩余额度 |
+| `POST` | `/v1/investigation-loops/{loop_id}/reconcile` | Operator 专用查询式对账；只查询已知 WARDEN 操作并尝试恢复本地报告工件 |
 | `GET` | `/v1/research/strategy-evaluations` | 策略评价索引 |
 | `GET` | `/v1/research/strategy-evaluations/{evaluation_id}` | 策略评价报告工件 |
+| `GET` | `/v1/system/identity` | 软件、API、构建和 OpenAPI 合同身份 |
 
 以上 GET 路由只读持久化索引或工件，不启动调查、WARDEN 任务或模型调用。这里不新增
 QWB 专用别名；以 OpenAPI 文件为完整路由合同。
+
+`POST .../{loop_id}/reconcile` 需要独立配置的
+`X-AgentGuard-Operator-Token`。API token 或审批 token 不能替代。该接口可以查询已登记
+WARDEN 操作 ID，或从本地工件存储恢复与 Loop 登记 ID 绑定的有效报告；会更新可由事实
+证明的本地状态，但不会 POST 新计划或运行。没有可证明的报告时，Loop 保持
+`BLOCKED` / `reconciliation_required`，即使
+WARDEN 单独返回 `completed` 也不会伪造整轮成功。
 
 ## Loop 创建请求
 

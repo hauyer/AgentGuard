@@ -75,6 +75,7 @@ class InvestigationLoopService:
         strategy: str = "information_value",
         budget: InvestigationLoopBudget | None = None,
         stop_after_rounds: int | None = None,
+        registration_id: str | None = None,
     ) -> InvestigationLoopReport:
         entry = self.workflows.get(base_request_id)
         if entry is None:
@@ -264,7 +265,7 @@ class InvestigationLoopService:
             created_audit_request_ids=list(state["audit_ids"]),
             limitations=list(dict.fromkeys(state["limitations"])),
         )
-        return self._persist(report)
+        return self._persist(report, registration_id=registration_id)
 
     # ------------------------------------------------------------------ #
     # actions
@@ -465,7 +466,10 @@ class InvestigationLoopService:
         risk = self.risk_findings.analyze_workflow(entry)
         return [item.hypothesis_id for item in risk.hypotheses]
 
-    def _persist(self, report: InvestigationLoopReport) -> InvestigationLoopReport:
+    def _persist(
+        self, report: InvestigationLoopReport, *, registration_id: str | None = None,
+    ) -> InvestigationLoopReport:
+        report.registration_id = registration_id
         artifact = self.artifacts.put(
             report.model_dump_json(indent=2).encode("utf-8"),
             name=f"investigation-loop-{report.base_request_id}-{report.strategy}.json",
@@ -476,6 +480,7 @@ class InvestigationLoopService:
                 "strategy": report.strategy,
                 "rounds": report.metrics.rounds_executed,
                 "stop_reason": report.stop_reason,
+                "registration_id": registration_id or "unregistered",
             },
             media_type="application/json",
         )

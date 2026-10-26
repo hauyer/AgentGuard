@@ -9,11 +9,16 @@ claims.
 from __future__ import annotations
 
 import json
+import re
 import uuid
 from datetime import UTC, datetime
 from typing import Any
 
-from agentguard.artifacts.local_store import LocalArtifactStore
+from agentguard.artifacts.local_store import (
+    ArtifactIntegrityError,
+    ArtifactNotFoundError,
+    LocalArtifactStore,
+)
 from agentguard.contracts.investigation_loop import (
     InvestigationLoopBudget,
     InvestigationLoopReport,
@@ -21,6 +26,7 @@ from agentguard.contracts.investigation_loop import (
 from agentguard.contracts.loop_public import (
     InvestigationLoopCreateRequest,
     InvestigationLoopListResponse,
+    InvestigationLoopReconciliationResponse,
     InvestigationLoopView,
     LoopBudgetResponse,
     LoopDecisionsResponse,
@@ -77,48 +83,15 @@ class PublicInvestigationLoopService:
     # ------------------------------------------------------------------ #
     def create(
         self, request: InvestigationLoopCreateRequest, *, authorization_valid: bool,
+        idempotency_key: str | None = None,
     ) -> dict[str, Any]:
-        if not authorization_valid:
-            raise LoopServiceError("LOOP_AUTHORIZATION_REQUIRED")
-        entry = self.loop.workflows.get(request.base_request_id)
-        if entry is None:
-            raise LoopServiceError("BASE_INVESTIGATION_NOT_FOUND")
-        if entry.get("status") not in {"finished", "completed"}:
-            raise LoopServiceError("BASE_INVESTIGATION_NOT_FINISHED")
-        budget = InvestigationLoopBudget(
-            max_actions=request.max_actions,
-            max_seconds=request.max_seconds,
-            max_model_calls=request.max_model_calls,
-            no_new_evidence_rounds=request.no_new_evidence_rounds,
+        if not idempotency_key or not idempotency_key.strip():
+            raise LoopServiceError("LOOP_IDEMPOTENCY_KEY_REQUIRED")
+        return self.create_with_idempotency_key(
+            request,
+            idempotency_key=idempotency_key.strip(),
+            authorization_valid=authorization_valid,
         )
-        request_payload = self._request_payload(request)
-        loop_id = f"loop-{request.base_request_id}-{uuid.uuid4().hex[:10]}"
-        now = datetime.now(UTC).isoformat()
-        report = self.loop.run(
-            request.base_request_id, strategy=request.strategy, budget=budget,
-        )
-        registration, created = self.registry.register(
-            loop_id=loop_id,
-            idempotency_key=None,  # route supplies the caller's key separately
-            base_request_id=request.base_request_id,
-            strategy=request.strategy,
-            phase=report.phase,
-            stop_reason=report.stop_reason,
-            request_payload=request_payload,
-            report_artifact_id=report.report_artifact_id or "",
-            created_at=now,
-        )
-        if not created:
-            # Deterministic replay of an identical request: return the existing
-            # loop instead of creating a duplicate.
-            return self.get_view(registration["loop_id"])
-        self.registry.update_outcome(
-            loop_id, phase=report.phase, stop_reason=report.stop_reason,
-            report_artifact_id=report.report_artifact_id or "",
-            execution_state="finished",
-            updated_at=datetime.now(UTC).isoformat(),
-        )
-        return self.get_view(loop_id)
 
     def create_with_idempotency_key(
         self, request: InvestigationLoopCreateRequest, *,
@@ -202,6 +175,7 @@ class PublicInvestigationLoopService:
         try:
             report = self.loop.run(
                 request.base_request_id, strategy=request.strategy, budget=budget,
+                registration_id=loop_id,
             )
         except InvestigationLoopError as exc:
             self.registry.update_outcome(
@@ -224,6 +198,98 @@ class PublicInvestigationLoopService:
             updated_at=datetime.now(UTC).isoformat(),
         )
         return self.get_view(loop_id)
+
+    def reconcile_loop(
+        self,
+        loop_id: str,
+        *,
+        reconcile_workflow=None,
+    ) -> dict[str, Any]:
+        """Recover local facts and query only already-registered WARDEN operations."""
+        registration = self.registry.get(loop_id)
+        if registration is None:
+            raise LoopServiceError("LOOP_NOT_FOUND")
+        lock_suffix = registration.get("idempotency_key") or loop_id
+        with self.loop.workflows.execution_lock(
+            f"public-investigation-loop:{lock_suffix}"
+        ) as acquired:
+            if not acquired:
+                return InvestigationLoopReconciliationResponse(
+                    loop_id=loop_id,
+                    status="reconciliation_required",
+                    report_reconstructed=False,
+                    blockers=["LOOP_LOCKED"],
+                ).model_dump(mode="json")
+            registration = self.registry.get(loop_id)
+            if registration is None:
+                raise LoopServiceError("LOOP_NOT_FOUND")
+            report, report_artifact_id, ambiguous_report = self._recoverable_report(registration)
+            if report is not None:
+                self.registry.update_outcome(
+                    loop_id, phase=report.phase, stop_reason=report.stop_reason,
+                    report_artifact_id=report_artifact_id or registration["report_artifact_id"],
+                    execution_state="finished", updated_at=datetime.now(UTC).isoformat(),
+                )
+                return InvestigationLoopReconciliationResponse(
+                    loop_id=loop_id,
+                    status="not_needed" if registration["execution_state"] == "finished" else "reconciled",
+                    report_reconstructed=True,
+                ).model_dump(mode="json")
+            if registration["execution_state"] not in {"running", "unknown"}:
+                return InvestigationLoopReconciliationResponse(
+                    loop_id=loop_id,
+                    status="reconciliation_required",
+                    report_reconstructed=False,
+                    blockers=[
+                        "LOOP_REPORT_ARTIFACT_AMBIGUOUS" if ambiguous_report
+                        else "LOOP_REPORT_ARTIFACT_UNAVAILABLE",
+                    ],
+                ).model_dump(mode="json")
+
+            matches = self.registry.workflows_for_loop_base(registration["base_request_id"])
+            matches = [
+                item for item in matches
+                if re.fullmatch(
+                    re.escape(registration["base_request_id"]) + r"-audit-r[1-9][0-9]*",
+                    item["request_id"],
+                )
+            ]
+            if not matches:
+                blockers = ["LOOP_REPORT_CHECKPOINT_UNAVAILABLE", "NO_RECORDED_AUDIT_WORKFLOW"]
+                reconciled = []
+            elif reconcile_workflow is None:
+                blockers = ["WARDEN_NOT_CONFIGURED", "LOOP_REPORT_CHECKPOINT_UNAVAILABLE"]
+                reconciled = []
+            else:
+                reconciled = []
+                blockers = ["LOOP_REPORT_CHECKPOINT_UNAVAILABLE"]
+                for workflow in matches:
+                    result = reconcile_workflow(workflow["request_id"])
+                    workflow_blockers = result.get("blockers")
+                    if isinstance(workflow_blockers, list):
+                        blockers.extend(
+                            value for value in workflow_blockers
+                            if isinstance(value, str) and value
+                        )
+                    reconciled.append({
+                        "request_id": workflow["request_id"],
+                        "workflow_status": str(result.get("workflow_status") or result.get("status") or "unknown"),
+                        "remote_status": str(result.get("status") or "unknown"),
+                        "plan_id": result.get("plan_id") or workflow.get("plan_id"),
+                        "run_id": result.get("run_id") or workflow.get("run_id"),
+                    })
+            self.registry.update_outcome(
+                loop_id, phase="BLOCKED", stop_reason="reconciliation_required",
+                report_artifact_id="pending", execution_state="unknown",
+                updated_at=datetime.now(UTC).isoformat(),
+            )
+            return InvestigationLoopReconciliationResponse(
+                loop_id=loop_id,
+                status="reconciliation_required",
+                report_reconstructed=False,
+                workflows=reconciled,
+                blockers=list(dict.fromkeys(blockers)),
+            ).model_dump(mode="json")
 
     # ------------------------------------------------------------------ #
     # reads
@@ -351,12 +417,59 @@ class PublicInvestigationLoopService:
             payload = json.loads(
                 self.artifacts.get_bytes(artifact_id).decode("utf-8"),
             )
-        except (ValueError, UnicodeDecodeError, OSError):
+        except (ArtifactIntegrityError, ArtifactNotFoundError, ValueError, UnicodeDecodeError, OSError):
             return None
         try:
             return InvestigationLoopReport.model_validate(payload)
         except ValueError:
             return None
+
+    def _recoverable_report(
+        self, registration: dict[str, Any],
+    ) -> tuple[InvestigationLoopReport | None, str | None, bool]:
+        artifact_id = registration["report_artifact_id"]
+        if artifact_id not in {"", "pending", "failed"}:
+            report = self._load_report(artifact_id)
+            try:
+                metadata = self.artifacts.get_metadata(artifact_id)
+            except (ArtifactIntegrityError, ArtifactNotFoundError, ValueError):
+                metadata = None
+            if (
+                report is not None
+                and metadata is not None
+                and "investigation-loop" in metadata.tags
+                and metadata.metadata.get("registration_id") == registration["loop_id"]
+                and metadata.metadata.get("base_request_id") == registration["base_request_id"]
+                and metadata.metadata.get("strategy") == registration["strategy"]
+                and report.registration_id == registration["loop_id"]
+                and report.base_request_id == registration["base_request_id"]
+                and report.strategy == registration["strategy"]
+            ):
+                report.report_artifact_id = artifact_id
+                return report, artifact_id, False
+            return None, None, False
+
+        candidates = [
+            item.artifact_ref.artifact_id
+            for item in self.artifacts.list_metadata()
+            if "investigation-loop" in item.tags
+            and item.metadata.get("registration_id") == registration["loop_id"]
+            and item.metadata.get("base_request_id") == registration["base_request_id"]
+            and item.metadata.get("strategy") == registration["strategy"]
+        ]
+        if len(candidates) != 1:
+            return None, None, len(candidates) > 1
+        artifact_id = candidates[0]
+        report = self._load_report(artifact_id)
+        if (
+            report is None
+            or report.registration_id != registration["loop_id"]
+            or report.base_request_id != registration["base_request_id"]
+            or report.strategy != registration["strategy"]
+        ):
+            return None, None, False
+        report.report_artifact_id = artifact_id
+        return report, artifact_id, False
 
     @staticmethod
     def _decision_view(loop_id: str, decision) -> LoopDecisionView:

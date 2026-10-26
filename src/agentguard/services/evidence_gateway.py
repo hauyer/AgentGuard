@@ -52,7 +52,7 @@ class EvidenceGateway:
     ) -> list[GovernedEvidence]:
         output: list[GovernedEvidence] = []
         for item in report.evidence:
-            refs, verified_refs, dropped = self._validate_refs(
+            refs, verified_refs, dropped, failed = self._validate_refs(
                 [*item.artifact_refs, *([report_artifact_id] if report_artifact_id else [])],
                 artifacts=artifacts,
                 expected_run_id=report.run_id,
@@ -60,24 +60,21 @@ class EvidenceGateway:
             source_limitations = item.metadata.get("limitations")
             limitations = list(dict.fromkeys([
                 *(source_limitations if isinstance(source_limitations, list) else []),
-                *(["One or more local file or unsafe artifact references were omitted; no referenced path was opened."] if dropped else []),
+                *(["One or more unsafe, mismatched, or locally invalid artifact references were omitted unopened."] if dropped else []),
                 *(["Only AgentGuard's local content-addressed artifacts were hash-checked; external references were not fetched."] if len(verified_refs) != len(refs) else []),
                 *(["Synthetic evidence is not a real model measurement or causal conclusion."] if item.grade == "synthetic" or report.backend_mode == "synthetic" else []),
-                *(["Run evidence has no independent methodological review; successful run status alone does not validate its claim."] if not item.metadata.get("methodology_reviewed", False) else []),
+                *(["A trusted, traceable methodology-review record is unavailable; upstream booleans are not review evidence."]),
             ]))
             level = item.grade
-            criteria = self._causal_criteria(item.metadata.get("causal_validation"))
-            status = "verified" if (
-                report.status == "completed"
-                and report.backend_mode == "real"
-                and bool(refs)
-                and len(verified_refs) == len(refs)
-                and item.metadata.get("methodology_reviewed") is True
-            ) else "unverified"
-            if level == "causal_validated" and (criteria is None or status != "verified"):
+            criteria = None
+            if level == "causal_validated":
                 level = "interventional" if item.kind == "intervention" else "observational"
-                limitations.append("A claimed causal grade was withheld because provenance and explicit methodological checks were incomplete.")
-                criteria = None
+                limitations.append(
+                    "A claimed causal grade was withheld: local content hashes do not prove source authenticity, "
+                    "independent runs, matched/negative controls, or a traceable independent review."
+                )
+            if report.backend_mode == "synthetic" or item.grade == "synthetic":
+                level = "synthetic"
             confidence = item.metadata.get("calibrated_confidence")
             if not isinstance(confidence, (int, float)) or isinstance(confidence, bool) or not isinstance(item.metadata.get("confidence_calibration"), str):
                 confidence = None
@@ -91,14 +88,20 @@ class EvidenceGateway:
                 risk_type=str(item.metadata.get("risk_type", "unknown")),
                 confidence=confidence,
                 limitations=limitations,
-                verification_status=status,
+                verification_status="unverified",
+                content_integrity_status=(
+                    "failed" if failed else
+                    "verified" if refs and len(verified_refs) == len(refs) else "unverified"
+                ),
+                source_authenticity_status="unknown",
+                methodology_review_status="unknown",
                 run_status=report.status,
                 model_version="unknown",
                 scenario_version=str(item.metadata.get("scenario_version", "unknown")),
                 created_at=item.created_at,
                 causal_validation=criteria if level == "causal_validated" else None,
                 content_access_supported=bool(verified_refs),
-                integrity_verified=bool(verified_refs),
+                integrity_verified=bool(refs) and len(verified_refs) == len(refs),
                 access_restriction="local_verified_read" if verified_refs else "read_only_reference",
             ))
         return output
@@ -138,7 +141,9 @@ class EvidenceGateway:
             isinstance(run, Mapping)
             and isinstance(expected_run_id, str)
             and actual_run_id == expected_run_id
-            and (not isinstance(plan_id, str) or run.get("plan_id") == plan_id)
+            and isinstance(plan_id, str)
+            and bool(plan_id.strip())
+            and run.get("plan_id") == plan_id
         )
         if not identity_valid:
             notes.append("The journal does not contain a matching WARDEN run and plan identity; evidence was not emitted.")
@@ -154,50 +159,88 @@ class EvidenceGateway:
             }
 
         raw_refs = WardenLifecycleService._evidence_refs(run)
-        refs, verified_refs, dropped = self._validate_refs(
+        refs, verified_refs, dropped, failed = self._validate_refs(
             raw_refs, artifacts=artifacts, expected_run_id=str(expected_run_id),
+            expected_plan_id=str(plan_id),
         )
         if dropped:
-            notes.append("Unsafe local path or credential-bearing artifact references were omitted without opening them.")
+            notes.append("Unsafe local paths or mismatched artifact references were omitted; no path was opened.")
         if not refs:
             notes.append("WARDEN returned no usable evidence or artifact references.")
         if len(verified_refs) != len(refs):
-            notes.append("WARDEN artifact contents were not fetched; external and opaque references remain unverified.")
+            notes.append(
+                "WARDEN artifact content and run/plan association could not be independently verified; "
+                "external references were not fetched."
+            )
+        if failed:
+            notes.append("At least one local WARDEN artifact failed integrity or ownership validation.")
+        notes.append(
+            "Upstream WARDEN v1 provides no verifiable artifact-source signature or "
+            "traceable methodology-review contract."
+        )
 
         raw_items = self._warden_evidence_items(run)
         if not raw_items:
-            raw_items = [{"type": "run_summary", "summary": "WARDEN reported a completed audit run."}]
+            raw_items = [{
+                "type": "run_summary",
+                "summary": "WARDEN reported a completed audit run.",
+                "artifact_refs": raw_refs,
+                "run_id": expected_run_id,
+                "plan_id": plan_id,
+            }]
         output: list[GovernedEvidence] = []
         for index, raw in enumerate(raw_items):
-            item_refs, item_verified, item_dropped = self._validate_refs(
-                self._refs_from_item(raw) or raw_refs,
+            item_run_id = raw.get("run_id")
+            item_plan_id = raw.get("plan_id")
+            if (
+                (item_run_id is not None and item_run_id != expected_run_id)
+                or (item_plan_id is not None and item_plan_id != plan_id)
+            ):
+                notes.append("A WARDEN evidence item named a different run or plan and was omitted.")
+                continue
+            if raw.get("synthetic") is True or raw.get("source_kind") in {"synthetic", "stub"}:
+                notes.append("A synthetic or stub evidence item was omitted from the real WARDEN evidence projection.")
+                continue
+            item_refs, item_verified, item_dropped, item_failed = self._validate_refs(
+                self._refs_from_item(raw),
                 artifacts=artifacts,
                 expected_run_id=str(expected_run_id),
+                expected_plan_id=str(plan_id),
             )
             limitations = self._bounded_strings(raw.get("limitations"))
             if not item_refs:
                 limitations.append("No safe artifact reference was available for this evidence item.")
             if item_dropped:
-                limitations.append("Unsafe local path or credential-bearing artifact references were omitted; no path was opened.")
+                limitations.append("Unsafe local paths or mismatched artifact references were omitted; no path was opened.")
             if len(item_verified) != len(item_refs):
-                limitations.append("Evidence payload integrity was not independently checked by AgentGuard.")
+                limitations.append(
+                    "Content integrity or the required run/plan association was not independently checked; "
+                    "external references were not fetched."
+                )
+            limitations.append(
+                "WARDEN v1 has no verifiable artifact-source signature; source authenticity remains unknown."
+            )
+            if raw.get("methodology_reviewed") is True:
+                limitations.append(
+                    "upstream WARDEN supplied methodology_reviewed=true without a traceable review record; "
+                    "it remains unverified."
+                )
+            else:
+                limitations.append("No traceable independent methodology-review record was available.")
             evidence_type = self._evidence_type(raw.get("evidence_type", raw.get("type")))
             level = self._warden_level(raw, request)
-            criteria = self._causal_criteria(raw.get("causal_validation"))
-            provenance_verified = bool(
-                item_refs
-                and len(item_verified) == len(item_refs)
-                and raw.get("methodology_reviewed") is True
-            )
-            verification_status = "verified" if provenance_verified else "unverified"
-            if level == "causal_validated" and (
-                evidence_type not in {"intervention", "evaluation"}
-                or criteria is None
-                or not provenance_verified
-            ):
+            criteria = None
+            if raw.get("evidence_level", raw.get("evidence_grade")) == "causal_validated":
                 level = "interventional" if evidence_type == "intervention" else "observational"
-                criteria = None
-                limitations.append("WARDEN causal grade was withheld because explicit experiment and provenance checks were incomplete.")
+                limitations.append(
+                    "upstream WARDEN's causal claim was withheld because reported booleans and hashes do not prove "
+                    "independent runs, matched/negative controls, utility, source authenticity, or independent review."
+                )
+            content_status = (
+                "verified" if item_refs and len(item_verified) == len(item_refs) else "unverified"
+            )
+            if item_failed:
+                content_status = "failed"
             confidence = raw.get("calibrated_confidence")
             if not isinstance(confidence, (int, float)) or isinstance(confidence, bool) or not isinstance(raw.get("confidence_calibration"), str):
                 confidence = None
@@ -216,14 +259,19 @@ class EvidenceGateway:
                 risk_type=str(raw.get("risk_type") or request.get("risk_type") or "unknown"),
                 confidence=confidence,
                 limitations=limitations,
-                verification_status=verification_status,
+                verification_status="unverified",
+                content_integrity_status=content_status,
+                source_authenticity_status="unknown",
+                methodology_review_status=(
+                    "unverified" if raw.get("methodology_reviewed") is True else "unknown"
+                ),
                 run_status="completed",
                 model_version=str(request.get("model_id") or "unknown"),
                 scenario_version=str((request.get("metadata") or {}).get("scenario_version", "unknown")) if isinstance(request.get("metadata"), Mapping) else "unknown",
                 created_at=self._timestamp(raw.get("created_at") or run.get("completed_at") or run.get("updated_at")),
                 causal_validation=criteria if level == "causal_validated" else None,
                 content_access_supported=bool(item_verified),
-                integrity_verified=bool(item_verified),
+                integrity_verified=bool(item_refs) and len(item_verified) == len(item_refs),
                 access_restriction="local_verified_read" if item_verified else "read_only_reference",
             ))
         return {
@@ -282,10 +330,12 @@ class EvidenceGateway:
         *,
         artifacts: LocalArtifactStore,
         expected_run_id: str,
-    ) -> tuple[list[str], list[str], bool]:
+        expected_plan_id: str | None = None,
+    ) -> tuple[list[str], list[str], bool, bool]:
         safe_refs: list[str] = []
         verified_refs: list[str] = []
         dropped = False
+        failed = False
         for raw in dict.fromkeys(refs):
             if not isinstance(raw, str):
                 dropped = True
@@ -294,21 +344,71 @@ class EvidenceGateway:
             if not self._safe_reference(ref):
                 dropped = True
                 continue
-            safe_refs.append(ref)
             digest = self._artifact_digest(ref)
             if digest is None:
+                safe_refs.append(ref)
                 continue
             try:
                 metadata = artifacts.get_metadata(digest)
                 content = artifacts.get_bytes(digest)
-            except (ArtifactIntegrityError, ArtifactNotFoundError, ValueError):
+            except ArtifactIntegrityError:
+                failed = True
+                dropped = True
+                continue
+            except (ArtifactNotFoundError, ValueError):
+                safe_refs.append(ref)
                 continue
             if hashlib.sha256(content).hexdigest() != digest:
+                failed = True
+                dropped = True
+                continue
+            ref_record = metadata.artifact_ref
+            if (
+                ref_record.artifact_id != digest
+                or ref_record.sha256 != digest
+                or ref_record.uri != f"artifact://sha256/{digest}"
+                or ref_record.size_bytes != len(content)
+            ):
+                failed = True
+                dropped = True
                 continue
             artifact_run_id = metadata.metadata.get("run_id")
-            if artifact_run_id == expected_run_id:
-                verified_refs.append(ref)
-        return safe_refs, verified_refs, dropped
+            artifact_plan_id = metadata.metadata.get("plan_id")
+            if artifact_run_id != expected_run_id:
+                failed = True
+                dropped = True
+                continue
+            if expected_plan_id is not None and artifact_plan_id != expected_plan_id:
+                failed = True
+                dropped = True
+                continue
+            try:
+                payload = json.loads(content.decode("utf-8"))
+            except (ValueError, UnicodeDecodeError):
+                payload = None
+            if not isinstance(payload, Mapping):
+                dropped = True
+                continue
+            if payload.get("run_id") != expected_run_id:
+                failed = True
+                dropped = True
+                continue
+            if expected_plan_id is not None and payload.get("plan_id") != expected_plan_id:
+                failed = True
+                dropped = True
+                continue
+            manifest = payload.get("manifest")
+            if isinstance(manifest, Mapping) and (
+                manifest.get("run_id") != expected_run_id
+                or (expected_plan_id is not None and manifest.get("plan_id") != expected_plan_id)
+                or manifest.get("content_sha256") != digest
+            ):
+                failed = True
+                dropped = True
+                continue
+            safe_refs.append(ref)
+            verified_refs.append(ref)
+        return safe_refs, verified_refs, dropped, failed
 
     @staticmethod
     def _safe_reference(ref: str) -> bool:
@@ -343,13 +443,13 @@ class EvidenceGateway:
     @staticmethod
     def _run_status(value: Any) -> str:
         normalized = str(value or "unknown").lower()
-        if normalized in {"complete", "completed", "success", "succeeded"}:
+        if normalized == "completed":
             return "completed"
-        if normalized in {"partial", "incomplete", "timed_out", "timeout"}:
+        if normalized in {"partial", "incomplete", "timed_out"}:
             return "partial"
         if normalized in {"blocked", "unavailable", "unsupported"}:
             return "blocked"
-        if normalized in {"failed", "error", "cancelled", "canceled"}:
+        if normalized in {"failed", "cancelled"}:
             return "failed"
         return "unknown"
 
@@ -364,11 +464,20 @@ class EvidenceGateway:
     def _warden_level(item: Mapping[str, Any], request: Mapping[str, Any]) -> str:
         metadata = request.get("metadata")
         metadata = metadata if isinstance(metadata, Mapping) else {}
-        if item.get("synthetic") is True or metadata.get("evidence_level") == "synthetic":
+        if (
+            item.get("synthetic") is True
+            or item.get("source_kind") in {"synthetic", "stub"}
+            or metadata.get("evidence_level") == "synthetic"
+        ):
             return "synthetic"
         claimed = item.get("evidence_level", item.get("evidence_grade"))
         if claimed == "causal_validated":
-            return "causal_validated"
+            return (
+                "interventional"
+                if item.get("evidence_type", item.get("type")) == "intervention"
+                and item.get("intervention_status") in {"completed", "measured"}
+                else "observational"
+            )
         if claimed == "interventional" and item.get("intervention_status") in {"completed", "measured"}:
             return "interventional"
         if item.get("evidence_type", item.get("type")) == "intervention" and item.get("intervention_status") in {"completed", "measured"}:

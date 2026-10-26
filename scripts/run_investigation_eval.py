@@ -263,6 +263,11 @@ def main() -> int:
     evaluation = InvestigationEvaluationService(
         artifacts, source_commit=_source_commit(), registry=eval_registry,
     )
+    unique_source_kinds = set(source_kinds)
+    declared_source_kind = (
+        next(iter(unique_source_kinds))
+        if len(unique_source_kinds) == 1 else "mixed" if unique_source_kinds else "unknown"
+    )
     report = evaluation.run_comparison(
         loop_runner=loop.run,
         base_request_ids=valid_request_ids,
@@ -271,6 +276,10 @@ def main() -> int:
         budget=budget,
         data_partition=args.partition,
         provenance_notes=provenance_notes,
+        source_tree_sha256=source_tree_sha256,
+        input_manifest_sha256=manifest_sha256,
+        source_kind=declared_source_kind,
+        declared_source_kinds=source_kinds,
     )
 
     lines = [
@@ -282,6 +291,11 @@ def main() -> int:
         f"- 数据来源类别（manifest 声明）：{', '.join(source_kinds) or 'unspecified'}",
         f"- manifest SHA-256：`{manifest_sha256 or 'not available'}`",
         f"- source_commit：`{report.source_commit}`",
+        f"- AgentGuard source-tree SHA-256：`{report.source_tree_sha256}`",
+        f"- 声明输入来源：`{report.declared_source_kinds}`（来源声明不是独立验证）",
+        f"- 独立样本：{report.independent_sample_count}；技术重复：{report.technical_repetitions}",
+        f"- 实际记录模型调用：{report.actual_model_calls}",
+        f"- 运行时版本：`{report.runtime_version}`；构建提交：`{report.runtime_build_commit}`",
         (f"- 协议：{len(strategies)} 策略 × {args.repetitions} 重复 × {len(valid_request_ids)} 案例"
         f"（max_actions={budget.max_actions}, {budget.max_seconds}s,"
         f" model_calls={budget.max_model_calls}）；分桶 {args.partition}。"),

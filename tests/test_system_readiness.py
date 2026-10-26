@@ -85,13 +85,17 @@ def test_ready_kernel_reports_layers_without_promoting_health():
     response = service.readiness()
     checks = {check.name: check for check in response.checks}
     assert set(checks) == {
-        "agentguard_api", "warden_connectivity", "warden_api_compatibility",
+        "agentguard_api", "multi_host_storage", "warden_connectivity", "warden_api_compatibility",
         "contract_source", "available_contracts", "model_runtime", "probe_resources",
         "sae_resources", "audit_execution", "live_loop_execution",
         "intervention_execution", "evidence_access",
     }
     assert checks["agentguard_api"].status == "available"
     assert checks["agentguard_api"].capability_version
+    assert checks["multi_host_storage"].status == "unsupported"
+    assert checks["multi_host_storage"].blockers == ["MULTI_HOST_STORAGE_UNSUPPORTED"]
+    assert checks["multi_host_storage"].diagnostics["supported_topology"] == "single_host"
+    assert checks["multi_host_storage"].diagnostics["cross_host_locking"] is False
     assert checks["warden_connectivity"].status == "available"
     assert checks["available_contracts"].status == "available"
     assert checks["available_contracts"].diagnostics["contract_count"] == 2

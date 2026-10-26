@@ -61,7 +61,10 @@ from agentguard.contracts.experiment_index import ExperimentCompareRequest
 from agentguard.contracts.interaction_graph import InteractionGraphResponse
 from agentguard.contracts.intervention import InterventionRequest
 from agentguard.contracts.lifecycle import RunTimelineEvent
-from agentguard.contracts.loop_public import InvestigationLoopCreateRequest
+from agentguard.contracts.loop_public import (
+    InvestigationLoopCreateRequest,
+    InvestigationLoopReconciliationResponse,
+)
 from agentguard.contracts.paired import PairedExperimentRunRequest
 from agentguard.contracts.probe import (
     BinaryProbePredictionReport,
@@ -76,6 +79,7 @@ from agentguard.contracts.research import (
     StudyAnalysisRequest,
     StudyRegistrationRequest,
 )
+from agentguard.contracts.system_identity import SystemIdentityResponse
 from agentguard.contracts.warden import WardenAuditRequest, WardenDefenseExecuteRequest
 from agentguard.core.attribution import analyze_attribution_node, analyze_path_shift
 from agentguard.core.classification_metrics import evaluate_binary_classifier
@@ -327,7 +331,10 @@ def create_app(
                 content={"detail": {"error": "API_AUDIT_UNAVAILABLE", "request_id": request_id}},
             )
         else:
-            public_paths = {"/health", "/v1/system/health", "/openapi.json", "/docs", "/redoc", "/console"}
+            public_paths = {
+                "/health", "/v1/system/health", "/v1/system/identity",
+                "/openapi.json", "/docs", "/redoc", "/console",
+            }
             auth_denied = (
                 request.method != "OPTIONS"
                 and (api_token or operator_token)
@@ -514,6 +521,12 @@ def create_app(
         if not expected or not token or not secrets.compare_digest(expected, token):
             raise HTTPException(status_code=403, detail={"error": "OPERATOR_TOKEN_REQUIRED"})
 
+    def require_dedicated_operator_token(token: str | None) -> None:
+        """Require the dedicated Operator secret; API and approval credentials do not substitute."""
+        expected = os.environ.get("AGENTGUARD_OPERATOR_API_TOKEN", "")
+        if not expected or not token or not secrets.compare_digest(expected, token):
+            raise HTTPException(status_code=403, detail={"error": "OPERATOR_TOKEN_REQUIRED"})
+
     def resolve_job_status(run_id: str) -> dict[str, Any] | None:
         with app.state.lock:
             job = app.state.jobs.get(run_id)
@@ -526,6 +539,32 @@ def create_app(
     @app.get("/health")
     def health() -> dict:
         return {"status": "ok", "service": "agentguard", "version": __version__}
+
+    @app.get("/v1/system/identity", response_model=SystemIdentityResponse)
+    def get_system_identity() -> dict:
+        """Expose build identity and a canonical hash of this runtime OpenAPI contract."""
+        supplied_commit = os.environ.get("AGENTGUARD_BUILD_COMMIT", "").strip().lower()
+        build_commit = supplied_commit if re.fullmatch(r"[0-9a-f]{40}", supplied_commit) else "unknown"
+        openapi_bytes = json.dumps(
+            app.openapi(), ensure_ascii=False, sort_keys=True, separators=(",", ":"),
+        ).encode("utf-8")
+        return SystemIdentityResponse(
+            software_version=__version__,
+            api_contract_version=__version__,
+            build_commit=build_commit,
+            build_commit_source=(
+                "AGENTGUARD_BUILD_COMMIT" if build_commit != "unknown" else "unknown"
+            ),
+            runtime_identity_status=("declared" if build_commit != "unknown" else "unknown"),
+            openapi_sha256=hashlib.sha256(openapi_bytes).hexdigest(),
+            capabilities={
+                "live_warden_loop": "blocked",
+                "warden_remote_submission_idempotency": "unsupported",
+                "warden_restart_durable_state": "unsupported",
+                "warden_source_authenticity": "unverified",
+                "storage_topology": "single_host",
+            },
+        ).model_dump(mode="json")
 
     @app.get("/console", response_class=HTMLResponse)
     def console() -> str:
@@ -914,6 +953,37 @@ def create_app(
     def get_loop_budget(loop_id: str) -> dict:
         try:
             return app.state.public_loops.budget(loop_id)
+        except LoopServiceError:
+            raise HTTPException(status_code=404, detail={"error": "LOOP_NOT_FOUND"}) from None
+
+    @app.post(
+        "/v1/investigation-loops/{loop_id}/reconcile",
+        response_model=InvestigationLoopReconciliationResponse,
+        responses={
+            403: {"description": "A dedicated Operator credential is required."},
+            404: {"description": "The Loop does not exist."},
+        },
+    )
+    def reconcile_investigation_loop(
+        loop_id: str,
+        x_agentguard_operator_token: str | None = Header(
+            default=None, alias="X-AgentGuard-Operator-Token",
+        ),
+    ) -> dict:
+        """Query existing remote operations and update local facts; never resubmit an action."""
+        require_dedicated_operator_token(x_agentguard_operator_token)
+        client = _configured_warden_client()
+        if client is None:
+            return app.state.public_loops.reconcile_loop(loop_id)
+        service = WardenLifecycleService(
+            client,
+            experiences=app.state.experiences,
+            workflows=app.state.warden_workflows,
+        )
+        try:
+            return app.state.public_loops.reconcile_loop(
+                loop_id, reconcile_workflow=service.reconcile_existing,
+            )
         except LoopServiceError:
             raise HTTPException(status_code=404, detail={"error": "LOOP_NOT_FOUND"}) from None
 

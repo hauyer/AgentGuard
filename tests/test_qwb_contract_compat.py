@@ -40,6 +40,7 @@ def test_openapi_changes_since_c0_are_additive_only():
         "/v1/investigation-loops/{loop_id}/budget",
         "/v1/investigation-loops/{loop_id}/decisions",
         "/v1/investigation-loops/{loop_id}/evidence-changes",
+        "/v1/investigation-loops/{loop_id}/reconcile",
         "/v1/investigations/options",
         "/v1/investigations/{request_id}/interaction-graph",
         "/v1/investigations/{request_id}/risk-analysis",
@@ -47,6 +48,7 @@ def test_openapi_changes_since_c0_are_additive_only():
         "/v1/reports",
         "/v1/research/strategy-evaluations",
         "/v1/research/strategy-evaluations/{evaluation_id}",
+        "/v1/system/identity",
         "/v1/system/readiness",
     ]
 

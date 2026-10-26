@@ -1,4 +1,4 @@
-# AgentGuard 1.0.0-rc1 部署指南
+# AgentGuard 1.1.0-rc2 部署指南
 
 本指南支持受控的私有部署。A8 未在公网或生产环境部署；真实 WARDEN 和模型能力
 仍需按 [`KNOWN_LIMITATIONS.md`](KNOWN_LIMITATIONS.md) 验收。
@@ -8,7 +8,7 @@
 在支持 Python 3.11–3.13 的目标系统上先构建/取得发布 wheel，再用锁文件安装：
 
 ```bash
-python -m pip install -c requirements/runtime.lock dist/agentguard-1.0.0rc1-py3-none-any.whl
+python -m pip install -c requirements/runtime.lock dist/agentguard-1.1.0rc2-py3-none-any.whl
 agentguard --help
 ```
 
@@ -29,6 +29,7 @@ export AGENTGUARD_APPROVAL_TOKEN='<separate-approval-secret>'
 export AGENTGUARD_CORS_ORIGINS='https://console.example.org'
 export AGENTGUARD_RATE_LIMIT_PER_MINUTE=300
 export AGENTGUARD_WARDEN_URL='https://warden.internal.example'
+export AGENTGUARD_BUILD_COMMIT='<release-git-commit-sha>'
 agentguard serve --host 127.0.0.1 --port 8000
 ```
 
@@ -43,6 +44,7 @@ agentguard serve --host 127.0.0.1 --port 8000
 | `AGENTGUARD_WARDEN_URL` | 未设置 | WARDEN 公共 HTTP API 地址；未配置时真实工作流返回 unavailable/blocked |
 | `AGENTGUARD_WARDEN_TIMEOUT` | `15` 秒 | WARDEN HTTP 超时 |
 | `AGENTGUARD_WARDEN_READ_RETRIES` | `0` | GET 临时错误最多重试 0–3 次；写请求不重试 |
+| `AGENTGUARD_BUILD_COMMIT` | 未设置时为 `unknown`；发布流水线应注入 40 位 Git SHA | `/v1/system/identity` 的构建身份；无效值不接受且不泄露其他环境变量 |
 | `AGENTGUARD_BASE_URL` | `http://127.0.0.1:8000` | SDK/MCP 使用的 AgentGuard API origin |
 | `AGENTGUARD_API_TIMEOUT` | `15` 秒，最大 120 | SDK API 超时 |
 
@@ -55,9 +57,12 @@ Health、OpenAPI、Swagger/ReDoc 与 console 路由按当前实现保持公开�
 - SQLite schema 在存储对象初始化时创建并执行兼容迁移；旧经验会进入 quarantine，
   不会被静默提升为已验证奖励。升级前备份 `AGENTGUARD_DATA_DIR`，并保留可回滚的
   发布 wheel。
-- 单节点运行建议保持单 Uvicorn worker：报告、后台任务、取消标记与限流窗口含进程内
-  状态。SQLite 工作流日志支持幂等重放、并发请求门控和已知状态恢复，但不保证跨进程
-  限流共享或跨系统 exactly-once。
+- 受支持的存储拓扑为单主机：SQLite 与本地文件锁可协调共享同一数据目录的本机进程，
+  但不是跨主机分布式锁。多主机 active-active 与网络文件系统部署不受支持，readiness
+  会以 `MULTI_HOST_STORAGE_UNSUPPORTED` 明示此限制。单节点仍建议单 Uvicorn worker，因
+  后台任务、取消标记与限流窗口含进程内状态。
+- SQLite 工作流日志支持幂等登记、并发请求门控和已知远端 ID 对账；提交不确定且没有
+  可查询 ID 时进入待对账状态，不会盲目重提，也不承诺跨系统 exactly-once。
 - 对不确定的远端计划/运行提交，AgentGuard 保留 ambiguous 状态，不自动重复提交；按
   WARDEN 远端状态人工对账后再恢复。
 - API 审计事件只保留 request ID、方法、路由模板、状态、角色和时间，不保存 body、

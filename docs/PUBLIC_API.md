@@ -11,6 +11,7 @@ upgrade synthetic, observational, blocked, failed, or unsupported evidence.
 | Route | Purpose |
 | --- | --- |
 | `GET /v1/system/health` | AgentGuard service health; does not probe WARDEN or a model runtime |
+| `GET /v1/system/identity` | Software/API versions, declared build commit or `unknown`, canonical OpenAPI SHA-256 and capability states; exposes no credentials |
 | `GET /v1/system/capabilities` | Existing AgentGuard capability manifest |
 | `GET /v1/kernel/status` | WARDEN integration availability and blockers |
 | `GET /v1/scenarios` | Public scenario catalog |
@@ -26,6 +27,7 @@ upgrade synthetic, observational, blocked, failed, or unsupported evidence.
 | `GET /v1/reports/{run_id}` | Read an AgentGuard report (including explicitly synthetic reports) |
 | `GET /v1/system/audit-events?limit=&offset=` | Operator-only API request audit page |
 | `GET /v1/system/readiness?force_refresh=` | Layered readiness checks (connectivity, API compatibility, contracts, model runtime, Probe/SAE, audit and intervention execution, evidence access) with per-layer blockers, cache provenance; WARDEN health is never promoted to executability |
+| `POST /v1/investigation-loops/{loop_id}/reconcile` | Dedicated-Operator reconciliation that queries known WARDEN IDs or recovers a locally persisted report; never submits a replacement operation |
 | `GET /v1/investigations/options?force_refresh=` | Discovered audit-mode options, threat contracts, Probe/SAE resources and capture-target support for investigation forms; nothing unreported is invented |
 | `GET /v1/investigations/{request_id}/interaction-graph?run_id=` | Message-level interaction graph from authorized WARDEN run metadata; `available=false` with `GRAPH_SOURCE_UNAVAILABLE` when no compliant source exists; an explicit `run_id` renders the synthetic engine report, always labelled `agentguard_synthetic_report` |
 | `GET /v1/investigations/{request_id}/timeline?after_event_id=` | Durable journal timeline for one investigation; steps without recorded events are never synthesized |
@@ -86,6 +88,8 @@ Environment variables:
   migration compatibility, if no separate operator token is configured, the
   existing API token remains accepted for those operator routes. Deployments
   should set a distinct operator token.
+- Loop reconciliation requires the dedicated `X-AgentGuard-Operator-Token` and
+  does not accept the general API token or an approval token as a substitute.
 - `AGENTGUARD_APPROVAL_TOKEN` remains independent and gates approval-sensitive
   actions. MCP has no approval or defense-execution tool.
 - Each response carries `X-Request-ID`. A syntactically valid caller value is

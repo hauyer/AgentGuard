@@ -127,6 +127,14 @@ def test_cli_to_api_evaluation_persistence(tmp_path):
     assert evaluation_id == f"eval-{report_payload['comparison_id']}"
     assert detail["comparison_id"] == report_payload["comparison_id"]
     assert detail["data_partition"] == report_payload["data_partition"] == "test"
+    assert report_payload["input_manifest_sha256"] == manifest_sha256
+    assert report_payload["independent_sample_count"] == 1
+    assert report_payload["technical_repetitions"] == 1
+    assert report_payload["actual_model_calls"] == sum(
+        run["model_calls_used"] for run in report_payload["runs"]
+    )
+    assert report_payload["source_kind"] == "synthetic"
+    assert report_payload["declared_source_kinds"] == ["synthetic"]
     assert detail["source_commit"] == report_payload["source_commit"]
     assert re.fullmatch(r"[0-9a-f]{40}", report_payload["source_commit"])
     assert any(

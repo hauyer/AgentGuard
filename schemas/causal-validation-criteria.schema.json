@@ -1,23 +1,70 @@
 {
   "additionalProperties": false,
-  "description": "Explicit method checks required before evidence can be called causal.",
+  "description": "Auditable experiment records required before evidence can be called causal.\n\nThis structure records what was reviewed. Its fields are not, by themselves,\nproof that the runs, artifacts, or reviewer are authentic; the Evidence Gateway\nmust validate those references against a trusted source before emitting a\ncausal grade.",
   "properties": {
+    "schema_version": {
+      "const": "0.2",
+      "default": "0.2",
+      "title": "Schema Version",
+      "type": "string"
+    },
     "independent_repetitions": {
       "minimum": 2,
       "title": "Independent Repetitions",
       "type": "integer"
     },
+    "independent_run_ids": {
+      "items": {
+        "type": "string"
+      },
+      "maxItems": 100,
+      "minItems": 2,
+      "title": "Independent Run Ids",
+      "type": "array"
+    },
+    "sample_ids": {
+      "items": {
+        "type": "string"
+      },
+      "maxItems": 10000,
+      "minItems": 2,
+      "title": "Sample Ids",
+      "type": "array"
+    },
+    "experiment_config_sha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "title": "Experiment Config Sha256",
+      "type": "string"
+    },
     "matched_control_passed": {
       "title": "Matched Control Passed",
       "type": "boolean"
+    },
+    "matched_control_artifact_ref": {
+      "maxLength": 2048,
+      "minLength": 1,
+      "title": "Matched Control Artifact Ref",
+      "type": "string"
     },
     "negative_control_passed": {
       "title": "Negative Control Passed",
       "type": "boolean"
     },
+    "negative_control_artifact_ref": {
+      "maxLength": 2048,
+      "minLength": 1,
+      "title": "Negative Control Artifact Ref",
+      "type": "string"
+    },
     "benign_utility_measured": {
       "title": "Benign Utility Measured",
       "type": "boolean"
+    },
+    "utility_artifact_ref": {
+      "maxLength": 2048,
+      "minLength": 1,
+      "title": "Utility Artifact Ref",
+      "type": "string"
     },
     "artifact_hashes_verified": {
       "title": "Artifact Hashes Verified",
@@ -26,15 +73,42 @@
     "alternative_explanations_reviewed": {
       "title": "Alternative Explanations Reviewed",
       "type": "boolean"
+    },
+    "alternative_explanations_review_ref": {
+      "maxLength": 2048,
+      "minLength": 1,
+      "title": "Alternative Explanations Review Ref",
+      "type": "string"
+    },
+    "methodology_review_record_ref": {
+      "maxLength": 2048,
+      "minLength": 1,
+      "title": "Methodology Review Record Ref",
+      "type": "string"
+    },
+    "methodology_reviewer_id": {
+      "maxLength": 256,
+      "minLength": 1,
+      "title": "Methodology Reviewer Id",
+      "type": "string"
     }
   },
   "required": [
     "independent_repetitions",
+    "independent_run_ids",
+    "sample_ids",
+    "experiment_config_sha256",
     "matched_control_passed",
+    "matched_control_artifact_ref",
     "negative_control_passed",
+    "negative_control_artifact_ref",
     "benign_utility_measured",
+    "utility_artifact_ref",
     "artifact_hashes_verified",
-    "alternative_explanations_reviewed"
+    "alternative_explanations_reviewed",
+    "alternative_explanations_review_ref",
+    "methodology_review_record_ref",
+    "methodology_reviewer_id"
   ],
   "title": "CausalValidationCriteria",
   "type": "object"

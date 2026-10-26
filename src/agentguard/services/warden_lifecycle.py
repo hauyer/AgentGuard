@@ -16,6 +16,7 @@ from agentguard.contracts.experience import ExperienceRecord
 from agentguard.contracts.warden import WardenAuditRequest
 from agentguard.memory.store import ExperienceStore
 from agentguard.services.warden_workflow_store import WardenWorkflowStore
+from agentguard.services.workflow_state import TERMINAL_JOURNAL_STATES
 
 _TERMINAL = {"completed", "blocked", "failed", "cancelled"}
 _ACTIVE = {"planned", "queued", "running"}
@@ -100,6 +101,176 @@ class WardenLifecycleService:
             workflows.update(request_id, "cancelled", context={"stage": "cancelled"},
                              result=result, detail={"operation": "cancel_local_pending"})
             return result
+
+    def reconcile_existing(self, request_id: str) -> dict[str, Any]:
+        """Query only known WARDEN operations and persist facts that can be verified.
+
+        This operator workflow never calls either submission endpoint. A plan with
+        no discoverable run remains pending; recovery does not start the run.
+        """
+        if self.workflows is None:
+            raise ValueError("WORKFLOW_STORE_REQUIRED")
+        with self.workflows.execution_lock(request_id) as acquired:
+            entry = self.workflows.get(request_id)
+            if entry is None:
+                raise KeyError(request_id)
+            if not acquired:
+                return {
+                    "kernel": "WARDEN", "status": "in_progress",
+                    "workflow_id": request_id,
+                    "workflow_status": entry.get("workflow_status", "unknown"),
+                    "plan_id": entry.get("plan_id"), "run_id": entry.get("run_id"),
+                    "blockers": ["WORKFLOW_LOCKED"],
+                    "note": "Another process is updating this workflow; no remote query was issued.",
+                }
+            if entry.get("status") in TERMINAL_JOURNAL_STATES:
+                return {
+                    **(entry.get("result") or {}),
+                    "workflow_id": request_id,
+                    "workflow_status": entry.get("workflow_status", "unknown"),
+                    "reconciled": False,
+                    "note": "The local workflow is terminal and was not overwritten.",
+                }
+            request_payload = entry.get("request")
+            try:
+                request = WardenAuditRequest.model_validate(request_payload)
+            except (TypeError, ValueError):
+                return self._reconciliation_report(entry)
+
+            context = entry.get("context") if isinstance(entry.get("context"), Mapping) else {}
+            plan = context.get("plan") if isinstance(context.get("plan"), Mapping) else {}
+            run = context.get("run") if isinstance(context.get("run"), Mapping) else {}
+            plan_id = plan.get("plan_id")
+            run_id = run.get("run_id")
+            preflight = dict(context.get("preflight") or {"status": "unknown", "blockers": []})
+
+            if isinstance(run_id, str) and run_id.strip():
+                if not isinstance(plan_id, str) or not plan_id.strip():
+                    return self._reconciliation_report(entry)
+                try:
+                    remote_run = self.client.get_run(run_id)
+                    self._validate_run_identity(remote_run, run_id=run_id, plan_id=plan_id)
+                except WardenKernelError as exc:
+                    return {
+                        "kernel": "WARDEN", "status": "reconciliation_required",
+                        "workflow_id": request_id, "plan_id": plan_id, "run_id": run_id,
+                        "blockers": [exc.code],
+                        "note": "The existing run could not be verified; no submission was repeated.",
+                    }
+                return self._record_reconciled_run(
+                    request_id, request, preflight, dict(plan), remote_run,
+                )
+
+            if not isinstance(plan_id, str) or not plan_id.strip():
+                response = self._reconciliation_report(entry)
+                response["blockers"] = ["REMOTE_OPERATION_ID_UNAVAILABLE"]
+                return response
+            try:
+                remote_plan = self.client.get_audit_plan(plan_id)
+                if remote_plan.get("plan_id") != plan_id:
+                    raise WardenKernelError("WARDEN plan identity mismatch", code="WARDEN_BAD_RESPONSE")
+                remote_request = remote_plan.get("request")
+                if not isinstance(remote_request, Mapping):
+                    raise WardenKernelError("WARDEN plan request is unavailable", code="WARDEN_BAD_RESPONSE")
+                normalized_remote = WardenAuditRequest.model_validate(remote_request).to_warden_payload()
+                expected_request = request.to_warden_payload()
+                if self.workflows.canonical_hash(normalized_remote) != self.workflows.canonical_hash(expected_request):
+                    raise WardenKernelError("WARDEN plan request does not match the journal", code="WARDEN_BAD_RESPONSE")
+                plan_status = self._status(remote_plan)
+                if plan_status == "planned":
+                    matches = [
+                        item for item in self.client.list_runs()
+                        if item.get("plan_id") == plan_id
+                    ]
+                    if len(matches) == 1:
+                        candidate_id = matches[0].get("run_id")
+                        if not isinstance(candidate_id, str) or not candidate_id.strip():
+                            raise WardenKernelError("WARDEN run ID is unavailable", code="WARDEN_BAD_RESPONSE")
+                        remote_run = self.client.get_run(candidate_id)
+                        self._validate_run_identity(remote_run, run_id=candidate_id, plan_id=plan_id)
+                        return self._record_reconciled_run(
+                            request_id, request, preflight, dict(remote_plan), remote_run,
+                        )
+                    blocker = "WARDEN_RUN_NOT_FOUND" if not matches else "WARDEN_RUN_MATCH_AMBIGUOUS"
+                    current_state = entry.get("status")
+                    if current_state in {"unknown", "interrupted", "plan_created"}:
+                        self.workflows.update(
+                            request_id, "plan_created",
+                            context={"stage": "plan_created", "preflight": preflight, "plan": dict(remote_plan)},
+                            detail={"reconciled": True, "remote_run_matches": len(matches)},
+                        )
+                    elif current_state in {"submission_uncertain", "run_submitting", "plan_submitting"}:
+                        self.workflows.update(
+                            request_id, "unknown",
+                            context={"stage": "unknown", "preflight": preflight, "plan": dict(remote_plan)},
+                            detail={"reconciled": True, "remote_run_matches": len(matches)},
+                        )
+                    return {
+                        "kernel": "WARDEN", "status": "reconciliation_required",
+                        "workflow_id": request_id, "workflow_status": "planned",
+                        "plan_id": plan_id, "run_id": None, "blockers": [blocker],
+                        "note": "The existing plan was queried; recovery did not submit or restart a run.",
+                    }
+                if plan_status == "blocked":
+                    result = self._report(
+                        status="blocked", preflight=preflight, plan=dict(remote_plan),
+                        note="The existing WARDEN plan is blocked; reconciliation did not submit a run.",
+                    )
+                    self.workflows.update(
+                        request_id, "finished",
+                        context={"stage": "finished", "preflight": preflight, "plan": dict(remote_plan)},
+                        result=result,
+                        detail={"reconciled": True, "plan_status": plan_status},
+                    )
+                    return {**result, "workflow_id": request_id, "reconciled": True}
+                return {
+                    "kernel": "WARDEN", "status": "reconciliation_required",
+                    "workflow_id": request_id, "plan_id": plan_id, "run_id": None,
+                    "blockers": ["WARDEN_PLAN_STATUS_UNKNOWN"],
+                    "note": "The existing plan was queried but did not return a documented state.",
+                }
+            except (WardenKernelError, ValueError, TypeError) as exc:
+                code = getattr(exc, "code", "WARDEN_PLAN_REQUEST_UNVERIFIABLE")
+                return {
+                    "kernel": "WARDEN", "status": "reconciliation_required",
+                    "workflow_id": request_id, "plan_id": plan_id, "run_id": None,
+                    "blockers": [code],
+                    "note": "The existing plan could not be verified; no run was submitted.",
+                }
+
+    def _record_reconciled_run(
+        self,
+        request_id: str,
+        request: WardenAuditRequest,
+        preflight: dict[str, Any],
+        plan: dict[str, Any],
+        run: dict[str, Any],
+    ) -> dict[str, Any]:
+        assert self.workflows is not None
+        run_status = self._status(run)
+        if run_status not in _KNOWN:
+            journal_status = "unknown"
+        elif run_status in _ACTIVE:
+            journal_status = "run_submitted"
+        else:
+            journal_status = "finished"
+        result = self._report(
+            status=run_status, preflight=preflight, plan=plan, run=run,
+            note=(
+                "Existing WARDEN run state was queried and identity-checked; "
+                "reconciliation never submitted a replacement operation."
+            ),
+        )
+        self.workflows.update(
+            request_id, journal_status,
+            context={"stage": journal_status, "preflight": preflight, "plan": plan, "run": run},
+            result=result,
+            detail={"reconciled": True, "run_id": run.get("run_id"), "run_status": run_status},
+        )
+        return {
+            **result, "workflow_id": request_id, "workflow_status": journal_status,
+            "reconciled": True,
+        }
 
     def _execute_journaled(
         self,
@@ -436,29 +607,40 @@ class WardenLifecycleService:
                 return self._reconciliation_report(entry)
 
         if state == "plan_created":
-            if not request.start_run:
-                result = self._report(status="planned", preflight=preflight, plan=plan, note="Plan was created earlier; no run was submitted.")
-                self.workflows.update(request_id, "finished", context={"stage": "finished"}, result=result, detail={"recovered": True})
-                return {**result, "workflow_id": request_id, "recovered": True}
             plan_id = plan.get("plan_id")
             if not isinstance(plan_id, str) or not plan_id.strip():
                 return self._reconciliation_report(entry)
-            self.workflows.update(request_id, "run_submitting", context={"stage": "run_submitting"}, detail={"recovered_from": "plan_created", "plan_id": plan_id})
             try:
-                run = self.client.start_run(plan_id)
-                if isinstance(run.get("run_id"), str):
-                    self._validate_run_identity(run, run_id=run["run_id"], plan_id=plan_id)
-            except Exception as exc:
-                self.workflows.update(request_id, "submission_uncertain", error_code=getattr(exc, "code", type(exc).__name__), error_message=str(exc)[:300], detail={"external_submission_may_have_succeeded": True})
-                if not isinstance(exc, WardenKernelError):
-                    raise
-                return self._reconciliation_report(self.workflows.get(request_id) or entry)
-            run_id = run.get("run_id")
-            if not isinstance(run_id, str) or not run_id.strip():
-                self.workflows.update(request_id, "submission_uncertain", context={"run": run}, error_code="WARDEN_BAD_RESPONSE", error_message="Run response missing run_id")
-                return self._reconciliation_report(self.workflows.get(request_id) or entry)
-            self.workflows.update(request_id, "run_submitted", context={"stage": "run_submitted", "preflight": preflight, "plan": plan, "run": run}, detail={"recovered": True, "run_id": run_id})
+                remote_plan = self.client.get_audit_plan(plan_id)
+                remote_request = remote_plan.get("request")
+                if remote_plan.get("plan_id") != plan_id or not isinstance(remote_request, Mapping):
+                    return self._reconciliation_report(entry)
+                normalized = WardenAuditRequest.model_validate(remote_request).to_warden_payload()
+                if self.workflows.canonical_hash(normalized) != self.workflows.canonical_hash(request.to_warden_payload()):
+                    return self._reconciliation_report(entry)
+                matches = [item for item in self.client.list_runs() if item.get("plan_id") == plan_id]
+                if len(matches) != 1:
+                    return self._report(
+                        status="reconciliation_required", preflight=preflight, plan=dict(remote_plan),
+                        note=("The existing plan has no unique queryable run. Recovery only queried "
+                              "the plan and run index; it did not submit a run."),
+                    )
+                run_id = matches[0].get("run_id")
+                if not isinstance(run_id, str) or not run_id.strip():
+                    return self._reconciliation_report(entry)
+                run = self.client.get_run(run_id)
+                self._validate_run_identity(run, run_id=run_id, plan_id=plan_id)
+            except (WardenKernelError, ValueError, TypeError):
+                return self._reconciliation_report(entry)
+            plan = dict(remote_plan)
+            run = dict(run)
+            self.workflows.update(
+                request_id, "run_submitted",
+                context={"stage": "run_submitted", "preflight": preflight, "plan": plan, "run": run},
+                detail={"reconciled": True, "run_id": run_id},
+            )
             state = "run_submitted"
+            queried_run = True
 
         if state in {"run_submitted", "polling", "timed_out"}:
             run_id = run.get("run_id")

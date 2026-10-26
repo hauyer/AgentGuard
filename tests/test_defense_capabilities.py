@@ -30,7 +30,9 @@ def _completed_workflow(store, request_id="workflow-cap-1"):
             "artifact_refs": ["warden-artifact-17"],
         }]},
     }
-    store.update(request_id, "finished", context={"run": run},
+    store.update(request_id, "finished", context={
+        "plan": {"plan_id": run["plan_id"]}, "run": run,
+    },
                  result={"status": "completed", "run": run})
 
 

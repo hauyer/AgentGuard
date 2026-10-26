@@ -31,8 +31,9 @@ def _workflow_entry(run_id: str, artifact_refs: list[str]) -> dict:
 def test_local_verified_artifact_grants_content_access_capability(tmp_path):
     artifacts = LocalArtifactStore(tmp_path / "artifacts")
     artifact = artifacts.put(
-        b'{"observation": "message metadata"}',
-        metadata={"run_id": "run-c5"}, tags=["warden-observation"],
+        b'{"run_id":"run-c5","plan_id":"plan-c5","observation":"message metadata"}',
+        metadata={"run_id": "run-c5", "plan_id": "plan-c5"},
+        tags=["warden-observation"],
     )
     ref = f"artifact://sha256/{artifact.artifact_ref.artifact_id}"
     response = EvidenceGateway().for_warden_workflow(

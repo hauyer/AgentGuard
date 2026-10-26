@@ -62,6 +62,11 @@ def test_comparison_runs_all_strategies_with_real_records(tmp_path):
     )
     assert isinstance(report, StrategyComparisonReport)
     assert len(report.runs) == 4  # 2 strategies x 2 repetitions; every run counts
+    assert report.independent_sample_count == 1
+    assert report.technical_repetitions == 2
+    assert report.actual_model_calls == sum(run.model_calls_used for run in report.runs) == 0
+    assert report.runtime_version
+    assert report.runtime_build_commit == "unknown"
     assert {run.strategy for run in report.runs} == {"fixed_order", "information_value"}
     for run in report.runs:
         assert run.experiment_id
@@ -105,6 +110,9 @@ def test_aggregates_include_failures_and_degradations(tmp_path):
     assert report.report_artifact_id
     persisted = json.loads(artifacts.get_bytes(report.report_artifact_id))
     assert len(persisted["runs"]) == 4
+    assert persisted["independent_sample_count"] == 1
+    assert persisted["technical_repetitions"] == 2
+    assert persisted["actual_model_calls"] == 0
     assert [run["execution_status"] for run in persisted["runs"]] == [
         "completed", "completed", "failed", "failed",
     ]

@@ -8,10 +8,13 @@ interventions) stay null in the report contract.
 """
 from __future__ import annotations
 
+import os
+import re
 import uuid
 from collections.abc import Callable
 from typing import Any
 
+from agentguard import __version__
 from agentguard.artifacts.local_store import LocalArtifactStore
 from agentguard.contracts.investigation_eval import (
     StrategyAggregate,
@@ -49,6 +52,10 @@ class InvestigationEvaluationService:
         data_partition: str = "held_out_family",
         comparison_id: str | None = None,
         provenance_notes: list[str] | None = None,
+        source_tree_sha256: str | None = None,
+        input_manifest_sha256: str | None = None,
+        source_kind: str = "unknown",
+        declared_source_kinds: list[str] | None = None,
     ) -> StrategyComparisonReport:
         """Execute the protocol through the injected loop runner.
 
@@ -95,6 +102,19 @@ class InvestigationEvaluationService:
             aggregates=aggregates,
             limitations=limitations,
             source_commit=self.source_commit,
+            source_tree_sha256=source_tree_sha256,
+            input_manifest_sha256=input_manifest_sha256,
+            source_kind=(
+                source_kind if source_kind in {
+                    "synthetic", "recorded_observational", "live_observational", "mixed",
+                } else "unknown"
+            ),
+            declared_source_kinds=list(dict.fromkeys(declared_source_kinds or []))[:16],
+            independent_sample_count=len(set(base_request_ids)),
+            technical_repetitions=repetitions,
+            actual_model_calls=sum(run.model_calls_used for run in runs),
+            runtime_version=__version__,
+            runtime_build_commit=self._runtime_build_commit(),
         )
         return self._persist(report)
 
@@ -198,6 +218,8 @@ class InvestigationEvaluationService:
                 "comparison_id": report.comparison_id,
                 "strategies": ",".join(report.strategies),
                 "runs": len(report.runs),
+                "source_tree_sha256": report.source_tree_sha256 or "unknown",
+                "input_manifest_sha256": report.input_manifest_sha256 or "unknown",
             },
             media_type="application/json",
         )
@@ -213,3 +235,8 @@ class InvestigationEvaluationService:
                 executed_at=report.executed_at.isoformat(),
             )
         return report
+
+    @staticmethod
+    def _runtime_build_commit() -> str:
+        value = os.environ.get("AGENTGUARD_BUILD_COMMIT", "").strip().lower()
+        return value if re.fullmatch(r"[0-9a-f]{40}", value) else "unknown"

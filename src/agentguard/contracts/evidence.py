@@ -28,14 +28,30 @@ class EvidenceRecord(ContractModel):
 
 
 class CausalValidationCriteria(ContractModel):
-    """Explicit method checks required before evidence can be called causal."""
+    """Auditable experiment records required before evidence can be called causal.
 
+    This structure records what was reviewed. Its fields are not, by themselves,
+    proof that the runs, artifacts, or reviewer are authentic; the Evidence Gateway
+    must validate those references against a trusted source before emitting a
+    causal grade.
+    """
+
+    schema_version: Literal["0.2"] = "0.2"
     independent_repetitions: int = Field(ge=2)
+    independent_run_ids: list[str] = Field(min_length=2, max_length=100)
+    sample_ids: list[str] = Field(min_length=2, max_length=10000)
+    experiment_config_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
     matched_control_passed: bool
+    matched_control_artifact_ref: str = Field(min_length=1, max_length=2048)
     negative_control_passed: bool
+    negative_control_artifact_ref: str = Field(min_length=1, max_length=2048)
     benign_utility_measured: bool
+    utility_artifact_ref: str = Field(min_length=1, max_length=2048)
     artifact_hashes_verified: bool
     alternative_explanations_reviewed: bool
+    alternative_explanations_review_ref: str = Field(min_length=1, max_length=2048)
+    methodology_review_record_ref: str = Field(min_length=1, max_length=2048)
+    methodology_reviewer_id: str = Field(min_length=1, max_length=256)
 
     @model_validator(mode="after")
     def all_checks_passed(self):
@@ -47,13 +63,19 @@ class CausalValidationCriteria(ContractModel):
             self.alternative_explanations_reviewed,
         )):
             raise ValueError("causal validation requires every methodological check to pass")
+        if len(set(self.independent_run_ids)) != len(self.independent_run_ids):
+            raise ValueError("independent_run_ids must be distinct")
+        if len(set(self.sample_ids)) != len(self.sample_ids):
+            raise ValueError("sample_ids must be distinct")
+        if len(self.independent_run_ids) < self.independent_repetitions:
+            raise ValueError("each independent repetition must have a recorded run ID")
         return self
 
 
 class GovernedEvidence(ContractModel):
     """Evidence Gateway view with source, execution and method status kept distinct."""
 
-    schema_version: Literal["0.1"] = "0.1"
+    schema_version: Literal["0.2"] = "0.2"
     evidence_id: str = Field(min_length=1, max_length=256)
     source_system: str = Field(min_length=1, max_length=128)
     warden_run_id: str | None = None
@@ -73,6 +95,9 @@ class GovernedEvidence(ContractModel):
     confidence: float | None = Field(default=None, ge=0.0, le=1.0)
     limitations: list[str] = Field(default_factory=list)
     verification_status: Literal["verified", "unverified", "blocked", "failed", "unsupported"] = "unverified"
+    content_integrity_status: Literal["verified", "unverified", "failed"] = "unverified"
+    source_authenticity_status: Literal["verified", "unverified", "unknown"] = "unknown"
+    methodology_review_status: Literal["verified", "unverified", "unknown"] = "unknown"
     run_status: Literal["completed", "partial", "failed", "blocked", "unknown"] = "unknown"
     model_version: str = "unknown"
     scenario_version: str = "unknown"
@@ -145,4 +170,10 @@ class GovernedEvidence(ContractModel):
                 raise ValueError("causal_validated evidence must describe an intervention or evaluation")
             if self.causal_validation is None:
                 raise ValueError("causal_validated evidence requires explicit methodological checks")
+            if self.content_integrity_status != "verified":
+                raise ValueError("causal_validated evidence requires verified artifact content integrity")
+            if self.source_authenticity_status != "verified":
+                raise ValueError("causal_validated evidence requires verified source authenticity")
+            if self.methodology_review_status != "verified":
+                raise ValueError("causal_validated evidence requires a verified methodology review record")
         return self

@@ -1,5 +1,6 @@
 ﻿"""Contract tests for the public investigation-loop API (E2)."""
 
+import hashlib
 import json
 import sqlite3
 import threading
@@ -570,11 +571,113 @@ def test_report_artifact_survives_registry_update_failure_without_replay(tmp_pat
             headers={"X-AgentGuard-Operator-Token": "operator-secret",
                      "X-Loop-Idempotency-Key": key},
         )
+        reconciled = client.post(
+            f"/v1/investigation-loops/{pending['loop_id']}/reconcile",
+            headers={"X-AgentGuard-Operator-Token": "operator-secret"},
+        )
 
     assert recovered.status_code == 200
     assert recovered.json()["phase"] == "BLOCKED"
     assert recovered.json()["stop_reason"] == "reconciliation_required"
+    assert reconciled.status_code == 200
+    assert reconciled.json()["status"] == "reconciled"
+    assert reconciled.json()["report_reconstructed"] is True
+    assert restarted.state.public_loops.registry.get(pending["loop_id"])["execution_state"] == "finished"
     assert run_calls == 1
+
+
+def test_loop_reconciliation_requires_dedicated_operator_token(tmp_path, monkeypatch):
+    monkeypatch.setenv("AGENTGUARD_API_TOKEN", "api-secret")
+    monkeypatch.setenv("AGENTGUARD_OPERATOR_API_TOKEN", "operator-secret")
+    monkeypatch.setenv("AGENTGUARD_APPROVAL_TOKEN", "approval-secret")
+    app = _seeded_app(tmp_path)
+    registration = _register_loop(
+        app, "k-reconcile-auth", execution_state="unknown", phase="BLOCKED",
+    )
+
+    with TestClient(app) as client:
+        api_token_only = client.post(
+            f"/v1/investigation-loops/{registration['loop_id']}/reconcile",
+            headers={"X-AgentGuard-Token": "api-secret"},
+        )
+        approval_only = client.post(
+            f"/v1/investigation-loops/{registration['loop_id']}/reconcile",
+            headers={"X-AgentGuard-Token": "api-secret", "X-Approval-Token": "approval-secret"},
+        )
+        allowed = client.post(
+            f"/v1/investigation-loops/{registration['loop_id']}/reconcile",
+            headers={"X-AgentGuard-Operator-Token": "operator-secret"},
+        )
+
+    assert api_token_only.status_code == 403
+    assert approval_only.status_code == 403
+    assert allowed.status_code == 200
+    assert allowed.json()["status"] == "reconciliation_required"
+
+
+def test_loop_reconciliation_queries_known_warden_run_without_completing_loop(
+    tmp_path, monkeypatch,
+):
+    import agentguard.api.app as app_module
+    from agentguard.contracts.warden import WardenAuditRequest
+
+    monkeypatch.setenv("AGENTGUARD_OPERATOR_API_TOKEN", "operator-secret")
+    app = _seeded_app(tmp_path)
+    registration = _register_loop(
+        app, "k-reconcile-existing-run", execution_state="unknown", phase="BLOCKED",
+    )
+    request_id = f"{PAYLOAD['base_request_id']}-audit-r1"
+    audit_request = WardenAuditRequest.model_validate({
+        "request_id": request_id, "contract_id": "contract-a", "model_id": "local-7b",
+        "runtime_id": "stegopot-a", "mode": "observation", "scenario_id": "case-family-a",
+        "risk_type": "secret_flow",
+    })
+    app.state.warden_workflows.begin(request_id, audit_request.model_dump(mode="json"))
+    app.state.warden_workflows.update(request_id, "preflighting")
+    app.state.warden_workflows.update(request_id, "plan_submitting")
+    app.state.warden_workflows.update(request_id, "plan_created", context={
+        "plan": {"plan_id": "plan-known"},
+        "preflight": {"status": "ready", "blockers": []},
+    })
+    app.state.warden_workflows.update(request_id, "run_submitting")
+    app.state.warden_workflows.update(request_id, "run_submitted", context={
+        "plan": {"plan_id": "plan-known"},
+        "run": {"run_id": "run-known", "plan_id": "plan-known", "status": "running"},
+        "preflight": {"status": "ready", "blockers": []},
+    })
+    app.state.warden_workflows.update(request_id, "unknown")
+
+    class QueryOnlyKernel:
+        def __init__(self):
+            self.calls = []
+
+        def get_run(self, run_id):
+            self.calls.append(("get_run", run_id))
+            return {
+                "run_id": run_id, "plan_id": "plan-known", "status": "completed",
+                "evidence_refs": ["artifact://actual-result"],
+            }
+
+    kernel = QueryOnlyKernel()
+    monkeypatch.setattr(app_module, "_configured_warden_client", lambda: kernel)
+    with TestClient(app) as client:
+        response = client.post(
+            f"/v1/investigation-loops/{registration['loop_id']}/reconcile",
+            headers={"X-AgentGuard-Operator-Token": "operator-secret"},
+        )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["status"] == "reconciliation_required"
+    assert body["report_reconstructed"] is False
+    assert body["workflows"][0]["remote_status"] == "completed"
+    assert body["workflows"][0]["run_id"] == "run-known"
+    assert app.state.warden_workflows.get(request_id)["status"] == "finished"
+    loop_after = app.state.public_loops.registry.get(registration["loop_id"])
+    assert loop_after["phase"] == "BLOCKED"
+    assert loop_after["execution_state"] == "unknown"
+    assert loop_after["report_artifact_id"] == "pending"
+    assert kernel.calls == [("get_run", "run-known")]
 
 
 def test_concurrent_creates_collapse_to_one_loop(tmp_path, monkeypatch):
@@ -635,6 +738,8 @@ def test_openapi_registers_loop_routes(tmp_path):
     assert "get" in schema["paths"]["/v1/investigation-loops/{loop_id}/decisions"]
     assert "get" in schema["paths"]["/v1/investigation-loops/{loop_id}/evidence-changes"]
     assert "get" in schema["paths"]["/v1/investigation-loops/{loop_id}/budget"]
+    assert "post" in schema["paths"]["/v1/investigation-loops/{loop_id}/reconcile"]
+    assert "get" in schema["paths"]["/v1/system/identity"]
     parameters = schema["paths"]["/v1/investigation-loops"]["post"]["parameters"]
     by_name = {item["name"]: item for item in parameters}
     assert {
@@ -659,8 +764,14 @@ def test_openapi_registers_loop_routes(tmp_path):
     assert request_schema["properties"]["max_seconds"]["default"] == 300.0
     assert request_schema["properties"]["max_model_calls"]["default"] == 4
     assert request_schema["properties"]["no_new_evidence_rounds"]["default"] == 2
-    snapshot = Path(__file__).resolve().parents[1] / "docs/integration/openapi-1.1.0rc1.json"
+    snapshot = Path(__file__).resolve().parents[1] / "docs/integration/openapi-1.1.0rc2.json"
+    assert schema["openapi"] == "3.1.0"
+    assert schema["info"]["version"] == "1.1.0rc2"
+    assert len(schema["paths"]) == 86
     assert schema == json.loads(snapshot.read_text(encoding="utf-8"))
+    assert hashlib.sha256(snapshot.read_bytes()).hexdigest() == (
+        "19889a15afa0ba0c41873ce4a6f2fb3cf59b284f0795b037aded56cc9cbad906"
+    )
 
 
 def test_id_semantics_are_strictly_separated(tmp_path, monkeypatch):

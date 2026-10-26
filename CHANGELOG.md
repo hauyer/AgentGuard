@@ -1,5 +1,13 @@
 # Changelog
 
+## Unreleased — I8 interface freeze and A1–A6 reliability review
+
+- Hardened governed evidence provenance: local content integrity, run/plan ownership, source authenticity, and methodology review remain separate; untrusted upstream causal claims are downgraded, and synthetic/stub or cross-run items are excluded from real WARDEN evidence.
+- Added query-only Operator Loop reconciliation. Recovery checks persisted report ownership and known WARDEN IDs; uncertain or incomplete work is never resubmitted and cannot be marked complete without a verified Loop report.
+- Added public runtime identity with software/API versions, build commit declaration, canonical OpenAPI SHA-256, and capability states; CI injects the build commit and local builds report `unknown`.
+- Made the single-host SQLite/file-lock deployment limit explicit in readiness and deployment docs; extended research provenance with source-tree/input-manifest hashes, independent sample count, technical repetitions, actual model calls, and runtime identity.
+- Bumped the package to `1.1.0rc2`, regenerated the 86-path OpenAPI snapshot and public evidence schemas. Real WARDEN execution remains BLOCKED/NOT_RUN.
+
 ## Unreleased — D0–D7: real-investigation platform
 
 - D0: CI wheel-install step replaced by `scripts/verify_wheel_install.py` (single-wheel discovery, clean-venv install under the runtime lock, importlib.metadata version check against pyproject, CLI/SDK import verification from outside the checkout); per-environment test records aligned in `docs/release/TEST_REPORT.md`.

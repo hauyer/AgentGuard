@@ -56,7 +56,10 @@
 阻塞及超时不能从分母中删除。实际报告必须同时记录输入清单/哈希、数据来源类别、
 `source_commit` 与完整源码树 SHA-256、evaluation ID 和报告工件 ID；CLI 的源码树哈希
 覆盖 `src`、`scripts`、`schemas`、`requirements` 与 `pyproject.toml` 的实际文件内容，
-包括未提交修改。任何来源或工件标识缺失时结果不得标为可复现。
+包括未提交修改。汇总还记录 `independent_sample_count`（去重后的基础调查 ID 数）、
+`technical_repetitions`（重复执行次数）、`actual_model_calls`（逐次实际调用数之和）、
+运行时软件版本和注入的构建 commit；本地构建身份未知时写 `unknown`。报告工件 ID 是
+内容寻址摘要。任何来源或工件标识缺失时结果不得标为可复现。
 
 ## 指标与解释
 

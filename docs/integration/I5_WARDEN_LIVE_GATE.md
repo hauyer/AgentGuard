@@ -6,8 +6,9 @@
 WARDEN 源码并运行本地软件/Stub 测试，没有向真实 WARDEN 提交计划或运行，没有真实模型
 调用，也没有产生真实新增证据。
 
-本文件对应的 AgentGuard API 实现快照为
-`66dae883fb75cf90ef735b94d2f5c9b565ba5ad3`；纯文档提交不改变该实现。核验的 WARDEN
+本轮 AgentGuard 改动基于代码基线
+`8a7c154116ca48c80e2dbf5291e1ff70f5dbdd25`；工作树实现尚未提交，不能将该基线 SHA
+冒充为本轮实现 SHA。核验的 WARDEN
 仓库快照为 `077f5405619261d6c4c8f989f8cfc996cc2391a6`。审查范围包括
 `warden/interface/api/app.py`、`warden/interface/api/schemas.py`、
 `warden/application/service.py`、`warden/application/compiler.py`、
@@ -57,10 +58,14 @@ AgentGuard 的当前 API 实现快照与本文件对应；后续纯文档提交�
 - `WardenLifecycleService` 先在本地持久日志登记请求指纹与提交状态。已知远端 ID 可
   继续查询；提交结果不确定且没有 ID 时进入 `reconciliation_required`，不会自动重发。
   该日志能防止 AgentGuard 自身盲目重试，但无法恢复 WARDEN 进程丢失的远端记录。
+- Operator 专用 `POST /v1/investigation-loops/{loop_id}/reconcile` 只查询已登记的计划和
+ 运行，或恢复与 Loop 登记 ID 绑定的本地报告工件。它不会创建 WARDEN 计划/运行；远端
+ 运行完成但 Loop 报告无法证明时，Loop 仍保持 `BLOCKED`。
 - WARDEN 返回未识别的计划或运行状态时，日志保留 `unknown`，而非写成终态；重复请求
   只会查询已知计划/运行 ID。没有可查询 ID 时仍需人工或外部对账，不会再次提交。
-- `EvidenceGateway` 丢弃标记为 `synthetic` 或 `stub` 的来源。可读的真实 WARDEN 工件
- 仍须经过本地哈希/审核元数据检查，未验证的引用不会升级为已验证证据。
+- `EvidenceGateway` 丢弃标记为 `synthetic` 或 `stub` 的来源。AgentGuard 本地工件会检查
+  内容哈希和 run/plan 归属；WARDEN v1 没有可验证的来源签名与审查记录，因此来源真实性
+  仍为 `unknown`，未验证的引用不会升级为已验证证据。
 - Loop 只有读取到实际结果并取得新增证据引用后才记录新增证据。WARDEN 回报
   `completed`、但缺少可查询操作 ID 或结果证据引用时，Loop 返回 BLOCKED，不能报告成功
   完成。
@@ -82,6 +87,9 @@ AgentGuard 的当前 API 实现快照与本文件对应；后续纯文档提交�
 `unsupported`、授权和证据来源为 `unverified`。WARDEN 健康检查成功不会覆盖这些
 阻塞项，也不会使 Live Loop 变绿。
 
+另有 `multi_host_storage=unsupported` 检查，明确报告 SQLite 与本机文件锁只支持单主机
+部署；不将文件锁描述为跨主机锁。
+
 ## 验收覆盖与执行状态
 
 下表中的自动化测试是 AgentGuard 本地软件测试；带 HTTP Stub/替身的测试验证合同、失败
@@ -90,13 +98,13 @@ AgentGuard 的当前 API 实现快照与本文件对应；后续纯文档提交�
 | 场景 | 本地覆盖 | 真实 WARDEN |
 | --- | --- | --- |
 | 未配置 WARDEN | `test_unconfigured_warden_reports_unavailable_with_blocker`；readiness 保留 Live 阻塞 | NOT_RUN |
-| Operator 凭证缺失 | `test_post_requires_operator_or_approval_credential` | NOT_RUN |
+| Operator 凭证缺失 | `test_post_requires_operator_or_approval_credential`、`test_loop_reconciliation_requires_dedicated_operator_token` | NOT_RUN |
 | 远端计划/运行提交超时或结果不确定 | `test_uncertain_plan_submission_is_never_retried_automatically`、`test_uncertain_run_submission_is_never_retried_automatically` | NOT_RUN |
 | WARDEN 响应缺少运行 ID | `test_malformed_run_response_missing_id_is_rejected`、`test_bad_submission_response_preserves_uncertainty_without_resubmit` | NOT_RUN |
 | 计划/运行状态未识别或无远端 ID | `test_journaled_unknown_plan_status_is_reconciled_without_resubmission`、`test_journaled_unknown_run_status_is_reconciled_by_id_without_resubmission`、`test_unknown_journal_without_remote_id_never_resubmits` | NOT_RUN |
 | 重启后远端状态未知 | `test_restart_with_unknown_remote_run_never_resubmits` | NOT_RUN |
 | 同键重复请求 | `test_idempotent_retries_return_the_same_loop`、`test_g3_idempotent_repeat_does_not_create_second_loop`；覆盖 AgentGuard Loop 登记，不代表 WARDEN 远端幂等 | NOT_RUN |
-| 已存在操作状态对账 | `test_workflow_journal_resumes_known_run_without_starting_duplicate`、`test_uncertain_run_submission_reconciles_one_matching_warden_run` | NOT_RUN |
+| 已存在操作状态对账 | `test_workflow_journal_resumes_known_run_without_starting_duplicate`、`test_uncertain_run_submission_reconciles_one_matching_warden_run`、`test_operator_reconciliation_queries_known_run_without_any_submission`、`test_loop_reconciliation_queries_known_warden_run_without_completing_loop` | NOT_RUN |
 | 多个匹配/未知运行不重复提交 | `test_uncertain_run_submission_stays_ambiguous_with_multiple_matches`、`test_restart_with_unknown_remote_run_never_resubmits` | NOT_RUN |
 | Stub 证据不进入真实 WARDEN 证据集合 | `test_synthetic_or_stub_workflow_is_not_emitted_as_warden_evidence`、`test_http_stub_observation_feedback_informs_the_next_decision` | NOT_RUN；Stub 结果不计 Live |
 | synthetic 不标记为真实观察或因果验证 | `test_multi_round_read_only_loop_records_adaptive_decisions`、`test_causal_validated_contract_requires_provenance_and_all_method_checks` 与 `I_RESULTS.md` 的来源/真值限制 | NOT_RUN；现有 I6 结果仍标为 synthetic |

@@ -57,6 +57,10 @@ _LIVE_LOOP_NOTE = (
     "and the reviewed WARDEN v1 API lacks remote submission idempotency, durable "
     "run state, verifiable remote authorization, and verifiable evidence provenance."
 )
+_STORAGE_TOPOLOGY_NOTE = (
+    "AgentGuard state is supported on one host using SQLite and same-host file locks; "
+    "these locks do not coordinate separate hosts. Multi-host active-active deployment is unsupported."
+)
 
 
 def client_from_env() -> tuple[WardenKernelClient | None, str | None]:
@@ -129,6 +133,20 @@ class SystemReadinessService:
             last_checked_at=cache.generated_at, source="agentguard:self",
             capability_version=__version__,
         )]
+        checks.append(ReadinessCheck(
+            name="multi_host_storage",
+            status="unsupported",
+            last_checked_at=cache.generated_at,
+            source="agentguard:storage_configuration",
+            blockers=["MULTI_HOST_STORAGE_UNSUPPORTED"],
+            diagnostics={
+                "supported_topology": "single_host",
+                "database": "SQLite",
+                "lock_scope": "same_host_processes",
+                "cross_host_locking": False,
+            },
+            capability_version="AgentGuard local SQLite store",
+        ))
         status = str(diagnosis.get("status"))
         kernel_status = str(diagnosis.get("kernel_status") or "")
         transport_down = status in {"not_configured", "unavailable"}
@@ -282,7 +300,10 @@ class SystemReadinessService:
         ))
         return SystemReadinessResponse(
             checks=checks, generated_at=cache.generated_at, cache=cache,
-            limitations=[_HEALTH_NOTE, _INTERVENTION_NOTE, _EVIDENCE_NOTE, _LIVE_LOOP_NOTE],
+            limitations=[
+                _HEALTH_NOTE, _INTERVENTION_NOTE, _EVIDENCE_NOTE,
+                _LIVE_LOOP_NOTE, _STORAGE_TOPOLOGY_NOTE,
+            ],
         )
 
     @staticmethod

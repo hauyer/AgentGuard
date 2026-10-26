@@ -2,7 +2,7 @@
 
 Used by CI (and locally) instead of a hardcoded wheel filename:
 
-  * exactly one ``agentguard-*.whl`` must exist in ``dist/``
+  * exactly one wheel matching the version in ``pyproject.toml`` must exist in ``dist/``
   * it is installed into a fresh virtual environment under ``-c runtime.lock``
   * the installed version (importlib.metadata) must equal ``pyproject.toml``
   * CLI and SDK import and run from the venv, not from the repo checkout
@@ -26,11 +26,11 @@ def _repo_version() -> str:
     return str(data["project"]["version"])
 
 
-def _find_wheel(dist: Path) -> Path:
-    wheels = sorted(dist.glob(f"{EXPECTED_PREFIX}*.whl"))
+def _find_wheel(dist: Path, version: str) -> Path:
+    wheels = sorted(dist.glob(f"{EXPECTED_PREFIX}{version}-*.whl"))
     if len(wheels) != 1:
         raise SystemExit(
-            f"expected exactly one {EXPECTED_PREFIX}*.whl in {dist}, found: "
+            f"expected exactly one {EXPECTED_PREFIX}{version}-*.whl in {dist}, found: "
             f"{[w.name for w in wheels]}"
         )
     return wheels[0]
@@ -38,7 +38,7 @@ def _find_wheel(dist: Path) -> Path:
 
 def main() -> int:
     version = _repo_version()
-    wheel = _find_wheel(PROJECT_ROOT / "dist")
+    wheel = _find_wheel(PROJECT_ROOT / "dist", version)
     print(f"wheel: {wheel.name}")
     print(f"pyproject version: {version}")
     if not wheel.name.startswith(f"{EXPECTED_PREFIX}{version}-"):

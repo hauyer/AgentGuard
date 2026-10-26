@@ -7,6 +7,7 @@ restart recovers queries without a second data model.
 """
 from __future__ import annotations
 
+import json
 from typing import Any
 
 from agentguard.services.warden_workflow_store import WardenWorkflowStore
@@ -29,6 +30,7 @@ class InvestigationLoopRegistry:
                 phase TEXT NOT NULL,
                 stop_reason TEXT,
                 request_hash TEXT NOT NULL,
+                request_json TEXT NOT NULL DEFAULT '{}',
                 report_artifact_id TEXT NOT NULL,
                 execution_state TEXT NOT NULL DEFAULT 'unknown',
                 created_at TEXT NOT NULL,
@@ -44,6 +46,11 @@ class InvestigationLoopRegistry:
                 db.execute(
                     "ALTER TABLE investigation_loops ADD COLUMN "
                     "execution_state TEXT NOT NULL DEFAULT 'unknown'"
+                )
+            if "request_json" not in columns:
+                db.execute(
+                    "ALTER TABLE investigation_loops ADD COLUMN "
+                    "request_json TEXT NOT NULL DEFAULT '{}'"
                 )
             db.execute(
                 "CREATE INDEX IF NOT EXISTS idx_loops_base "
@@ -89,10 +96,12 @@ class InvestigationLoopRegistry:
                 db.execute(
                     "INSERT INTO investigation_loops (loop_id, idempotency_key, "
                     "base_request_id, strategy, phase, stop_reason, request_hash, "
-                    "report_artifact_id, execution_state, created_at, updated_at) "
-                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'not_started', ?, ?)",
+                    "request_json, report_artifact_id, execution_state, created_at, updated_at) "
+                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'not_started', ?, ?)",
                     (loop_id, idempotency_key, base_request_id, strategy, phase,
-                     stop_reason, request_hash, report_artifact_id,
+                     stop_reason, request_hash,
+                     json.dumps(request_payload, ensure_ascii=False, sort_keys=True, separators=(",", ":")),
+                     report_artifact_id,
                      created_at, created_at),
                 )
             except Exception as exc:
@@ -152,6 +161,17 @@ class InvestigationLoopRegistry:
                 ).fetchall()
         return [self._decode(row) for row in rows]
 
+    def workflows_for_loop_base(self, base_request_id: str, *, limit: int = 100) -> list[dict[str, Any]]:
+        """Return deterministic audit workflow IDs tied to this base investigation."""
+        prefix = f"{base_request_id}-audit-r"
+        with self.workflows._connect() as db:
+            rows = db.execute(
+                "SELECT * FROM warden_workflows WHERE substr(request_id, 1, ?) = ? "
+                "ORDER BY request_id LIMIT ?",
+                (len(prefix), prefix, limit),
+            ).fetchall()
+        return [self.workflows._decode(row) for row in rows]
+
     def _row(self, loop_id: str):
         with self.workflows._connect() as db:
             return db.execute(
@@ -167,6 +187,7 @@ class InvestigationLoopRegistry:
             "strategy": row["strategy"],
             "phase": row["phase"],
             "stop_reason": row["stop_reason"],
+            "request_payload": json.loads(row["request_json"]),
             "report_artifact_id": row["report_artifact_id"],
             "execution_state": row["execution_state"],
             "created_at": row["created_at"],

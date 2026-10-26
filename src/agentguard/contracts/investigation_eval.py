@@ -85,5 +85,16 @@ class StrategyComparisonReport(ContractModel):
     defense_effectiveness_metrics: None = None
     limitations: list[str] = Field(default_factory=list, max_length=32)
     source_commit: str | None = Field(default=None, max_length=64)
+    source_tree_sha256: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
+    input_manifest_sha256: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
+    source_kind: Literal[
+        "synthetic", "recorded_observational", "live_observational", "mixed", "unknown",
+    ] = "unknown"
+    declared_source_kinds: list[str] = Field(default_factory=list, max_length=16)
+    independent_sample_count: int = Field(default=0, ge=0)
+    technical_repetitions: int = Field(default=1, ge=1)
+    actual_model_calls: int = Field(default=0, ge=0)
+    runtime_version: str = Field(default="unknown", max_length=128)
+    runtime_build_commit: str = Field(default="unknown", max_length=64)
     executed_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
     report_artifact_id: str | None = Field(default=None, max_length=256)

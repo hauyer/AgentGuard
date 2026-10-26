@@ -120,3 +120,21 @@ class LoopBudgetResponse(ContractModel):
     budget: dict[str, Any] = Field(default_factory=dict)
     metrics: dict[str, Any] = Field(default_factory=dict)
     remaining: dict[str, float | int | None] = Field(default_factory=dict)
+
+
+class ReconciledWorkflowView(ContractModel):
+    schema_version: Literal["1.0"] = "1.0"
+    request_id: str = Field(min_length=1, max_length=256)
+    workflow_status: str = Field(max_length=64)
+    remote_status: str = Field(max_length=64)
+    plan_id: str | None = Field(default=None, max_length=256)
+    run_id: str | None = Field(default=None, max_length=256)
+
+
+class InvestigationLoopReconciliationResponse(ContractModel):
+    schema_version: Literal["1.0"] = "1.0"
+    loop_id: str = Field(min_length=1, max_length=256)
+    status: Literal["reconciled", "reconciliation_required", "not_needed"]
+    report_reconstructed: bool
+    workflows: list[ReconciledWorkflowView] = Field(default_factory=list, max_length=100)
+    blockers: list[str] = Field(default_factory=list, max_length=32)

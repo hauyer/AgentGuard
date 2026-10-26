@@ -1,3 +1,3 @@
 """AgentGuard: contract-first multi-agent security research framework."""
 
-__version__ = "1.1.0rc1"
+__version__ = "1.1.0rc2"
