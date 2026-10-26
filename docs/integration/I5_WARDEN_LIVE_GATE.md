@@ -6,9 +6,9 @@
 WARDEN 源码并运行本地软件/Stub 测试，没有向真实 WARDEN 提交计划或运行，没有真实模型
 调用，也没有产生真实新增证据。
 
-本轮 AgentGuard 改动基于代码基线
-`8a7c154116ca48c80e2dbf5291e1ff70f5dbdd25`；工作树实现尚未提交，不能将该基线 SHA
-冒充为本轮实现 SHA。核验的 WARDEN
+本轮 AgentGuard API 实现快照为
+`5c3fc5e198a6d052979d76e417b909087054b94f`；后续仅更新测试和交接/门控文档的提交不改变
+该 API 实现快照。核验的 WARDEN
 仓库快照为 `077f5405619261d6c4c8f989f8cfc996cc2391a6`。审查范围包括
 `warden/interface/api/app.py`、`warden/interface/api/schemas.py`、
 `warden/application/service.py`、`warden/application/compiler.py`、
