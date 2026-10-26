@@ -67,7 +67,7 @@ class LoopDecisionRecord(ContractModel):
 
 
 class InvestigationLoopBudget(ContractModel):
-    """Upper-layer budget for one loop run; the loop never exceeds it."""
+    """Upper-layer budget checked between actions and applied to supported calls."""
 
     schema_version: Literal["1.0"] = "1.0"
     max_actions: int = Field(default=8, ge=1, le=100)

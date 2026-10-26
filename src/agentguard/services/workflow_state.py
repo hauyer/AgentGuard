@@ -35,13 +35,16 @@ _TRANSITIONS = {
                 "finished", "blocked", "cancelled"},
     "preflighting": {"plan_submitting", "finished", "blocked", "interrupted", "cancelled"},
     "plan_submitting": {"plan_created", "submission_uncertain"},
-    "plan_created": {"run_submitting", "finished", "interrupted"},
+    "plan_created": {"run_submitting", "finished", "interrupted", "unknown"},
     "run_submitting": {"run_submitted", "submission_uncertain"},
     "submission_uncertain": {"run_submitted"},
-    "run_submitted": {"polling", "finished", "timed_out"},
-    "polling": {"run_submitted", "finished", "timed_out"},
-    "timed_out": {"run_submitted", "polling", "finished"},
+    "run_submitted": {"polling", "finished", "timed_out", "unknown"},
+    "polling": {"run_submitted", "finished", "timed_out", "unknown"},
+    "timed_out": {"run_submitted", "polling", "finished", "unknown"},
     "interrupted": {"preflighting", "run_submitted", "polling", "finished"},
+    # Unknown is a reconciliation checkpoint, not a terminal outcome. A later
+    # GET of the same known remote ID may reveal a documented state.
+    "unknown": {"plan_created", "run_submitted", "finished"},
     **{state: set() for state in TERMINAL_JOURNAL_STATES},
 }
 

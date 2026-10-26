@@ -62,6 +62,33 @@ def _source_commit() -> str | None:
         return None
 
 
+def _source_tree_sha256() -> str:
+    """Fingerprint the evaluated source contents, including uncommitted files."""
+    digest = hashlib.sha256()
+    source_roots = ("src", "scripts", "schemas", "requirements")
+    source_files: set[Path] = {PROJECT_ROOT / "pyproject.toml"}
+    for root_name in source_roots:
+        root = PROJECT_ROOT / root_name
+        if not root.exists():
+            continue
+        source_files.update(
+            path for path in root.rglob("*")
+            if path.is_file()
+            and "__pycache__" not in path.parts
+            and path.suffix not in {".pyc", ".pyo"}
+            and not any(part.endswith(".egg-info") for part in path.parts)
+        )
+    for path in sorted(source_files):
+        if not path.is_file():
+            continue
+        relative_path = path.relative_to(PROJECT_ROOT).as_posix()
+        digest.update(relative_path.encode("utf-8"))
+        digest.update(b"\0")
+        digest.update(path.read_bytes())
+        digest.update(b"\0")
+    return digest.hexdigest()
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--out", default=str(PROJECT_ROOT / "docs/research/RESULTS.md"))
@@ -112,6 +139,12 @@ def main() -> int:
     manifest_sha256 = None
     source_kinds: list[str] = []
     provenance_notes: list[str] = []
+    source_tree_sha256 = _source_tree_sha256()
+    provenance_notes.append(
+        f"AgentGuard source tree SHA-256: {source_tree_sha256}; this content hash "
+        "covers source/configuration files and complements source_commit when "
+        "the working tree contains uncommitted changes."
+    )
 
     # Parse input cases
     if args.dataset_manifest:

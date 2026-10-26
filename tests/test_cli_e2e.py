@@ -89,6 +89,9 @@ def test_cli_to_api_evaluation_persistence(tmp_path):
     manifest_sha256 = hashlib.sha256(manifest_path.read_bytes()).hexdigest()
     assert manifest_sha256 in report_content
     assert "source_kind values: synthetic" in report_content
+    assert re.search(
+        r"AgentGuard source tree SHA-256: [0-9a-f]{64}", report_content,
+    )
     source_revision = subprocess.run(
         ["git", "rev-parse", "HEAD"], cwd=str(PROJECT_ROOT), check=True,
         capture_output=True, text=True,

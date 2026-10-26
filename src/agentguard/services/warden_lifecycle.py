@@ -123,14 +123,16 @@ class WardenLifecycleService:
             saved_run = saved_context.get("run") or {}
             if entry.get("status") == "interrupted" and saved_run.get("run_id"):
                 return self._resume_existing(request, entry)
-            if entry.get("result") is not None and entry.get("status") not in {"timed_out", "run_submitted", "polling", "plan_created"}:
+            if entry.get("result") is not None and entry.get("status") not in {
+                "timed_out", "run_submitted", "polling", "plan_created", "unknown",
+            }:
                 replay = dict(entry["result"])
                 replay["idempotent_replay"] = True
                 replay["workflow_revision"] = entry["revision"]
                 return replay
             if entry.get("status") in {
                 "run_submitted", "polling", "timed_out", "plan_created",
-                "submission_uncertain", "run_submitting"
+                "submission_uncertain", "run_submitting", "unknown",
             }:
                 return self._resume_existing(request, entry)
             if entry.get("status") not in {"created", "preflighting", "interrupted"}:
@@ -165,6 +167,10 @@ class WardenLifecycleService:
         result_status = str(result.get("status", "unknown"))
         if result_status == "timed_out":
             stored_status = "timed_out"
+        elif result_status == "unknown":
+            # An unfamiliar remote state is not terminal. Keep the known plan/run
+            # identifiers so the next idempotent request can query that operation.
+            stored_status = "unknown"
         elif result_status in _ACTIVE and isinstance(result.get("run"), Mapping) and result["run"].get("run_id"):
             # A non-waiting call is not terminal: later retries should reconcile the same run.
             stored_status = "run_submitted"
@@ -297,6 +303,7 @@ class WardenLifecycleService:
         plan = dict(context.get("plan") or {})
         run = dict(context.get("run") or {})
         state = str(entry.get("status") or "unknown")
+        queried_run = False
         if state == "interrupted" and run.get("run_id"):
             state = "run_submitted"
 
@@ -338,6 +345,96 @@ class WardenLifecycleService:
                     )
                     state = "run_submitted"
 
+        if state == "unknown":
+            run_id = run.get("run_id")
+            plan_id = plan.get("plan_id")
+            if isinstance(run_id, str) and run_id.strip():
+                try:
+                    run = self.client.get_run(run_id)
+                    self._validate_run_identity(run, run_id=run_id, plan_id=plan.get("plan_id"))
+                except WardenKernelError as exc:
+                    return self._report(
+                        status="reconciliation_required", preflight=preflight,
+                        plan=plan, run=run,
+                        note=(f"Could not reconcile the existing WARDEN run ({exc.code}); "
+                              "no new run was submitted."),
+                    )
+                run_status = self._status(run)
+                if run_status not in _KNOWN:
+                    result = self._report(
+                        status="unknown", preflight=preflight, plan=plan, run=run,
+                        note="WARDEN still reports an unknown run status; no new run was submitted.",
+                    )
+                    self.workflows.update(
+                        request_id, "unknown",
+                        context={"stage": "unknown", "preflight": preflight,
+                                 "plan": plan, "run": run},
+                        result=result,
+                        detail={"reconciled": True, "run_status": run_status},
+                    )
+                    return {**result, "workflow_id": request_id, "reconciled": True}
+                self.workflows.update(
+                    request_id, "run_submitted",
+                    context={"stage": "run_submitted", "preflight": preflight,
+                             "plan": plan, "run": run},
+                    detail={"reconciled": True, "run_id": run_id,
+                            "run_status": run_status},
+                )
+                state = "run_submitted"
+                queried_run = True
+            elif isinstance(plan_id, str) and plan_id.strip():
+                try:
+                    plan = self.client.get_audit_plan(plan_id)
+                except WardenKernelError as exc:
+                    return self._report(
+                        status="reconciliation_required", preflight=preflight,
+                        plan=plan,
+                        note=(f"Could not reconcile the existing WARDEN plan ({exc.code}); "
+                              "no plan or run was resubmitted."),
+                    )
+                if plan.get("plan_id") != plan_id:
+                    return self._reconciliation_report(entry)
+                plan_status = self._status(plan)
+                if plan_status not in {"planned", "blocked"}:
+                    result = self._report(
+                        status="unknown", preflight=preflight, plan=plan,
+                        note=(f"WARDEN still reports an unrecognized plan status "
+                              f"({plan_status}); no run was submitted."),
+                    )
+                    self.workflows.update(
+                        request_id, "unknown",
+                        context={"stage": "unknown", "preflight": preflight,
+                                 "plan": plan},
+                        result=result,
+                        detail={"reconciled": True, "plan_status": plan_status},
+                    )
+                    return {**result, "workflow_id": request_id, "reconciled": True}
+                if plan_status == "blocked":
+                    result = self._report(
+                        status="blocked", preflight=preflight, plan=plan,
+                        blockers=self._strings(plan.get("blockers")),
+                        note="WARDEN blocked the reconciled audit plan; no run was submitted.",
+                    )
+                    self.workflows.update(
+                        request_id, "finished",
+                        context={"stage": "finished", "preflight": preflight,
+                                 "plan": plan},
+                        result=result,
+                        detail={"reconciled": True, "plan_status": plan_status},
+                    )
+                    return {**result, "workflow_id": request_id, "reconciled": True}
+                if plan_status != "planned":
+                    return self._reconciliation_report(entry)
+                self.workflows.update(
+                    request_id, "plan_created",
+                    context={"stage": "plan_created", "preflight": preflight,
+                             "plan": plan},
+                    detail={"reconciled": True, "plan_status": plan_status},
+                )
+                state = "plan_created"
+            else:
+                return self._reconciliation_report(entry)
+
         if state == "plan_created":
             if not request.start_run:
                 result = self._report(status="planned", preflight=preflight, plan=plan, note="Plan was created earlier; no run was submitted.")
@@ -367,15 +464,16 @@ class WardenLifecycleService:
             run_id = run.get("run_id")
             if not isinstance(run_id, str) or not run_id.strip():
                 return self._reconciliation_report(entry)
-            try:
-                run = self.client.get_run(run_id)
-                self._validate_run_identity(run, run_id=run_id, plan_id=plan.get("plan_id"))
-            except WardenKernelError as exc:
-                return self._report(status="unavailable", preflight=preflight, plan=plan, run=run, note=f"Could not reconcile WARDEN run ({exc.code}); no new run was submitted.")
+            if not queried_run:
+                try:
+                    run = self.client.get_run(run_id)
+                    self._validate_run_identity(run, run_id=run_id, plan_id=plan.get("plan_id"))
+                except WardenKernelError as exc:
+                    return self._report(status="unavailable", preflight=preflight, plan=plan, run=run, note=f"Could not reconcile WARDEN run ({exc.code}); no new run was submitted.")
             run_status = self._status(run)
             if run_status not in _KNOWN:
                 result = self._report(status="unknown", preflight=preflight, plan=plan, run=run, note="Recovered WARDEN run returned an unknown status; no experience was recorded.")
-                self.workflows.update(request_id, "finished", context={"stage": "finished", "preflight": preflight, "plan": plan, "run": run}, result=result, detail={"recovered": True, "run_status": run_status})
+                self.workflows.update(request_id, "unknown", context={"stage": "unknown", "preflight": preflight, "plan": plan, "run": run}, result=result, detail={"recovered": True, "run_status": run_status})
                 return {**result, "workflow_id": request_id, "recovered": True}
             if request.wait_for_completion and run_status in _ACTIVE:
                 self.workflows.update(request_id, "polling", context={"stage": "polling", "preflight": preflight, "plan": plan, "run": run}, detail={"recovered": True, "run_id": run_id})

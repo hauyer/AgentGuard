@@ -209,6 +209,108 @@ def test_unknown_status_fails_closed():
     assert result["experience"] is None
 
 
+def test_unknown_is_a_reconcilable_nonterminal_journal_state(tmp_path):
+    from agentguard.services.warden_workflow_store import WardenWorkflowStore
+
+    journal = WardenWorkflowStore(tmp_path / "workflows.sqlite3")
+    journal.begin("unknown-state", request().model_dump(mode="json"))
+    journal.update("unknown-state", "preflighting")
+    journal.update("unknown-state", "plan_submitting")
+    journal.update("unknown-state", "plan_created")
+    journal.update("unknown-state", "unknown", result={"status": "unknown"})
+    journal.update("unknown-state", "plan_created", detail={"reconciled": True})
+    assert journal.get("unknown-state")["status"] == "plan_created"
+
+
+def test_journaled_unknown_plan_status_is_reconciled_without_resubmission(tmp_path):
+    from agentguard.services.warden_workflow_store import WardenWorkflowStore
+
+    class UnknownPlanKernel(FakeKernel):
+        def __init__(self):
+            super().__init__(
+                plan={"plan_id": "plan-unknown", "status": "future-plan-state"},
+                run={"run_id": "run-after-reconcile", "plan_id": "plan-unknown",
+                     "status": "completed", "evidence_refs": ["artifact://done"]},
+            )
+            self.remote_plan_status = "future-plan-state"
+
+        def get_audit_plan(self, plan_id):
+            self.calls.append(("get_audit_plan", plan_id))
+            return {"plan_id": plan_id, "status": self.remote_plan_status}
+
+    kernel = UnknownPlanKernel()
+    journal = WardenWorkflowStore(tmp_path / "warden_workflows.sqlite3")
+    service = WardenLifecycleService(kernel, workflows=journal)
+
+    first = service.execute(request())
+    assert first["status"] == "unknown"
+    assert journal.get("req-1")["status"] == "unknown"
+    assert not any(call[0] == "start_run" for call in kernel.calls)
+
+    still_unknown = service.execute(request())
+    assert still_unknown["status"] == "unknown"
+    assert len([call for call in kernel.calls if call[0] == "create_audit_plan"]) == 1
+    assert len([call for call in kernel.calls if call[0] == "get_audit_plan"]) == 1
+    assert not any(call[0] == "start_run" for call in kernel.calls)
+
+    kernel.remote_plan_status = "planned"
+    reconciled = service.execute(request())
+    assert reconciled["status"] == "completed"
+    assert journal.get("req-1")["status"] == "finished"
+    assert len([call for call in kernel.calls if call[0] == "create_audit_plan"]) == 1
+    assert len([call for call in kernel.calls if call[0] == "start_run"]) == 1
+
+
+def test_unknown_journal_without_remote_id_never_resubmits(tmp_path):
+    from agentguard.services.warden_workflow_store import WardenWorkflowStore
+
+    kernel = FakeKernel()
+    journal = WardenWorkflowStore(tmp_path / "warden_workflows.sqlite3")
+    journal.begin("req-1", request().model_dump(mode="json"))
+    journal.update("req-1", "preflighting")
+    journal.update("req-1", "plan_submitting")
+    journal.update("req-1", "plan_created")
+    journal.update(
+        "req-1", "unknown", context={"stage": "unknown"},
+        result={"status": "unknown"},
+    )
+
+    result = WardenLifecycleService(kernel, workflows=journal).execute(request())
+
+    assert result["status"] == "reconciliation_required"
+    assert journal.get("req-1")["status"] == "unknown"
+    assert not any(call[0] in {"create_audit_plan", "start_run"} for call in kernel.calls)
+
+
+def test_journaled_unknown_run_status_is_reconciled_by_id_without_resubmission(tmp_path):
+    from agentguard.services.warden_workflow_store import WardenWorkflowStore
+
+    kernel = FakeKernel(run={
+        "run_id": "run-unknown", "plan_id": "plan-1",
+        "status": "future-run-state", "evidence_refs": ["artifact://done"],
+    })
+    journal = WardenWorkflowStore(tmp_path / "warden_workflows.sqlite3")
+    service = WardenLifecycleService(kernel, workflows=journal)
+
+    first = service.execute(request())
+    assert first["status"] == "unknown"
+    assert journal.get("req-1")["status"] == "unknown"
+
+    still_unknown = service.execute(request())
+    assert still_unknown["status"] == "unknown"
+    assert [call for call in kernel.calls if call[0] == "get_run"] == [
+        ("get_run", "run-unknown"),
+    ]
+
+    kernel.initial_run["status"] = "completed"
+    reconciled = service.execute(request())
+    assert reconciled["status"] == "completed"
+    assert journal.get("req-1")["status"] == "finished"
+    assert len([call for call in kernel.calls if call[0] == "create_audit_plan"]) == 1
+    assert len([call for call in kernel.calls if call[0] == "start_run"]) == 1
+    assert len([call for call in kernel.calls if call[0] == "get_run"]) == 2
+
+
 def test_wait_polls_until_completed_and_records_experience(tmp_path):
     store = ExperienceStore(tmp_path / "experiences.sqlite3")
     clock = FakeClock()

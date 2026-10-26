@@ -88,6 +88,23 @@ def test_client_sanitizes_transport_errors_and_requires_https():
         raise AssertionError("non-loopback HTTP should be rejected")
 
 
+def test_json_client_caps_request_timeout_to_remaining_budget():
+    captured = {}
+
+    def transport(url, headers, body, timeout):
+        captured["timeout"] = timeout
+        return json.dumps({"choices": [{"message": {"content": "{}"}}]}).encode()
+
+    client = OpenAICompatibleJSONClient(
+        base_url="https://api.deepseek.com/v1", api_key="secret",
+        model="deepseek-chat", timeout=20.0, transport=transport,
+    )
+    assert client.complete_json(
+        system_prompt="select", payload={}, timeout_seconds=3.5,
+    ) == {}
+    assert captured["timeout"] == 3.5
+
+
 def test_llm_advice_schema_rejects_extra_fields_and_respects_output_budget():
     captured = {}
 

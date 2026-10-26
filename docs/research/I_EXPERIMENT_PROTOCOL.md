@@ -54,7 +54,9 @@
 每个运行保留基础 `request_id`、案例 family、seed、策略、重复编号、预算、执行
 状态、停止原因、降级标志、逐轮记录、source commit、执行时间和报告工件 ID。失败、
 阻塞及超时不能从分母中删除。实际报告必须同时记录输入清单/哈希、数据来源类别、
-完整代码 SHA、evaluation ID 和报告工件 ID；任何字段缺失时结果不得标为可复现。
+`source_commit` 与完整源码树 SHA-256、evaluation ID 和报告工件 ID；CLI 的源码树哈希
+覆盖 `src`、`scripts`、`schemas`、`requirements` 与 `pyproject.toml` 的实际文件内容，
+包括未提交修改。任何来源或工件标识缺失时结果不得标为可复现。
 
 ## 指标与解释
 

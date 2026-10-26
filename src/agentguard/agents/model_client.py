@@ -82,7 +82,15 @@ class OpenAICompatibleJSONClient:
             transport=self.transport,
         )
 
-    def complete_json(self, *, system_prompt: str, payload: dict[str, Any], max_tokens: int = 512) -> dict[str, Any]:
+    def complete_json(
+        self, *, system_prompt: str, payload: dict[str, Any], max_tokens: int = 512,
+        timeout_seconds: float | None = None,
+    ) -> dict[str, Any]:
+        timeout = self.timeout if timeout_seconds is None else min(
+            self.timeout, float(timeout_seconds),
+        )
+        if timeout <= 0:
+            raise ValueError("timeout_seconds must be positive")
         body = json.dumps({
             "model": self.model,
             "messages": [
@@ -98,7 +106,7 @@ class OpenAICompatibleJSONClient:
                 f"{self.base_url}/chat/completions",
                 {"Authorization": f"Bearer {self.api_key}", "Content-Type": "application/json"},
                 body,
-                self.timeout,
+                timeout,
             )
         except ModelClientError:
             raise

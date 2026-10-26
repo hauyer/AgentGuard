@@ -57,6 +57,8 @@ AgentGuard 的当前 API 实现快照与本文件对应；后续纯文档提交�
 - `WardenLifecycleService` 先在本地持久日志登记请求指纹与提交状态。已知远端 ID 可
   继续查询；提交结果不确定且没有 ID 时进入 `reconciliation_required`，不会自动重发。
   该日志能防止 AgentGuard 自身盲目重试，但无法恢复 WARDEN 进程丢失的远端记录。
+- WARDEN 返回未识别的计划或运行状态时，日志保留 `unknown`，而非写成终态；重复请求
+  只会查询已知计划/运行 ID。没有可查询 ID 时仍需人工或外部对账，不会再次提交。
 - `EvidenceGateway` 丢弃标记为 `synthetic` 或 `stub` 的来源。可读的真实 WARDEN 工件
  仍须经过本地哈希/审核元数据检查，未验证的引用不会升级为已验证证据。
 - Loop 只有读取到实际结果并取得新增证据引用后才记录新增证据。WARDEN 回报
@@ -91,6 +93,7 @@ AgentGuard 的当前 API 实现快照与本文件对应；后续纯文档提交�
 | Operator 凭证缺失 | `test_post_requires_operator_or_approval_credential` | NOT_RUN |
 | 远端计划/运行提交超时或结果不确定 | `test_uncertain_plan_submission_is_never_retried_automatically`、`test_uncertain_run_submission_is_never_retried_automatically` | NOT_RUN |
 | WARDEN 响应缺少运行 ID | `test_malformed_run_response_missing_id_is_rejected`、`test_bad_submission_response_preserves_uncertainty_without_resubmit` | NOT_RUN |
+| 计划/运行状态未识别或无远端 ID | `test_journaled_unknown_plan_status_is_reconciled_without_resubmission`、`test_journaled_unknown_run_status_is_reconciled_by_id_without_resubmission`、`test_unknown_journal_without_remote_id_never_resubmits` | NOT_RUN |
 | 重启后远端状态未知 | `test_restart_with_unknown_remote_run_never_resubmits` | NOT_RUN |
 | 同键重复请求 | `test_idempotent_retries_return_the_same_loop`、`test_g3_idempotent_repeat_does_not_create_second_loop`；覆盖 AgentGuard Loop 登记，不代表 WARDEN 远端幂等 | NOT_RUN |
 | 已存在操作状态对账 | `test_workflow_journal_resumes_known_run_without_starting_duplicate`、`test_uncertain_run_submission_reconciles_one_matching_warden_run` | NOT_RUN |

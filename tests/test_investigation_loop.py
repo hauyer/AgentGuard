@@ -181,6 +181,64 @@ def test_time_budget_stops_the_loop(tmp_path):
     assert len(report.decisions) < 9
 
 
+def test_audit_is_not_submitted_when_less_than_one_second_remains(tmp_path, monkeypatch):
+    from types import SimpleNamespace
+
+    import agentguard.services.investigation_loop as loop_module
+
+    service = _service(tmp_path, kernel=FakeKernel())
+    _seed_workflows(service.workflows)
+    clock_values = iter([0.0, 0.0, 9.2, 9.3, 10.0])
+    service._monotonic = lambda: next(clock_values)
+    monkeypatch.setattr(
+        loop_module,
+        "select_next_action",
+        lambda *args, **kwargs: SimpleNamespace(
+            action_id="act-submit-audit", degraded=False, degradation_note="",
+            reason="selected audit",
+        ),
+    )
+    monkeypatch.setattr(
+        service, "_execute_action",
+        lambda *args, **kwargs: pytest.fail("audit action exceeded its remaining budget"),
+    )
+
+    report = service.run(
+        "inv-loop", strategy="risk_score",
+        budget=InvestigationLoopBudget(max_actions=4, max_seconds=10.0),
+    )
+
+    assert report.stop_reason == "time_budget_reached"
+    assert report.decisions == []
+
+
+def test_observation_audit_timeout_uses_remaining_loop_budget(tmp_path):
+    from types import SimpleNamespace
+
+    class RecordingObservation:
+        def execute(self, config, *, request_id):
+            self.config = config
+            self.request_id = request_id
+            return SimpleNamespace(
+                execution_status="blocked", blockers=["live gate"],
+                run_id=None, evidence_refs=[],
+            )
+
+    service = _service(tmp_path)
+    observation = RecordingObservation()
+    service.observation = observation
+    result = service._submit_audit(
+        {"request": {"contract_id": "contract-loop", "model_id": "model-7b",
+                     "runtime_id": "stegopot.v1"}},
+        "inv-loop", 1, {"audit_ids": []}, InvestigationLoopBudget(max_seconds=300.0),
+        remaining_seconds=7.25,
+    )
+
+    assert observation.config.time_budget == 7.25
+    assert observation.request_id == "inv-loop-audit-r1"
+    assert result[0] == "blocked"
+
+
 def test_http_stub_observation_feedback_informs_the_next_decision(tmp_path, monkeypatch):
     """The HTTP stub is contract evidence only, not a live WARDEN/model run."""
 
@@ -337,9 +395,11 @@ def test_llm_strategy_uses_valid_selections_and_counts_model_calls(tmp_path):
     class FakeLLM:
         def __init__(self):
             self.calls = 0
+            self.timeouts = []
 
-        def complete_json(self, *, system_prompt, payload, max_tokens):
+        def complete_json(self, *, system_prompt, payload, max_tokens, timeout_seconds=None):
             self.calls += 1
+            self.timeouts.append(timeout_seconds)
             candidates = payload["candidate_actions"]
             target = next(
                 (item for item in candidates
@@ -361,6 +421,8 @@ def test_llm_strategy_uses_valid_selections_and_counts_model_calls(tmp_path):
     assert report.strategy_degraded is False
     assert report.metrics.model_calls_used == 2
     assert all("llm selection" in d.selection_reason for d in report.decisions)
+    assert len(llm.timeouts) == 2
+    assert all(0.0 < timeout <= 300.0 for timeout in llm.timeouts)
 
 
 def test_llm_strategy_rejects_out_of_set_ids(tmp_path):
@@ -375,6 +437,7 @@ def test_llm_strategy_rejects_out_of_set_ids(tmp_path):
     assert report.strategy_degraded is True
     assert "outside the candidate set" in report.strategy_degradation_note
     assert report.decisions[0].selected_action != "act-not-in-set"
+    assert report.metrics.model_calls_used == 1
 
 
 def test_experience_strategy_degrades_without_records(tmp_path):

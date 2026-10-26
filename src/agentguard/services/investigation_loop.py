@@ -97,8 +97,9 @@ class InvestigationLoopService:
             "degradation_note": "",
             "limitations": [
                 (
-                    "Action costs are wall-clock based; the loop never exceeds its "
-                    "declared action, time or model-call budget."
+                    "The wall-clock budget is checked before each action. Model calls "
+                    "and WARDEN polling use the remaining time when supported; "
+                    "synchronous preflight and local processing may add overhead."
                 ),
             ],
         }
@@ -138,6 +139,9 @@ class InvestigationLoopService:
                 "seconds": max(0.0, budget.max_seconds - (self._monotonic() - started)),
                 "model_calls": budget.max_model_calls - state["model_calls"],
             }
+            if remaining["seconds"] <= 0.0:
+                stop_reason = "time_budget_reached"
+                break
             state["phase"] = "ACTIONS_RANKED"
             selection = select_next_action(
                 strategy,
@@ -150,16 +154,27 @@ class InvestigationLoopService:
             if selection.degraded:
                 state["degraded"] = True
                 state["degradation_note"] = selection.degradation_note
-            if strategy == "llm" and self.llm_client is not None \
-                    and not selection.degraded:
+            if strategy == "llm" and selection.model_call_attempted:
                 state["model_calls"] += 1
             chosen = next(a for a in actions if a.action_id == selection.action_id)
 
             # Approval gate: reads and budgeted audits pass policy here.
             state["phase"] = "ACTION_APPROVED"
             round_started = self._monotonic()
+            remaining_seconds = max(
+                0.0, budget.max_seconds - (round_started - started),
+            )
+            if remaining_seconds <= 0.0:
+                stop_reason = "time_budget_reached"
+                break
+            if chosen.action_type == "submit_observation_audit" and remaining_seconds < 1.0:
+                # WARDEN's public request schema has a one-second minimum. Do not
+                # round up and exceed the Loop's remaining budget to force a POST.
+                stop_reason = "time_budget_reached"
+                break
             result_status, evidence_delta, notes = self._execute_action(
                 chosen, entry, base_request_id, len(decisions) + 1, state, budget,
+                remaining_seconds=remaining_seconds,
             )
             if chosen.action_type == "submit_observation_audit" and result_status == "completed":
                 state["dynamic_evidence_refs"].update(evidence_delta)
@@ -304,6 +319,8 @@ class InvestigationLoopService:
         round_index: int,
         state: dict[str, Any],
         budget: InvestigationLoopBudget,
+        *,
+        remaining_seconds: float,
     ) -> tuple[str, list[str], list[str]]:
         """Execute one action through the real services; returns (status, delta, notes)."""
         if action.action_type == "read_state":
@@ -337,7 +354,10 @@ class InvestigationLoopService:
             )
             return "completed", [r.experience_id for r in results][:32], []
         if action.action_type == "submit_observation_audit":
-            return self._submit_audit(entry, base_request_id, round_index, state, budget)
+            return self._submit_audit(
+                entry, base_request_id, round_index, state, budget,
+                remaining_seconds=remaining_seconds,
+            )
         if action.action_type == "plan_intervention":
             hypothesis_ids = self._hypothesis_ids(base_request_id)[:8]
             note = (
@@ -350,6 +370,7 @@ class InvestigationLoopService:
     def _submit_audit(
         self, entry: dict[str, Any], base_request_id: str, round_index: int,
         state: dict[str, Any], budget: InvestigationLoopBudget,
+        *, remaining_seconds: float,
     ) -> tuple[str, list[str], list[str]]:
         assert self.observation is not None
         request = entry.get("request") if isinstance(entry.get("request"), dict) else {}
@@ -360,7 +381,7 @@ class InvestigationLoopService:
             model_id=str(request.get("model_id") or ""),
             runtime_id=str(request.get("runtime_id") or ""),
             audit_mode="observation",
-            time_budget=min(60.0, budget.max_seconds),
+            time_budget=min(60.0, remaining_seconds),
         )
         request_id = f"{base_request_id}-audit-r{round_index}"
         record = self.observation.execute(config, request_id=request_id)
