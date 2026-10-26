@@ -769,8 +769,11 @@ def test_openapi_registers_loop_routes(tmp_path):
     assert schema["info"]["version"] == "1.1.0rc2"
     assert len(schema["paths"]) == 86
     assert schema == json.loads(snapshot.read_text(encoding="utf-8"))
-    assert hashlib.sha256(snapshot.read_bytes()).hexdigest() == (
-        "19889a15afa0ba0c41873ce4a6f2fb3cf59b284f0795b037aded56cc9cbad906"
+    # Normalize checkout line endings so the pinned file digest is identical on
+    # Windows (CRLF) and Linux/macOS (LF).
+    normalized_snapshot = snapshot.read_text(encoding="utf-8").encode("utf-8")
+    assert hashlib.sha256(normalized_snapshot).hexdigest() == (
+        "2ce83660a67111a346a2de9772fcaec1938a4a5de713439de34a83e372b9a5e5"
     )
 
 

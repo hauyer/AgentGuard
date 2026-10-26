@@ -5,17 +5,18 @@
 | 项目 | 固定值 |
 | --- | --- |
 | AgentGuard 分支 | `feature/i-reliability-and-live-validation` |
-| 代码基线 SHA | `8a7c154116ca48c80e2dbf5291e1ff70f5dbdd25`（本轮实现尚未提交） |
+| API 实现快照 SHA | `5c3fc5e198a6d052979d76e417b909087054b94f` |
 | 包版本 | `1.1.0rc2` |
 | Python 支持范围 | `>=3.11`；CI 矩阵为 3.11、3.12、3.13 |
 | OpenAPI 文件 | [`openapi-1.1.0rc2.json`](openapi-1.1.0rc2.json) |
-| OpenAPI 文件 SHA-256 | `19889a15afa0ba0c41873ce4a6f2fb3cf59b284f0795b037aded56cc9cbad906` |
+| OpenAPI 文件 SHA-256（UTF-8、LF 换行） | `2ce83660a67111a346a2de9772fcaec1938a4a5de713439de34a83e372b9a5e5` |
 | 规范化运行时 OpenAPI SHA-256 | `d0a04af3d87c9dca3b30aa7feed89f84447103ed9e8c32c063257c8214a25834` |
 | OpenAPI 版本 | `3.1.0` |
 | OpenAPI 路径数 | `86` |
 
-仓库 HEAD 是上述基线；本轮代码和合同尚未提交，因此不能将基线 SHA 描述为本轮实现
-的 commit。发布构建应通过 `AGENTGUARD_BUILD_COMMIT` 注入实际 40 位 commit SHA；本地
+API 实现快照 SHA 标识当前 API 实现，不代表仅更新交接文档后的仓库 HEAD。OpenAPI 文件
+SHA 按 UTF-8 编码和 LF 换行计算，以便不同操作系统得到相同结果。发布构建应通过
+`AGENTGUARD_BUILD_COMMIT` 注入实际 40 位 commit SHA；本地
 开发构建会明确返回 `unknown`。`GET /v1/system/identity` 返回软件/API 版本、提交身份、
 能力状态和规范化 OpenAPI SHA。规范化算法为 UTF-8 JSON、键排序、紧凑分隔符、不转义
 Unicode，再计算 SHA-256。部署应分别核验快照文件 SHA 与运行时身份返回值。

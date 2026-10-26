@@ -1,6 +1,8 @@
 """Contract tests for controlled investigation-strategy evaluation (D5)."""
 
 import json
+import os
+import re
 
 from agentguard.artifacts.local_store import LocalArtifactStore
 from agentguard.contracts.investigation_eval import StrategyComparisonReport
@@ -66,7 +68,10 @@ def test_comparison_runs_all_strategies_with_real_records(tmp_path):
     assert report.technical_repetitions == 2
     assert report.actual_model_calls == sum(run.model_calls_used for run in report.runs) == 0
     assert report.runtime_version
-    assert report.runtime_build_commit == "unknown"
+    expected_runtime_commit = os.environ.get("AGENTGUARD_BUILD_COMMIT", "").strip().lower()
+    if not re.fullmatch(r"[0-9a-f]{40}", expected_runtime_commit):
+        expected_runtime_commit = "unknown"
+    assert report.runtime_build_commit == expected_runtime_commit
     assert {run.strategy for run in report.runs} == {"fixed_order", "information_value"}
     for run in report.runs:
         assert run.experiment_id
