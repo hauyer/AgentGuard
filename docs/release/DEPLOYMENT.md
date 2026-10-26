@@ -1,4 +1,4 @@
-# AgentGuard 1.1.0-rc2 部署指南
+# AgentGuard 1.1.0-rc3 部署指南
 
 本指南支持受控的私有部署。A8 未在公网或生产环境部署；真实 WARDEN 和模型能力
 仍需按 [`KNOWN_LIMITATIONS.md`](KNOWN_LIMITATIONS.md) 验收。
@@ -8,7 +8,7 @@
 在支持 Python 3.11–3.13 的目标系统上先构建/取得发布 wheel，再用锁文件安装：
 
 ```bash
-python -m pip install -c requirements/runtime.lock dist/agentguard-1.1.0rc2-py3-none-any.whl
+python -m pip install -c requirements/runtime.lock dist/agentguard-1.1.0rc3-py3-none-any.whl
 agentguard --help
 ```
 

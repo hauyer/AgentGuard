@@ -184,6 +184,64 @@ class SystemReadinessService:
             ))
         else:
             checks.append(warden_check("warden_connectivity", "available"))
+
+        capability_names = (
+            "api_reachable", "kernel_available", "threat_contracts_available",
+            "runtime_available", "probe_resources_available", "sae_resources_available",
+            "whitebox_workflow_api_available", "intervention_api_available",
+            "artifact_access_available",
+        )
+        capability_states = diagnosis.get("capability_statuses")
+        capability_states = capability_states if isinstance(capability_states, dict) else {}
+        blocker_codes = {
+            "api_reachable": "WARDEN_API_UNREACHABLE",
+            "kernel_available": "WARDEN_API_CONTRACT_INCOMPATIBLE",
+            "threat_contracts_available": "NO_THREAT_CONTRACTS",
+            "runtime_available": "COMPONENT_UNAVAILABLE:agent.runtime",
+            "probe_resources_available": "NO_READY_PROBE_RESOURCES",
+            "sae_resources_available": "NO_READY_SAE_RESOURCES",
+            "whitebox_workflow_api_available": "WARDEN_WHITEBOX_WORKFLOW_API_UNSUPPORTED",
+            "intervention_api_available": "NO_PUBLIC_INTERVENTION_API:DEP-007",
+            "artifact_access_available": "WARDEN_ARTIFACT_DOWNLOAD_NOT_PUBLIC:DEP-004",
+        }
+        for name in capability_names:
+            if name == "api_reachable":
+                capability_state = "unavailable" if transport_down else "available"
+            elif transport_down:
+                capability_state = "unknown"
+            elif health_down and name == "kernel_available":
+                capability_state = "blocked"
+            elif health_down:
+                capability_state = "unknown"
+            else:
+                capability_state = capability_states.get(name, "unknown")
+            if capability_state not in {"available", "unavailable", "unknown", "unsupported", "blocked"}:
+                capability_state = "unknown"
+            capability_blockers: list[str] = []
+            if capability_state not in {"available", "unknown"}:
+                capability_blockers.append(blocker_codes[name])
+            if name == "kernel_available" and capability_state in {"unknown", "blocked"}:
+                if diagnosis.get("api_contract_compatible") is False:
+                    capability_blockers.append("WARDEN_API_CONTRACT_INCOMPATIBLE")
+                else:
+                    openapi_blocker = {
+                        "unsupported": "WARDEN_OPENAPI_NOT_PUBLISHED",
+                        "unavailable": "WARDEN_OPENAPI_ACCESS_DENIED"
+                        if diagnosis.get("openapi_error_code") == "WARDEN_POLICY_DENIED"
+                        else "WARDEN_OPENAPI_UNAVAILABLE",
+                    }.get(diagnosis.get("openapi_status"), "WARDEN_OPENAPI_NOT_VERIFIED")
+                    capability_blockers.append(openapi_blocker)
+            checks.append(warden_check(
+                name, capability_state,
+                blockers=list(dict.fromkeys(capability_blockers)),
+                diagnostics={"observed_capability_status": capability_state},
+                version=(
+                    str(diagnosis.get("openapi_summary", {}).get("service_version"))
+                    if name == "kernel_available"
+                    and isinstance(diagnosis.get("openapi_summary"), dict)
+                    else None
+                ),
+            ))
         if down:
             for name in (
                 "warden_api_compatibility", "contract_source", "available_contracts",
@@ -347,6 +405,12 @@ class SystemReadinessService:
                 plan_blockers.append("WARDEN_HEALTH_NOT_OK")
             if diagnosis.get("api_compatible") is not True:
                 plan_blockers.append("WARDEN_API_VERSION_INCOMPATIBLE")
+            if diagnosis.get("api_contract_compatible") is not True:
+                plan_blockers.append(
+                    "WARDEN_API_CONTRACT_INCOMPATIBLE"
+                    if diagnosis.get("api_contract_compatible") is False
+                    else "WARDEN_OPENAPI_NOT_VERIFIED"
+                )
             if not contracts:
                 plan_blockers.append("NO_THREAT_CONTRACTS")
         plan_creation: ReadinessStatus = (

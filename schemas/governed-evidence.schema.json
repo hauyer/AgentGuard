@@ -5,8 +5,8 @@
       "description": "Auditable experiment records required before evidence can be called causal.\n\nThis structure records what was reviewed. Its fields are not, by themselves,\nproof that the runs, artifacts, or reviewer are authentic; the Evidence Gateway\nmust validate those references against a trusted source before emitting a\ncausal grade.",
       "properties": {
         "schema_version": {
-          "const": "0.2",
-          "default": "0.2",
+          "const": "0.3",
+          "default": "0.3",
           "title": "Schema Version",
           "type": "string"
         },
@@ -33,9 +33,41 @@
           "title": "Sample Ids",
           "type": "array"
         },
+        "independent_case_family_ids": {
+          "items": {
+            "type": "string"
+          },
+          "maxItems": 10000,
+          "minItems": 2,
+          "title": "Independent Case Family Ids",
+          "type": "array"
+        },
         "experiment_config_sha256": {
           "pattern": "^[0-9a-f]{64}$",
           "title": "Experiment Config Sha256",
+          "type": "string"
+        },
+        "preregistered_design_artifact_ref": {
+          "maxLength": 2048,
+          "minLength": 1,
+          "title": "Preregistered Design Artifact Ref",
+          "type": "string"
+        },
+        "preregistered_design_sha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Preregistered Design Sha256",
+          "type": "string"
+        },
+        "control_condition": {
+          "maxLength": 256,
+          "minLength": 1,
+          "title": "Control Condition",
+          "type": "string"
+        },
+        "treatment_condition": {
+          "maxLength": 256,
+          "minLength": 1,
+          "title": "Treatment Condition",
           "type": "string"
         },
         "matched_control_passed": {
@@ -48,6 +80,16 @@
           "title": "Matched Control Artifact Ref",
           "type": "string"
         },
+        "sham_control_passed": {
+          "title": "Sham Control Passed",
+          "type": "boolean"
+        },
+        "sham_control_artifact_ref": {
+          "maxLength": 2048,
+          "minLength": 1,
+          "title": "Sham Control Artifact Ref",
+          "type": "string"
+        },
         "negative_control_passed": {
           "title": "Negative Control Passed",
           "type": "boolean"
@@ -58,6 +100,28 @@
           "title": "Negative Control Artifact Ref",
           "type": "string"
         },
+        "unrelated_position_control_passed": {
+          "title": "Unrelated Position Control Passed",
+          "type": "boolean"
+        },
+        "unrelated_position_control_artifact_ref": {
+          "maxLength": 2048,
+          "minLength": 1,
+          "title": "Unrelated Position Control Artifact Ref",
+          "type": "string"
+        },
+        "randomization_or_permutation_baseline": {
+          "maxLength": 256,
+          "minLength": 1,
+          "title": "Randomization Or Permutation Baseline",
+          "type": "string"
+        },
+        "randomization_or_permutation_baseline_artifact_ref": {
+          "maxLength": 2048,
+          "minLength": 1,
+          "title": "Randomization Or Permutation Baseline Artifact Ref",
+          "type": "string"
+        },
         "benign_utility_measured": {
           "title": "Benign Utility Measured",
           "type": "boolean"
@@ -66,6 +130,106 @@
           "maxLength": 2048,
           "minLength": 1,
           "title": "Utility Artifact Ref",
+          "type": "string"
+        },
+        "control_output_artifact_ref": {
+          "maxLength": 2048,
+          "minLength": 1,
+          "title": "Control Output Artifact Ref",
+          "type": "string"
+        },
+        "treatment_output_artifact_ref": {
+          "maxLength": 2048,
+          "minLength": 1,
+          "title": "Treatment Output Artifact Ref",
+          "type": "string"
+        },
+        "sham_output_artifact_ref": {
+          "maxLength": 2048,
+          "minLength": 1,
+          "title": "Sham Output Artifact Ref",
+          "type": "string"
+        },
+        "negative_control_output_artifact_ref": {
+          "maxLength": 2048,
+          "minLength": 1,
+          "title": "Negative Control Output Artifact Ref",
+          "type": "string"
+        },
+        "unrelated_position_output_artifact_ref": {
+          "maxLength": 2048,
+          "minLength": 1,
+          "title": "Unrelated Position Output Artifact Ref",
+          "type": "string"
+        },
+        "execution_log_artifact_ref": {
+          "maxLength": 2048,
+          "minLength": 1,
+          "title": "Execution Log Artifact Ref",
+          "type": "string"
+        },
+        "execution_log_sha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Execution Log Sha256",
+          "type": "string"
+        },
+        "intervention_parameters_artifact_ref": {
+          "maxLength": 2048,
+          "minLength": 1,
+          "title": "Intervention Parameters Artifact Ref",
+          "type": "string"
+        },
+        "intervention_parameters_sha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Intervention Parameters Sha256",
+          "type": "string"
+        },
+        "evaluator_version": {
+          "maxLength": 256,
+          "minLength": 1,
+          "title": "Evaluator Version",
+          "type": "string"
+        },
+        "evaluator_artifact_ref": {
+          "maxLength": 2048,
+          "minLength": 1,
+          "title": "Evaluator Artifact Ref",
+          "type": "string"
+        },
+        "primary_outcome_metric": {
+          "maxLength": 256,
+          "minLength": 1,
+          "title": "Primary Outcome Metric",
+          "type": "string"
+        },
+        "effect_size": {
+          "title": "Effect Size",
+          "type": "number"
+        },
+        "confidence_interval_lower": {
+          "title": "Confidence Interval Lower",
+          "type": "number"
+        },
+        "confidence_interval_upper": {
+          "title": "Confidence Interval Upper",
+          "type": "number"
+        },
+        "multiple_comparison_method": {
+          "maxLength": 256,
+          "minLength": 1,
+          "title": "Multiple Comparison Method",
+          "type": "string"
+        },
+        "alpha": {
+          "exclusiveMaximum": 1.0,
+          "exclusiveMinimum": 0.0,
+          "title": "Alpha",
+          "type": "number"
+        },
+        "statistical_report_artifact_ref": {
+          "maxLength": 2048,
+          "minLength": 1,
+          "title": "Statistical Report Artifact Ref",
           "type": "string"
         },
         "artifact_hashes_verified": {
@@ -99,13 +263,42 @@
         "independent_repetitions",
         "independent_run_ids",
         "sample_ids",
+        "independent_case_family_ids",
         "experiment_config_sha256",
+        "preregistered_design_artifact_ref",
+        "preregistered_design_sha256",
+        "control_condition",
+        "treatment_condition",
         "matched_control_passed",
         "matched_control_artifact_ref",
+        "sham_control_passed",
+        "sham_control_artifact_ref",
         "negative_control_passed",
         "negative_control_artifact_ref",
+        "unrelated_position_control_passed",
+        "unrelated_position_control_artifact_ref",
+        "randomization_or_permutation_baseline",
+        "randomization_or_permutation_baseline_artifact_ref",
         "benign_utility_measured",
         "utility_artifact_ref",
+        "control_output_artifact_ref",
+        "treatment_output_artifact_ref",
+        "sham_output_artifact_ref",
+        "negative_control_output_artifact_ref",
+        "unrelated_position_output_artifact_ref",
+        "execution_log_artifact_ref",
+        "execution_log_sha256",
+        "intervention_parameters_artifact_ref",
+        "intervention_parameters_sha256",
+        "evaluator_version",
+        "evaluator_artifact_ref",
+        "primary_outcome_metric",
+        "effect_size",
+        "confidence_interval_lower",
+        "confidence_interval_upper",
+        "multiple_comparison_method",
+        "alpha",
+        "statistical_report_artifact_ref",
         "artifact_hashes_verified",
         "alternative_explanations_reviewed",
         "alternative_explanations_review_ref",
@@ -136,6 +329,65 @@
       "minLength": 1,
       "title": "Source System",
       "type": "string"
+    },
+    "source_type": {
+      "default": "unknown",
+      "enum": [
+        "synthetic",
+        "stub",
+        "warden_api",
+        "agentguard_local",
+        "historical_record",
+        "unknown"
+      ],
+      "title": "Source Type",
+      "type": "string"
+    },
+    "production_phase": {
+      "default": "unknown",
+      "title": "Production Phase",
+      "type": "string"
+    },
+    "run_id": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Run Id"
+    },
+    "experiment_id": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Experiment Id"
+    },
+    "model_id": {
+      "default": "unknown",
+      "title": "Model Id",
+      "type": "string"
+    },
+    "data_version": {
+      "default": "unknown",
+      "title": "Data Version",
+      "type": "string"
+    },
+    "artifact_hashes": {
+      "additionalProperties": {
+        "type": "string"
+      },
+      "title": "Artifact Hashes",
+      "type": "object"
     },
     "warden_run_id": {
       "anyOf": [

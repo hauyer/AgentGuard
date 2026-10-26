@@ -7,6 +7,7 @@ inference implementation.
 """
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import time
@@ -19,6 +20,17 @@ from urllib.request import HTTPRedirectHandler, Request, build_opener
 _MAX_RESPONSE_BYTES = 2 * 1024 * 1024
 _RETRYABLE_STATUS = frozenset({408, 429, 502, 503, 504})
 _RETRYABLE_ERRORS = frozenset({"WARDEN_UNREACHABLE", "WARDEN_TIMEOUT", "WARDEN_TRANSPORT_ERROR"})
+_HTTP_METHODS = frozenset({"get", "post", "put", "patch", "delete", "head", "options"})
+_CORE_OPERATIONS = {
+    "/v1/health": {"get"},
+    "/v1/capabilities": {"get"},
+    "/v1/resources": {"get"},
+    "/v1/contracts": {"get"},
+    "/v1/audit-plans": {"get", "post"},
+    "/v1/audit-plans/{plan_id}": {"get"},
+    "/v1/runs": {"get", "post"},
+    "/v1/runs/{run_id}": {"get"},
+}
 
 
 class WardenKernelError(RuntimeError):
@@ -113,6 +125,8 @@ class WardenKernelClient:
         self._sleep = sleep
         self._api_version: str | None = None
         self._health_ok: bool | None = None
+        self._openapi_summary_cache: dict[str, Any] | None = None
+        self._openapi_summary_cached_at = 0.0
 
     @classmethod
     def from_env(cls, *, transport: Transport | None = None) -> WardenKernelClient | None:
@@ -142,6 +156,25 @@ class WardenKernelClient:
     def _public_plan(cls, value: Any, endpoint: str) -> dict[str, Any]:
         """Discard benchmark truth even when connected to an older WARDEN service."""
         plan = cls._expect_object(value, endpoint)
+        if not isinstance(plan.get("plan_id"), str) or not plan["plan_id"].strip():
+            raise WardenKernelError(
+                f"WARDEN {endpoint} response is missing plan_id", code="WARDEN_BAD_RESPONSE"
+            )
+        if not isinstance(plan.get("status"), str) or not plan["status"].strip():
+            raise WardenKernelError(
+                f"WARDEN {endpoint} response has an invalid status", code="WARDEN_BAD_RESPONSE"
+            )
+        if "blockers" in plan and (
+            not isinstance(plan["blockers"], list)
+            or any(not isinstance(item, str) for item in plan["blockers"])
+        ):
+            raise WardenKernelError(
+                f"WARDEN {endpoint} response has invalid blockers", code="WARDEN_BAD_RESPONSE"
+            )
+        if "request" in plan and not isinstance(plan["request"], dict):
+            raise WardenKernelError(
+                f"WARDEN {endpoint} response has an invalid request", code="WARDEN_BAD_RESPONSE"
+            )
         contract = plan.get("threat_contract")
         if isinstance(contract, dict):
             plan = {**plan, "threat_contract": {
@@ -157,6 +190,172 @@ class WardenKernelClient:
         self._api_version = value["api_version"]
         self._health_ok = value["status"] == "ok"
         return value
+
+    def openapi_summary(self, *, force_refresh: bool = False) -> dict[str, Any]:
+        """Read and validate the live OpenAPI contract without exposing its full body."""
+        now = time.monotonic()
+        if (
+            self._openapi_summary_cache is not None
+            and not force_refresh
+            and now - self._openapi_summary_cached_at <= 5.0
+        ):
+            return dict(self._openapi_summary_cache)
+
+        schema = self._expect_object(self._request("GET", "/openapi.json"), "/openapi.json")
+        openapi_version = schema.get("openapi")
+        info = schema.get("info")
+        raw_paths = schema.get("paths")
+        components = schema.get("components")
+        component_schemas = components.get("schemas") if isinstance(components, dict) else None
+        if (
+            not isinstance(openapi_version, str)
+            or not openapi_version.startswith("3.")
+            or not isinstance(info, dict)
+            or info.get("title") != "WARDEN API"
+            or not isinstance(info.get("version"), str)
+            or not info["version"].strip()
+            or not isinstance(raw_paths, dict)
+            or not isinstance(component_schemas, dict)
+        ):
+            raise WardenKernelError(
+                "WARDEN OpenAPI document has an incompatible shape", code="WARDEN_BAD_OPENAPI"
+            )
+
+        path_methods: dict[str, dict[str, dict[str, Any]]] = {}
+        for path, operations in raw_paths.items():
+            if not isinstance(path, str) or not isinstance(operations, dict):
+                raise WardenKernelError(
+                    "WARDEN OpenAPI paths have an incompatible shape", code="WARDEN_BAD_OPENAPI"
+                )
+            parsed_operations: dict[str, dict[str, Any]] = {}
+            for method, operation in operations.items():
+                if str(method).lower() not in _HTTP_METHODS:
+                    continue
+                if not isinstance(operation, dict):
+                    raise WardenKernelError(
+                        "WARDEN OpenAPI operation has an incompatible shape",
+                        code="WARDEN_BAD_OPENAPI",
+                    )
+                parsed_operations[str(method).lower()] = operation
+            path_methods[path] = parsed_operations
+
+        missing: list[str] = []
+        for path, methods in _CORE_OPERATIONS.items():
+            operations = path_methods.get(path, {})
+            for method in sorted(methods):
+                operation = operations.get(method)
+                if operation is None:
+                    missing.append(f"{method.upper()} {path}")
+                    continue
+                responses = operation.get("responses")
+                if not isinstance(responses, dict) or not any(
+                    str(code).startswith("2") for code in responses
+                ):
+                    missing.append(f"{method.upper()} {path} success response")
+
+        for path, method, schema_name in (
+            ("/v1/audit-plans", "post", "AuditRequestSchema"),
+            ("/v1/runs", "post", "RunRequestSchema"),
+        ):
+            operation = path_methods.get(path, {}).get(method, {})
+            body = operation.get("requestBody")
+            content = body.get("content") if isinstance(body, dict) else None
+            json_content = content.get("application/json") if isinstance(content, dict) else None
+            request_schema = json_content.get("schema") if isinstance(json_content, dict) else None
+            expected_ref = f"#/components/schemas/{schema_name}"
+            if (
+                not isinstance(request_schema, dict)
+                or request_schema.get("$ref") != expected_ref
+                or schema_name not in component_schemas
+            ):
+                missing.append(f"{method.upper()} {path} request schema {schema_name}")
+
+        audit_schema = component_schemas.get("AuditRequestSchema")
+        audit_properties = audit_schema.get("properties") if isinstance(audit_schema, dict) else None
+        audit_required = audit_schema.get("required", []) if isinstance(audit_schema, dict) else []
+        if (
+            not isinstance(audit_properties, dict)
+            or not {"request_id", "contract_id", "model_id", "runtime_id"}.issubset(audit_required)
+            or any(
+                not isinstance(audit_properties.get(field), dict)
+                or audit_properties[field].get("type") != "string"
+                for field in ("request_id", "contract_id", "model_id", "runtime_id")
+            )
+        ):
+            missing.append("POST /v1/audit-plans request schema required fields")
+        else:
+            mode_schema = audit_properties.get("mode")
+            if isinstance(mode_schema, dict) and isinstance(mode_schema.get("$ref"), str):
+                prefix = "#/components/schemas/"
+                ref_name = mode_schema["$ref"].removeprefix(prefix)
+                mode_schema = component_schemas.get(ref_name) if mode_schema["$ref"].startswith(prefix) else None
+            expected_modes = {"capture_only", "detection", "causal_audit", "defense_evaluation"}
+            if (
+                not isinstance(mode_schema, dict)
+                or set(mode_schema.get("enum", [])) != expected_modes
+            ):
+                missing.append("POST /v1/audit-plans request schema WARDEN AuditMode enum")
+            capture_schema = audit_properties.get("capture_targets")
+            capture_items = capture_schema.get("items") if isinstance(capture_schema, dict) else None
+            if (
+                not isinstance(capture_items, dict)
+                or capture_items.get("$ref") != "#/components/schemas/CaptureTargetSchema"
+                or not isinstance(component_schemas.get("CaptureTargetSchema"), dict)
+            ):
+                missing.append("POST /v1/audit-plans request schema CaptureTargetSchema")
+
+        run_schema = component_schemas.get("RunRequestSchema")
+        run_properties = run_schema.get("properties") if isinstance(run_schema, dict) else None
+        run_required = run_schema.get("required", []) if isinstance(run_schema, dict) else []
+        if (
+            not isinstance(run_properties, dict)
+            or "plan_id" not in run_required
+            or not isinstance(run_properties.get("plan_id"), dict)
+            or run_properties["plan_id"].get("type") != "string"
+        ):
+            missing.append("POST /v1/runs request schema required plan_id")
+
+        feature_state: dict[str, str] = {}
+        for name, markers in (
+            ("whitebox_workflow_api_available", ("whitebox", "probe")),
+            ("intervention_api_available", ("intervention", "defense")),
+            ("artifact_access_available", ("artifact",)),
+        ):
+            matching = [path for path in path_methods if any(
+                marker in path.lower() for marker in markers
+            )]
+            # A matching path is only a candidate; until AgentGuard has a reviewed,
+            # versioned schema for it, path presence alone cannot enable execution.
+            feature_state[name] = "unsupported" if not matching else "unknown"
+
+        canonical = json.dumps(
+            schema, ensure_ascii=False, sort_keys=True, separators=(",", ":"), allow_nan=False,
+        ).encode("utf-8")
+        summary = {
+            "openapi_version": openapi_version,
+            "service_version": info["version"],
+            "path_count": len(path_methods),
+            "schema_sha256": hashlib.sha256(canonical).hexdigest(),
+            "path_methods": {
+                path: sorted(methods) for path, methods in sorted(path_methods.items())
+            },
+            "missing_contract_items": missing,
+            "compatible": not missing,
+            **feature_state,
+        }
+        self._openapi_summary_cache = summary
+        self._openapi_summary_cached_at = now
+        return dict(summary)
+
+    def _require_public_contract(self) -> dict[str, Any]:
+        self._require_compatible_api()
+        summary = self.openapi_summary()
+        if not summary["compatible"]:
+            raise WardenKernelError(
+                "WARDEN OpenAPI does not match the supported v1 contract",
+                code="WARDEN_API_CONTRACT_INCOMPATIBLE",
+            )
+        return summary
 
     def _require_compatible_api(self) -> None:
         if self._api_version is None:
@@ -228,10 +427,24 @@ class WardenKernelClient:
             )
         return value
 
+    def list_audit_plans(self) -> list[dict[str, Any]]:
+        """List plans visible to the current WARDEN process for read-only reconciliation."""
+        values = self._expect_object_list(self._request("GET", "/v1/audit-plans"), "/v1/audit-plans")
+        return [self._public_plan(value, "/v1/audit-plans") for value in values]
+
     def create_audit_plan(self, payload: Mapping[str, Any]) -> dict[str, Any]:
-        self._require_compatible_api()
+        from agentguard.contracts.warden import WardenAuditRequest
+
+        self._require_public_contract()
+        try:
+            validated_payload = WardenAuditRequest.model_validate(payload).to_warden_payload()
+        except (TypeError, ValueError):
+            raise WardenKernelError(
+                "AgentGuard audit request does not match the WARDEN v1 schema",
+                code="WARDEN_BAD_REQUEST",
+            ) from None
         return self._public_plan(
-            self._request("POST", "/v1/audit-plans", dict(payload)), "/v1/audit-plans"
+            self._request("POST", "/v1/audit-plans", validated_payload), "/v1/audit-plans"
         )
 
     def get_audit_plan(self, plan_id: str) -> dict[str, Any]:
@@ -239,16 +452,40 @@ class WardenKernelClient:
         return self._public_plan(self._request("GET", path), path)
 
     def start_run(self, plan_id: str) -> dict[str, Any]:
-        self._require_compatible_api()
-        return self._expect_object(self._request("POST", "/v1/runs", {"plan_id": plan_id}), "/v1/runs")
+        self._require_public_contract()
+        if not isinstance(plan_id, str) or not plan_id.strip():
+            raise WardenKernelError("WARDEN run request is missing plan_id", code="WARDEN_BAD_REQUEST")
+        return self._expect_run(
+            self._request("POST", "/v1/runs", {"plan_id": plan_id}), "/v1/runs"
+        )
 
     def get_run(self, run_id: str) -> dict[str, Any]:
         path = f"/v1/runs/{quote(run_id, safe='')}"
-        return self._expect_object(self._request("GET", path), path)
+        return self._expect_run(self._request("GET", path), path)
 
     def list_runs(self) -> list[dict[str, Any]]:
         """List WARDEN runs for safe reconciliation of an uncertain submission."""
-        return self._expect_object_list(self._request("GET", "/v1/runs"), "/v1/runs")
+        values = self._expect_object_list(self._request("GET", "/v1/runs"), "/v1/runs")
+        return [self._expect_run(value, "/v1/runs") for value in values]
+
+    @classmethod
+    def _expect_run(cls, value: Any, endpoint: str) -> dict[str, Any]:
+        run = cls._expect_object(value, endpoint)
+        if not isinstance(run.get("run_id"), str) or not run["run_id"].strip():
+            raise WardenKernelError(
+                f"WARDEN {endpoint} response is missing run_id", code="WARDEN_BAD_RESPONSE"
+            )
+        if not isinstance(run.get("status"), str) or not run["status"].strip():
+            raise WardenKernelError(
+                f"WARDEN {endpoint} response has an invalid status", code="WARDEN_BAD_RESPONSE"
+            )
+        if "plan_id" in run and (
+            not isinstance(run["plan_id"], str) or not run["plan_id"].strip()
+        ):
+            raise WardenKernelError(
+                f"WARDEN {endpoint} response has an invalid plan_id", code="WARDEN_BAD_RESPONSE"
+            )
+        return run
 
     def submit_audit(
         self, payload: Mapping[str, Any], *, start_run: bool = True

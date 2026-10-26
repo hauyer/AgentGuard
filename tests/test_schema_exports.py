@@ -68,6 +68,7 @@ def test_checked_in_schemas_exist_and_are_valid_json():
         "path-shift-analysis-request.schema.json",
         "path-shift-analysis-report.schema.json",
         "activation-patch-spec.schema.json",
+        "warden-whitebox-probe-experiment.schema.json",
     }
     assert expected <= {path.name for path in schema_dir.glob("*.json")}
     for name in expected:

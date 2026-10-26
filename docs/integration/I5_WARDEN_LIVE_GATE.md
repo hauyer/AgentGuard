@@ -9,7 +9,7 @@ WARDEN 源码并运行本地软件/Stub 测试，没有向真实 WARDEN 提交�
 本轮 AgentGuard API 实现快照为
 `5c3fc5e198a6d052979d76e417b909087054b94f`；后续仅更新测试和交接/门控文档的提交不改变
 该 API 实现快照。核验的 WARDEN
-仓库快照为 `077f5405619261d6c4c8f989f8cfc996cc2391a6`。审查范围包括
+仓库快照为 `077f5405619261d6c4c8f989f8cfc996cc2391a6`（历史在线服务快照；本轮另核对 WARDEN `main` 源码 `381fc08170386a2dbd4c2ded3f0f724f871e9636`。本机服务未配置，在线 OpenAPI 抓取和真实服务验收为 `NOT_RUN`）。审查范围包括
 `warden/interface/api/app.py`、`warden/interface/api/schemas.py`、
 `warden/application/service.py`、`warden/application/compiler.py`、
 `warden/infrastructure/execution/in_process.py` 和 `warden/core/domain/models.py`。
@@ -109,6 +109,8 @@ AgentGuard 的当前 API 实现快照与本文件对应；后续纯文档提交�
 | Stub 证据不进入真实 WARDEN 证据集合 | `test_synthetic_or_stub_workflow_is_not_emitted_as_warden_evidence`、`test_http_stub_observation_feedback_informs_the_next_decision` | NOT_RUN；Stub 结果不计 Live |
 | synthetic 不标记为真实观察或因果验证 | `test_multi_round_read_only_loop_records_adaptive_decisions`、`test_causal_validated_contract_requires_provenance_and_all_method_checks` 与 `I_RESULTS.md` 的来源/真值限制 | NOT_RUN；现有 I6 结果仍标为 synthetic |
 | 缺少真实结果时不成功完成 | `test_completed_run_without_evidence_refs_blocks_loop_completion` | NOT_RUN |
+| 真实配对设计需预注册、固定模型/解码/案例家族并核对多臂对照 | `test_real_paired_runner_requires_complete_preregistration_before_submission`、`test_real_paired_runner_requires_all_control_arms_and_keeps_causal_claim_gated` | NOT_RUN；合同测试不是 Live 实验 |
+| 因果证据需 sham、独立案例家族、内容寻址工件和完整引用 | `test_causal_validation_requires_sham_and_content_addressed_artifacts`、`test_causal_evidence_must_expose_every_reviewed_artifact_reference`、`test_verified_defense_artifact_requires_sham_and_unrelated_position_controls` | NOT_RUN；真实内容及来源未验证 |
 
 ## 解除门控所需的 WARDEN 合同
 
@@ -121,5 +123,6 @@ AgentGuard 的当前 API 实现快照与本文件对应；后续纯文档提交�
 5. 明确的超时、未知状态和终态协议，并用真实服务集成测试验证对账及不重复执行。
 
 在这些能力进入正式实现/合同并经验证前，不能通过本地假 ID、Stub 成功响应、readiness
+真实配对/因果门控的具体条件见 [`I5_PAIRED_CAUSAL_GATE.md`](I5_PAIRED_CAUSAL_GATE.md)。
 条件放宽或手工改写状态启用 Live。当前没有真实环境执行，也没有新增 Recorded
 Observational 或 Live Observational 研究结果。

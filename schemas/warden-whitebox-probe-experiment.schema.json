@@ -1,0 +1,282 @@
+{
+  "$defs": {
+    "WardenProbeCaptureTarget": {
+      "additionalProperties": false,
+      "properties": {
+        "target_id": {
+          "minLength": 1,
+          "title": "Target Id",
+          "type": "string"
+        },
+        "agent_ids": {
+          "items": {
+            "type": "string"
+          },
+          "minItems": 1,
+          "title": "Agent Ids",
+          "type": "array"
+        },
+        "module": {
+          "anyOf": [
+            {
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Module"
+        },
+        "layer": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Layer"
+        },
+        "component": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": "resid_post",
+          "title": "Component"
+        },
+        "token_policy": {
+          "default": "last_token",
+          "enum": [
+            "all",
+            "last_token",
+            "mean_tokens"
+          ],
+          "title": "Token Policy",
+          "type": "string"
+        },
+        "retain_gradient": {
+          "const": false,
+          "default": false,
+          "title": "Retain Gradient",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "target_id",
+        "agent_ids"
+      ],
+      "title": "WardenProbeCaptureTarget",
+      "type": "object"
+    },
+    "WardenProbeModelConfig": {
+      "additionalProperties": false,
+      "properties": {
+        "model_path": {
+          "minLength": 1,
+          "title": "Model Path",
+          "type": "string"
+        },
+        "tokenizer_path": {
+          "anyOf": [
+            {
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Tokenizer Path"
+        },
+        "revision": {
+          "anyOf": [
+            {
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Revision"
+        },
+        "device": {
+          "default": "auto",
+          "minLength": 1,
+          "title": "Device",
+          "type": "string"
+        },
+        "dtype": {
+          "default": "auto",
+          "enum": [
+            "auto",
+            "float32",
+            "float16",
+            "bfloat16"
+          ],
+          "title": "Dtype",
+          "type": "string"
+        },
+        "trust_remote_code": {
+          "default": false,
+          "title": "Trust Remote Code",
+          "type": "boolean"
+        },
+        "local_files_only": {
+          "default": true,
+          "title": "Local Files Only",
+          "type": "boolean"
+        },
+        "use_safetensors": {
+          "default": true,
+          "title": "Use Safetensors",
+          "type": "boolean"
+        },
+        "parameter_gradients": {
+          "const": false,
+          "default": false,
+          "title": "Parameter Gradients",
+          "type": "boolean"
+        },
+        "quantization": {
+          "default": "none",
+          "enum": [
+            "none",
+            "bnb_4bit",
+            "bnb_8bit"
+          ],
+          "title": "Quantization",
+          "type": "string"
+        },
+        "bnb_4bit_compute_dtype": {
+          "default": "bfloat16",
+          "enum": [
+            "float32",
+            "float16",
+            "bfloat16"
+          ],
+          "title": "Bnb 4Bit Compute Dtype",
+          "type": "string"
+        },
+        "bnb_4bit_quant_type": {
+          "default": "nf4",
+          "enum": [
+            "nf4",
+            "fp4"
+          ],
+          "title": "Bnb 4Bit Quant Type",
+          "type": "string"
+        },
+        "bnb_4bit_use_double_quant": {
+          "default": true,
+          "title": "Bnb 4Bit Use Double Quant",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "model_path"
+      ],
+      "title": "WardenProbeModelConfig",
+      "type": "object"
+    },
+    "WardenProbeTrainingConfig": {
+      "additionalProperties": false,
+      "properties": {
+        "c": {
+          "default": 1.0,
+          "exclusiveMinimum": 0,
+          "title": "C",
+          "type": "number"
+        },
+        "max_iter": {
+          "default": 2000,
+          "minimum": 1,
+          "title": "Max Iter",
+          "type": "integer"
+        },
+        "random_seed": {
+          "default": 0,
+          "title": "Random Seed",
+          "type": "integer"
+        }
+      },
+      "title": "WardenProbeTrainingConfig",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "description": "Exact local configuration shape accepted by WARDEN's whitebox CLI.",
+  "properties": {
+    "schema_version": {
+      "const": "warden.whitebox-probe-experiment/1",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "experiment_id": {
+      "minLength": 1,
+      "title": "Experiment Id",
+      "type": "string"
+    },
+    "model_id": {
+      "minLength": 1,
+      "title": "Model Id",
+      "type": "string"
+    },
+    "model": {
+      "$ref": "#/$defs/WardenProbeModelConfig"
+    },
+    "dataset_path": {
+      "minLength": 1,
+      "title": "Dataset Path",
+      "type": "string"
+    },
+    "output_directory": {
+      "minLength": 1,
+      "title": "Output Directory",
+      "type": "string"
+    },
+    "agent_ids": {
+      "items": {
+        "type": "string"
+      },
+      "minItems": 1,
+      "title": "Agent Ids",
+      "type": "array"
+    },
+    "capture_targets": {
+      "items": {
+        "$ref": "#/$defs/WardenProbeCaptureTarget"
+      },
+      "minItems": 1,
+      "title": "Capture Targets",
+      "type": "array"
+    },
+    "probe": {
+      "$ref": "#/$defs/WardenProbeTrainingConfig"
+    }
+  },
+  "required": [
+    "schema_version",
+    "experiment_id",
+    "model_id",
+    "model",
+    "dataset_path",
+    "output_directory",
+    "agent_ids",
+    "capture_targets"
+  ],
+  "title": "WardenWhiteboxProbeExperimentConfig",
+  "type": "object"
+}

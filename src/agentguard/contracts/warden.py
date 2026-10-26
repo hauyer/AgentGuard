@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from typing import Any, Literal
 
-from pydantic import Field, field_validator
+from pydantic import Field, field_validator, model_validator
 
 from agentguard.contracts.base import ContractModel
 from agentguard.contracts.truth_guard import find_hidden_truth_fields
@@ -27,6 +27,12 @@ class WardenCaptureTarget(ContractModel):
         if len(set(cleaned)) != len(cleaned):
             raise ValueError("agent_ids must be unique")
         return cleaned
+
+    @model_validator(mode="after")
+    def require_activation_coordinate(self) -> WardenCaptureTarget:
+        if self.module is None and self.layer is None:
+            raise ValueError("capture target must declare module or layer")
+        return self
 
 
 class WardenAuditRequest(ContractModel):
@@ -60,11 +66,16 @@ class WardenAuditRequest(ContractModel):
         return value
 
     def to_warden_payload(self) -> dict[str, Any]:
-        """Strip all AgentGuard-only orchestration fields at the kernel boundary."""
-        return self.model_dump(mode="json", exclude={
+        """Project the AgentGuard request onto WARDEN's public REST contract."""
+        payload = self.model_dump(mode="json", exclude={
             "start_run", "authorization_ref", "scenario_id", "risk_type",
             "wait_for_completion", "timeout_seconds", "poll_interval_seconds",
         })
+        # `observation` is an AgentGuard workflow label. WARDEN's AuditMode enum
+        # represents the corresponding non-causal collection as `capture_only`.
+        if payload["mode"] == "observation":
+            payload["mode"] = "capture_only"
+        return payload
 
 
 class WardenAuditSubmission(ContractModel):

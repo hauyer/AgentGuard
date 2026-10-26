@@ -472,11 +472,71 @@ class WardenLifecycleService:
         context = entry.get("context") if isinstance(entry.get("context"), Mapping) else {}
         preflight = dict(context.get("preflight") or {"status": "ready", "blockers": []})
         plan = dict(context.get("plan") or {})
+        plan_id = plan.get("plan_id")
         run = dict(context.get("run") or {})
         state = str(entry.get("status") or "unknown")
         queried_run = False
         if state == "interrupted" and run.get("run_id"):
             state = "run_submitted"
+
+        if (
+            (not isinstance(plan_id, str) or not plan_id.strip())
+            and context.get("stage") == "plan_submitting"
+        ):
+            plan, blocker = self._find_plan_by_request_id(request)
+            if plan is None:
+                response = self._reconciliation_report(entry)
+                response["blockers"] = [blocker]
+                response["note"] = (
+                    "The plan submission outcome is still ambiguous. AgentGuard queried the "
+                    "read-only plan listing and did not submit a duplicate."
+                )
+                return response
+
+            plan_id = plan.get("plan_id")
+            plan_status = self._status(plan)
+            common_context = {
+                "stage": "plan_created" if plan_status == "planned" else "unknown",
+                "preflight": preflight,
+                "plan": plan,
+            }
+            self.workflows.update(
+                request_id, "unknown", context=common_context,
+                detail={"reconciled": True, "plan_id": plan_id, "plan_status": plan_status},
+            )
+            if plan_status == "blocked":
+                result = self._report(
+                    status="blocked", preflight=preflight, plan=plan,
+                    blockers=self._strings(plan.get("blockers")),
+                    note="The existing WARDEN plan was found and is blocked; no run was submitted.",
+                )
+                self.workflows.update(
+                    request_id, "finished", context={**common_context, "stage": "finished"},
+                    result=result, detail={"reconciled": True, "plan_status": plan_status},
+                )
+                return {**result, "workflow_id": request_id, "reconciled": True}
+            if plan_status == "planned":
+                self.workflows.update(
+                    request_id, "plan_created", context=common_context,
+                    detail={"reconciled": True, "plan_id": plan_id, "plan_status": plan_status},
+                )
+                result = self._report(
+                    status="planned", preflight=preflight, plan=plan,
+                    note=("The existing WARDEN plan was confirmed by request ID. "
+                          "This read-only reconciliation did not submit a run."),
+                )
+                return {**result, "workflow_id": request_id,
+                        "workflow_status": "plan_created", "reconciled": True}
+            result = self._report(
+                status="unknown", preflight=preflight, plan=plan,
+                note=("The existing WARDEN plan was found, but its status is not recognized. "
+                      "No run was submitted."),
+            )
+            self.workflows.update(
+                request_id, "unknown", context=common_context, result=result,
+                detail={"reconciled": True, "plan_status": plan_status},
+            )
+            return {**result, "workflow_id": request_id, "reconciled": True}
 
         if state in {"submission_uncertain", "run_submitting"} and context.get("stage") == "run_submitting":
             plan_id = plan.get("plan_id")
@@ -695,6 +755,59 @@ class WardenLifecycleService:
 
         return self._reconciliation_report(entry)
 
+    def _find_plan_by_request_id(
+        self, request: WardenAuditRequest,
+    ) -> tuple[dict[str, Any] | None, str]:
+        """Find one exact, already-created plan using WARDEN's public list/read APIs."""
+        assert self.workflows is not None
+        list_plans = getattr(self.client, "list_audit_plans", None)
+        if not callable(list_plans):
+            return None, "WARDEN_PLAN_RECONCILIATION_UNSUPPORTED"
+        try:
+            plans = list_plans()
+        except WardenKernelError as exc:
+            return None, f"WARDEN_PLAN_LIST_FAILED:{exc.code}"
+
+        expected = request.to_warden_payload()
+        expected_hash = self.workflows.canonical_hash(expected)
+        matches: list[dict[str, Any]] = []
+        for item in plans:
+            remote_request = item.get("request")
+            if not isinstance(remote_request, Mapping):
+                continue
+            if remote_request.get("request_id") != request.request_id:
+                continue
+            try:
+                normalized = WardenAuditRequest.model_validate(remote_request).to_warden_payload()
+            except (TypeError, ValueError):
+                continue
+            if self.workflows.canonical_hash(normalized) == expected_hash:
+                matches.append(dict(item))
+        if not matches:
+            # WARDEN only lists plans held in the current process; an empty list
+            # cannot prove that a prior process did not accept this POST.
+            return None, "WARDEN_PLAN_NOT_VISIBLE_NOT_PROVEN_ABSENT"
+        if len(matches) != 1:
+            return None, "WARDEN_PLAN_MATCH_AMBIGUOUS"
+        candidate = matches[0]
+        plan_id = candidate.get("plan_id")
+        if not isinstance(plan_id, str) or not plan_id.strip():
+            return None, "REMOTE_OPERATION_ID_UNAVAILABLE"
+        try:
+            plan = self.client.get_audit_plan(plan_id)
+        except WardenKernelError as exc:
+            return None, f"WARDEN_PLAN_READ_FAILED:{exc.code}"
+        remote_request = plan.get("request")
+        if plan.get("plan_id") != plan_id or not isinstance(remote_request, Mapping):
+            return None, "WARDEN_PLAN_IDENTITY_UNVERIFIABLE"
+        try:
+            normalized = WardenAuditRequest.model_validate(remote_request).to_warden_payload()
+        except (TypeError, ValueError):
+            return None, "WARDEN_PLAN_REQUEST_UNVERIFIABLE"
+        if self.workflows.canonical_hash(normalized) != expected_hash:
+            return None, "WARDEN_PLAN_REQUEST_MISMATCH"
+        return dict(plan), ""
+
     @staticmethod
     def _reconciliation_report(entry: Mapping[str, Any]) -> dict[str, Any]:
         context = entry.get("context") if isinstance(entry.get("context"), Mapping) else {}
@@ -716,6 +829,25 @@ class WardenLifecycleService:
             return {"status": "unavailable", "blockers": ["WARDEN_HEALTH_NOT_OK"], "health": health}
         if health.get("api_version") != "v1":
             return {"status": "blocked", "blockers": ["WARDEN_API_VERSION_INCOMPATIBLE"], "health": health}
+
+        openapi_probe = getattr(self.client, "openapi_summary", None)
+        if not callable(openapi_probe):
+            return {
+                "status": "blocked", "blockers": ["WARDEN_OPENAPI_NOT_VERIFIED"],
+                "health": health,
+            }
+        try:
+            openapi = openapi_probe(force_refresh=True)
+        except WardenKernelError as exc:
+            return {
+                "status": "blocked", "blockers": ["WARDEN_OPENAPI_UNAVAILABLE"],
+                "health": health, "openapi_error_code": exc.code,
+            }
+        if openapi.get("compatible") is not True:
+            return {
+                "status": "blocked", "blockers": ["WARDEN_API_CONTRACT_INCOMPATIBLE"],
+                "health": health, "openapi": openapi,
+            }
 
         capabilities = self.client.capabilities()
         contracts = self.client.contracts()
@@ -739,6 +871,11 @@ class WardenLifecycleService:
             "status": "blocked" if blockers else "ready",
             "blockers": blockers,
             "health": health,
+            "openapi": {
+                key: openapi.get(key) for key in (
+                    "openapi_version", "service_version", "path_count", "schema_sha256",
+                )
+            },
             "capabilities": capabilities,
             "contract_count": len(contracts),
             "requested_resources": {

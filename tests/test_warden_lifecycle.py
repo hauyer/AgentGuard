@@ -12,6 +12,58 @@ from agentguard.memory.store import ExperienceStore
 from agentguard.services.warden_lifecycle import WardenLifecycleService
 
 
+def _openapi_document():
+    read = {"responses": {"200": {"description": "ok"}}}
+
+    def write(schema_name):
+        return {
+            "requestBody": {"content": {"application/json": {
+                "schema": {"$ref": f"#/components/schemas/{schema_name}"},
+            }}},
+            "responses": {"200": {"description": "ok"}},
+        }
+
+    return {
+        "openapi": "3.1.0", "info": {"title": "WARDEN API", "version": "0.3.0"},
+        "paths": {
+            "/v1/health": {"get": read},
+            "/v1/capabilities": {"get": read},
+            "/v1/resources": {"get": read},
+            "/v1/contracts": {"get": read},
+            "/v1/audit-plans": {"get": read, "post": write("AuditRequestSchema")},
+            "/v1/audit-plans/{plan_id}": {"get": read},
+            "/v1/runs": {"get": read, "post": write("RunRequestSchema")},
+            "/v1/runs/{run_id}": {"get": read},
+        },
+        "components": {"schemas": {
+            "AuditRequestSchema": {
+                "type": "object",
+                "required": ["request_id", "contract_id", "model_id", "runtime_id"],
+                "properties": {
+                    key: {"type": "string"}
+                    for key in ("request_id", "contract_id", "model_id", "runtime_id")
+                } | {
+                    "mode": {"$ref": "#/components/schemas/AuditMode"},
+                    "capture_targets": {
+                        "type": "array", "items": {"$ref": "#/components/schemas/CaptureTargetSchema"},
+                    },
+                },
+            },
+            "AuditMode": {
+                "type": "string",
+                "enum": ["capture_only", "detection", "causal_audit", "defense_evaluation"],
+            },
+            "CaptureTargetSchema": {"type": "object", "properties": {
+                "target_id": {"type": "string"}, "agent_ids": {"type": "array"},
+            }},
+            "RunRequestSchema": {
+                "type": "object", "required": ["plan_id"],
+                "properties": {"plan_id": {"type": "string"}},
+            },
+        }},
+    }
+
+
 def test_actual_warden_evidence_bundle_artifacts_are_referenced():
     run = {"run_id": "run-1", "plan_id": "plan-1", "status": "completed", "evidence": {
         "artifacts": [{"artifact_id": "artifact-1", "uri": "artifact://trace-1", "content_hash": "a" * 64}],
@@ -69,6 +121,15 @@ class FakeKernel:
     def health(self):
         self.calls.append(("health",))
         return {"status": "ok", "version": "0.2.0", "api_version": "v1"}
+
+    def openapi_summary(self, *, force_refresh=False):
+        return {
+            "compatible": True, "missing_contract_items": [], "path_count": 8,
+            "service_version": "0.2.0", "schema_sha256": "a" * 64,
+            "whitebox_workflow_api_available": "unsupported",
+            "intervention_api_available": "unsupported",
+            "artifact_access_available": "unsupported",
+        }
 
     def capabilities(self):
         self.calls.append(("capabilities",))
@@ -376,6 +437,8 @@ def test_kernel_workflow_api_runs_preflight_and_reports_blocked(tmp_path, monkey
             self.calls.append((method, url, body))
             if url.endswith("/v1/health"):
                 payload = {"status": "ok", "version": "0.2.0", "api_version": "v1"}
+            elif url.endswith("/openapi.json"):
+                payload = _openapi_document()
             elif url.endswith(("/v1/capabilities", "/v1/contracts")) or "/v1/resources" in url:
                 payload = []
             else:
@@ -400,6 +463,7 @@ def test_real_client_boundary_full_lifecycle_uses_only_documented_warden_v1_rout
             self.calls = []
             self.responses = [
                 (200, {"status": "ok", "version": "0.2.0", "api_version": "v1"}),
+                (200, _openapi_document()),
                 (200, [{"component_id": "activation.backend", "available": True}]),
                 (200, ["contract-1"]),
                 (200, [{"resource_id": "probe-1", "kind": "probe", "state": "ready", "version": "v1"}]),
@@ -423,10 +487,11 @@ def test_real_client_boundary_full_lifecycle_uses_only_documented_warden_v1_rout
     assert result["status"] == "completed"
     assert result["experience"] is not None
     assert [call[1].removeprefix("https://warden.example") for call in transport.calls] == [
-        "/v1/health", "/v1/capabilities", "/v1/contracts", "/v1/resources?kind=probe",
+        "/v1/health", "/openapi.json", "/v1/capabilities", "/v1/contracts",
+        "/v1/resources?kind=probe",
         "/v1/audit-plans", "/v1/runs", "/v1/runs/run-1", "/v1/health",
     ]
-    forwarded = transport.calls[4][2]
+    forwarded = transport.calls[5][2]
     assert "scenario_id" not in forwarded
     assert "risk_type" not in forwarded
     assert "wait_for_completion" not in forwarded
@@ -554,6 +619,45 @@ def test_workflow_journal_concurrent_begin_is_single_record(tmp_path):
     assert WardenWorkflowStore(path).count() == 1
 
 
+def test_concurrent_same_request_id_submits_one_remote_plan(tmp_path):
+    from concurrent.futures import ThreadPoolExecutor
+    from threading import Event
+
+    from agentguard.services.warden_workflow_store import WardenWorkflowStore
+
+    entered_submit = Event()
+    release_submit = Event()
+
+    class PausedKernel(FakeKernel):
+        def create_audit_plan(self, payload):
+            self.calls.append(("create_audit_plan", dict(payload)))
+            entered_submit.set()
+            assert release_submit.wait(5)
+            return dict(self.plan)
+
+    database = tmp_path / "warden_workflows.sqlite3"
+    kernel = PausedKernel()
+    first_service = WardenLifecycleService(
+        kernel, workflows=WardenWorkflowStore(database),
+    )
+    second_service = WardenLifecycleService(
+        kernel, workflows=WardenWorkflowStore(database),
+    )
+    try:
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            first = pool.submit(first_service.execute, request())
+            assert entered_submit.wait(5)
+            concurrent = second_service.execute(request())
+            assert concurrent["status"] == "in_progress"
+            assert [call[0] for call in kernel.calls].count("create_audit_plan") == 1
+            release_submit.set()
+            assert first.result(timeout=10)["status"] == "completed"
+    finally:
+        release_submit.set()
+    assert [call[0] for call in kernel.calls].count("create_audit_plan") == 1
+    assert [call[0] for call in kernel.calls].count("start_run") == 1
+
+
 def test_workflow_api_replays_same_request_and_exposes_audit_events(tmp_path, monkeypatch):
 
     class Transport:
@@ -564,6 +668,8 @@ def test_workflow_api_replays_same_request_and_exposes_audit_events(tmp_path, mo
             self.calls.append((method, url))
             if url.endswith("/v1/health"):
                 payload = {"status": "ok", "version": "0.2.0", "api_version": "v1"}
+            elif url.endswith("/openapi.json"):
+                payload = _openapi_document()
             elif url.endswith(("/v1/capabilities", "/v1/contracts")) or "/v1/resources" in url:
                 payload = []
             else:
@@ -596,6 +702,8 @@ def test_workflow_api_conflicting_reuse_of_request_id_returns_409(tmp_path, monk
         def __call__(self, method, url, headers, body, timeout):
             if url.endswith("/v1/health"):
                 payload = {"status": "ok", "version": "0.2.0", "api_version": "v1"}
+            elif url.endswith("/openapi.json"):
+                payload = _openapi_document()
             elif url.endswith(("/v1/capabilities", "/v1/contracts")) or "/v1/resources" in url:
                 payload = []
             else:
@@ -631,6 +739,70 @@ def test_uncertain_plan_submission_is_never_retried_automatically(tmp_path):
     result = service.execute(request())
     assert result["status"] == "reconciliation_required"
     assert len([call for call in kernel.calls if call[0] == "create_audit_plan"]) == 1
+
+
+def test_uncertain_plan_submission_recovers_unique_existing_plan_by_request_id(tmp_path):
+    from agentguard.adapters.warden import WardenKernelError
+    from agentguard.services.warden_workflow_store import WardenWorkflowStore
+
+    value = request()
+
+    class LostPlanResponseKernel(FakeKernel):
+        def __init__(self):
+            super().__init__()
+            self.remote_plan = {
+                **self.plan, "request": value.to_warden_payload(),
+            }
+
+        def create_audit_plan(self, payload):
+            self.calls.append(("create_audit_plan", dict(payload)))
+            raise WardenKernelError("plan response was lost", code="WARDEN_TIMEOUT")
+
+        def list_audit_plans(self):
+            self.calls.append(("list_audit_plans",))
+            return [dict(self.remote_plan)]
+
+        def get_audit_plan(self, plan_id):
+            self.calls.append(("get_audit_plan", plan_id))
+            return dict(self.remote_plan)
+
+    kernel = LostPlanResponseKernel()
+    journal = WardenWorkflowStore(tmp_path / "warden_workflows.sqlite3")
+    service = WardenLifecycleService(kernel, workflows=journal)
+    with pytest.raises(WardenKernelError):
+        service.execute(value)
+    result = service.execute(value)
+    assert result["status"] == "planned"
+    assert result["plan"]["plan_id"] == "plan-1"
+    assert result["reconciled"] is True
+    assert journal.get(value.request_id)["status"] == "plan_created"
+    assert [call[0] for call in kernel.calls].count("create_audit_plan") == 1
+    assert not any(call[0] == "start_run" for call in kernel.calls)
+
+
+def test_uncertain_plan_submission_with_no_list_match_remains_ambiguous(tmp_path):
+    from agentguard.adapters.warden import WardenKernelError
+    from agentguard.services.warden_workflow_store import WardenWorkflowStore
+
+    class LostPlanResponseKernel(FakeKernel):
+        def create_audit_plan(self, payload):
+            self.calls.append(("create_audit_plan", dict(payload)))
+            raise WardenKernelError("plan response was lost", code="WARDEN_TIMEOUT")
+
+        def list_audit_plans(self):
+            self.calls.append(("list_audit_plans",))
+            return []
+
+    kernel = LostPlanResponseKernel()
+    journal = WardenWorkflowStore(tmp_path / "warden_workflows.sqlite3")
+    service = WardenLifecycleService(kernel, workflows=journal)
+    with pytest.raises(WardenKernelError):
+        service.execute(request())
+    result = service.execute(request())
+    assert result["status"] == "reconciliation_required"
+    assert result["blockers"] == ["WARDEN_PLAN_NOT_VISIBLE_NOT_PROVEN_ABSENT"]
+    assert [call[0] for call in kernel.calls].count("create_audit_plan") == 1
+    assert not any(call[0] == "start_run" for call in kernel.calls)
 
 
 def test_uncertain_run_submission_is_never_retried_automatically(tmp_path):
@@ -832,16 +1004,20 @@ def test_poll_network_failure_retains_known_run_for_retry(tmp_path):
 
     kernel = PollFailureKernel(run={
         "run_id": "run-1", "plan_id": "plan-1", "status": "running",
+        "evidence_refs": ["artifact://produced-before-status-confirmation"],
     })
     journal = WardenWorkflowStore(tmp_path / "workflows.sqlite3")
     clock = FakeClock()
+    experiences = ExperienceStore(tmp_path / "experiences.sqlite3")
     service = WardenLifecycleService(
-        kernel, workflows=journal, sleep=clock.sleep, monotonic=clock.monotonic,
+        kernel, workflows=journal, experiences=experiences,
+        sleep=clock.sleep, monotonic=clock.monotonic,
     )
     value = request(wait_for_completion=True)
     with pytest.raises(WardenKernelError):
         service.execute(value)
     assert journal.get(value.request_id)["status"] == "run_submitted"
+    assert experiences.count() == 0
     assert service.execute(value)["status"] == "completed"
     assert any(
         event["detail"].get("error_code") == "WARDEN_TIMEOUT"
@@ -928,6 +1104,8 @@ def test_workflow_api_lists_durable_workflow_summaries(tmp_path, monkeypatch):
         def __call__(self, method, url, headers, body, timeout):
             if url.endswith("/v1/health"):
                 payload = {"status": "ok", "version": "0.2.0", "api_version": "v1"}
+            elif url.endswith("/openapi.json"):
+                payload = _openapi_document()
             elif url.endswith(("/v1/capabilities", "/v1/contracts")) or "/v1/resources" in url:
                 payload = []
             else:

@@ -2,7 +2,11 @@
 
 ## 当前实现
 
-`PairedExperimentRunner` 对合成后端按声明种子执行 control、treatment 和同种子 no-intervention negative-control 三条轨迹，调用后端 evaluator 收集指标，并对配对值计算统计摘要。真实后端不会走这条合成执行路径；必须提供经验证的 `paired_executor`，否则 API 返回 `PAIRED_REPLAY_UNAVAILABLE`。
+`PairedExperimentRunner` 对合成后端按声明种子执行 control、treatment 和同种子 no-intervention replay 三条轨迹，调用后端 evaluator 收集指标，并对配对值计算统计摘要。这个 replay 只检查重放稳定性，不是 sham 或无关位置负对照；合成 runner 将这两个必需对照标记为 `not_run`，且始终只输出 `synthetic_only`。
+
+真实后端必须提供显式 `paired_executor`，并先提交完整预注册设计：方案工件及 SHA-256、scenario、模型 revision、解码设置、匹配条件、clean/secret-off 与 corrupt/secret-on 条件、候选目标、sham 与无关位置操作、正常任务效用与秘密恢复指标、停止条件、排除规则、随机/置换基线，以及至少两个独立案例家族。运行报告必须回显设计指纹，并保留预注册的每个 seed（包括失败对）；成功 pair 需要 control、treatment、sham、无关位置和随机/置换基线五个执行臂的稳定 ID、输出工件引用与全部预注册指标。
+
+这只证明执行器返回的合同完整，不会自动验证它声称的工件内容或来源。报告仍保持 `causal_validation_required`；Evidence Gateway 当前不提升上游的因果声明。真实执行与可信工件/来源核验未配置时保持 `BLOCKED` / `NOT_RUN`，不得用合成统计摘要替代。
 
 `agentguard.core.statistics.paired_effect_summary(control, treatment)` 接收按相同实验单位配对的数值序列，计算：
 

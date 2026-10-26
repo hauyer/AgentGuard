@@ -11,6 +11,17 @@ class Kernel:
     def health(self):
         return {"status": "ok", "version": "0.2.0", "api_version": self.api_version}
 
+    def openapi_summary(self):
+        return {
+            "compatible": True,
+            "missing_contract_items": [],
+            "path_count": 8,
+            "schema_sha256": "a" * 64,
+            "whitebox_workflow_api_available": "unsupported",
+            "intervention_api_available": "unsupported",
+            "artifact_access_available": "unsupported",
+        }
+
     def capabilities(self):
         return [
             {"component_id": name, "available": available, "capabilities": []}
@@ -92,3 +103,14 @@ def test_unobserved_capabilities_remain_unknown():
     assert report["execution_available"] == "unknown"
     assert report["contract_source_available"] == "unknown"
     assert diagnose_kernel(None)["ready_probes"] == "unknown"
+
+
+def test_unverified_openapi_keeps_kernel_blocked():
+    class NoOpenAPI(Kernel):
+        openapi_summary = None
+
+    report = diagnose_kernel(NoOpenAPI())
+    assert report["capability_statuses"]["api_reachable"] == "available"
+    assert report["capability_statuses"]["kernel_available"] == "unknown"
+    assert "WARDEN_OPENAPI_NOT_VERIFIED" in report["blockers"]
+    assert report["status"] == "blocked"

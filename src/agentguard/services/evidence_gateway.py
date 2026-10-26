@@ -81,7 +81,20 @@ class EvidenceGateway:
             output.append(GovernedEvidence(
                 evidence_id=item.evidence_id,
                 source_system=self._source_system(item.source),
+                source_type=(
+                    "synthetic"
+                    if report.backend_mode == "synthetic" or item.grade == "synthetic"
+                    else "agentguard_local"
+                ),
+                production_phase=self._string_value(item.metadata.get("production_phase")),
+                run_id=report.run_id,
+                experiment_id=report.experiment_id,
+                model_id=self._string_value(item.metadata.get("model_id")),
+                data_version=self._string_value(
+                    item.metadata.get("data_version") or item.metadata.get("dataset_version")
+                ),
                 artifact_refs=refs,
+                artifact_hashes=self._hashes_for_refs(verified_refs),
                 evidence_type=item.kind,
                 evidence_level=level,
                 scenario_id=report.scenario_id,
@@ -96,7 +109,10 @@ class EvidenceGateway:
                 source_authenticity_status="unknown",
                 methodology_review_status="unknown",
                 run_status=report.status,
-                model_version="unknown",
+                model_version=self._string_value(
+                    item.metadata.get("model_revision")
+                    or (report.request_snapshot.model_version if report.request_snapshot else None)
+                ),
                 scenario_version=str(item.metadata.get("scenario_version", "unknown")),
                 created_at=item.created_at,
                 causal_validation=criteria if level == "causal_validated" else None,
@@ -248,12 +264,21 @@ class EvidenceGateway:
             output.append(GovernedEvidence(
                 evidence_id=str(raw.get("evidence_id") or self._stable_evidence_id(str(expected_run_id), index)),
                 source_system="WARDEN",
+                source_type="warden_api",
+                production_phase=self._string_value(raw.get("production_phase")),
+                run_id=str(expected_run_id),
+                experiment_id=self._string_value(raw.get("experiment_id") or metadata.get("experiment_id")),
+                model_id=self._string_value(request.get("model_id")),
+                data_version=self._string_value(
+                    metadata.get("data_version") or metadata.get("dataset_version")
+                ),
                 warden_run_id=str(expected_run_id),
                 warden_plan_id=str(plan_id) if plan_id else None,
                 target_type=target_type,
                 target_ref=target_ref,
                 scenario_id=str(request.get("scenario_id") or "unknown"),
                 artifact_refs=item_refs,
+                artifact_hashes=self._hashes_for_refs(item_verified),
                 evidence_type=evidence_type,
                 evidence_level=level,
                 risk_type=str(raw.get("risk_type") or request.get("risk_type") or "unknown"),
@@ -266,7 +291,9 @@ class EvidenceGateway:
                     "unverified" if raw.get("methodology_reviewed") is True else "unknown"
                 ),
                 run_status="completed",
-                model_version=str(request.get("model_id") or "unknown"),
+                model_version=self._string_value(
+                    metadata.get("model_revision") or request.get("model_version")
+                ),
                 scenario_version=str((request.get("metadata") or {}).get("scenario_version", "unknown")) if isinstance(request.get("metadata"), Mapping) else "unknown",
                 created_at=self._timestamp(raw.get("created_at") or run.get("completed_at") or run.get("updated_at")),
                 causal_validation=criteria if level == "causal_validated" else None,
@@ -314,7 +341,9 @@ class EvidenceGateway:
                 continue
             requirements = (
                 payload.get("matched_control_passed") is True,
+                payload.get("sham_control_passed") is True,
                 payload.get("negative_control_passed") is True,
+                payload.get("unrelated_position_control_passed") is True,
                 payload.get("benign_utility_measured") is True,
                 payload.get("risk_transfer_checked") is True,
                 payload.get("rollback_tested") is True,
@@ -434,6 +463,18 @@ class EvidenceGateway:
         if _SHA256.fullmatch(ref):
             return ref
         return None
+
+    @staticmethod
+    def _hashes_for_refs(refs: list[str]) -> dict[str, str]:
+        return {
+            ref: digest
+            for ref in refs
+            if (digest := EvidenceGateway._artifact_digest(ref)) is not None
+        }
+
+    @staticmethod
+    def _string_value(value: Any) -> str:
+        return value.strip() if isinstance(value, str) and value.strip() else "unknown"
 
     @staticmethod
     def _source_system(source: str) -> str:

@@ -24,12 +24,27 @@ def diagnose_kernel(
         "contract_source_available": "unknown", "available_contracts": "unknown",
         "ready_probes": "unknown", "ready_saes": "unknown",
         "execution_available": "unknown",
+        "api_contract_compatible": "unknown",
+        "capability_statuses": {
+            "api_reachable": "unknown",
+            "kernel_available": "unknown",
+            "threat_contracts_available": "unknown",
+            "runtime_available": "unknown",
+            "probe_resources_available": "unknown",
+            "sae_resources_available": "unknown",
+            "whitebox_workflow_api_available": "unknown",
+            "intervention_api_available": "unknown",
+            "artifact_access_available": "unknown",
+        },
     }
     if client is None:
         return {
             **summary,
             "status": "not_configured",
             "kernel_status": "not_configured",
+            "capability_statuses": {
+                **summary["capability_statuses"], "api_reachable": "unavailable",
+            },
             "base_url": None,
             "blockers": ["WARDEN_URL_NOT_CONFIGURED"],
         }
@@ -44,13 +59,51 @@ def diagnose_kernel(
         result["api_version"] = health.get("api_version")
         result["kernel_status"] = health.get("status", "unknown")
         result["api_compatible"] = health.get("api_version") == "v1"
+        result["capability_statuses"]["api_reachable"] = "available"
         if health.get("status") != "ok":
             result["blockers"].append("WARDEN_HEALTH_NOT_OK")
+            result["capability_statuses"]["kernel_available"] = "blocked"
         if health.get("api_version") != "v1":
             result["blockers"].append("WARDEN_API_VERSION_INCOMPATIBLE")
         if result["blockers"]:
             result["status"] = "blocked"
             return result
+
+        openapi_probe = getattr(client, "openapi_summary", None)
+        if not callable(openapi_probe):
+            result["openapi_status"] = "unsupported"
+            result["blockers"].append("WARDEN_OPENAPI_NOT_VERIFIED")
+        else:
+            try:
+                openapi = openapi_probe()
+            except WardenKernelError as exc:
+                result["openapi_error_code"] = exc.code
+                if exc.status_code == 404:
+                    result["openapi_status"] = "unsupported"
+                    result["blockers"].append("WARDEN_OPENAPI_NOT_PUBLISHED")
+                elif exc.status_code in {401, 403}:
+                    result["openapi_status"] = "unavailable"
+                    result["blockers"].append("WARDEN_OPENAPI_ACCESS_DENIED")
+                else:
+                    result["openapi_status"] = "unavailable"
+                    result["blockers"].append("WARDEN_OPENAPI_UNAVAILABLE")
+            else:
+                result["openapi_summary"] = openapi
+                result["api_contract_compatible"] = openapi.get("compatible") is True
+                result["capability_statuses"].update({
+                    "kernel_available": "available" if openapi.get("compatible") is True else "blocked",
+                    "whitebox_workflow_api_available": openapi.get(
+                        "whitebox_workflow_api_available", "unknown"
+                    ),
+                    "intervention_api_available": openapi.get(
+                        "intervention_api_available", "unknown"
+                    ),
+                    "artifact_access_available": openapi.get(
+                        "artifact_access_available", "unknown"
+                    ),
+                })
+                if openapi.get("compatible") is not True:
+                    result["blockers"].append("WARDEN_API_CONTRACT_INCOMPATIBLE")
 
         capabilities = client.capabilities()
         resources = client.resources()
@@ -83,6 +136,15 @@ def diagnose_kernel(
 
     result["runtime_available"] = availability("agent.runtime")
     result["activation_available"] = availability("activation.backend")
+    result["capability_statuses"].update({
+        "threat_contracts_available": "available" if contracts else "unavailable",
+        "runtime_available": (
+            "available" if result["runtime_available"] is True else
+            "unavailable" if result["runtime_available"] is False else "unknown"
+        ),
+        "probe_resources_available": "available" if result["ready_probes"] else "unavailable",
+        "sae_resources_available": "available" if result["ready_saes"] else "unavailable",
+    })
     result["contract_source_available"] = (
         True if contracts else availability("fractal-bench")
     )

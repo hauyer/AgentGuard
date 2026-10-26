@@ -57,26 +57,28 @@ def test_observation_request_requires_no_capture_target():
         _payload(mode="observation", capture_targets=[])
     )
     payload = request.to_warden_payload()
-    assert payload["mode"] == "observation"
+    assert payload["mode"] == "capture_only"
     assert payload["capture_targets"] == []
 
 
-def test_warden_client_does_not_start_blocked_plan():
+def test_warden_client_does_not_start_blocked_plan(warden_openapi_document):
     transport = FakeTransport([
         HEALTH,
+        (200, warden_openapi_document),
         (200, {"plan_id": "plan-1", "status": "blocked", "blockers": ["Probe missing"]}),
     ])
     client = WardenKernelClient("https://warden.local", transport=transport)
     result = client.submit_audit(_payload(), start_run=True)
     assert result["submission_status"] == "blocked"
     assert result["run"] is None
-    assert len(transport.calls) == 2
-    assert transport.calls[1][1].endswith("/v1/audit-plans")
+    assert len(transport.calls) == 3
+    assert transport.calls[2][1].endswith("/v1/audit-plans")
 
 
-def test_warden_client_submits_only_after_nonblocked_plan():
+def test_warden_client_submits_only_after_nonblocked_plan(warden_openapi_document):
     transport = FakeTransport([
         HEALTH,
+        (200, warden_openapi_document),
         (200, {"plan_id": "plan-1", "status": "planned", "blockers": []}),
         (200, {"run_id": "run-1", "plan_id": "plan-1", "status": "blocked", "blockers": ["No dispatcher"]}),
     ])
@@ -84,17 +86,17 @@ def test_warden_client_submits_only_after_nonblocked_plan():
     result = client.submit_audit(_payload(), start_run=True)
     assert result["run"]["run_id"] == "run-1"
     assert result["submission_status"] == "blocked"
-    assert [call[0] for call in transport.calls] == ["GET", "POST", "POST"]
-    assert json.loads(transport.calls[2][3]) == {"plan_id": "plan-1"}
+    assert [call[0] for call in transport.calls] == ["GET", "GET", "POST", "POST"]
+    assert json.loads(transport.calls[3][3]) == {"plan_id": "plan-1"}
 
 
-def test_warden_client_removes_hidden_truth_from_old_kernel_plan_responses():
+def test_warden_client_removes_hidden_truth_from_old_kernel_plan_responses(warden_openapi_document):
     plan = {"plan_id": "plan-1", "status": "blocked", "threat_contract": {
         "contract_id": "contract-1", "scenario_id": "scenario-1",
         "harmful_objective": "hidden-sentinel target",
         "truth": {"secret": "hidden-sentinel"},
     }}
-    transport = FakeTransport([HEALTH, (200, plan), (200, plan)])
+    transport = FakeTransport([HEALTH, (200, warden_openapi_document), (200, plan), (200, plan)])
     client = WardenKernelClient("https://warden.local", transport=transport)
     created = client.create_audit_plan(_payload())
     fetched = client.get_audit_plan("plan-1")
@@ -104,13 +106,16 @@ def test_warden_client_removes_hidden_truth_from_old_kernel_plan_responses():
     assert "hidden-sentinel" not in str((created, fetched))
 
 
-def test_warden_client_fails_closed_on_unknown_plan_status():
-    transport = FakeTransport([HEALTH, (200, {"plan_id": "plan-unknown", "status": "new-status"})])
+def test_warden_client_fails_closed_on_unknown_plan_status(warden_openapi_document):
+    transport = FakeTransport([
+        HEALTH, (200, warden_openapi_document),
+        (200, {"plan_id": "plan-unknown", "status": "new-status"}),
+    ])
     client = WardenKernelClient("https://warden.local", transport=transport)
     result = client.submit_audit(_payload(), start_run=True)
     assert result["submission_status"] == "new-status"
     assert result["run"] is None
-    assert len(transport.calls) == 2
+    assert len(transport.calls) == 3
 
 
 def test_warden_client_rejects_non_loopback_plain_http():
@@ -173,9 +178,12 @@ def test_defense_evaluation_requires_agentguard_approval(tmp_path, monkeypatch):
     assert response.json()["detail"]["error"] == "OPERATOR_APPROVAL_REQUIRED"
 
 
-def test_kernel_audit_endpoint_forwards_request_and_preserves_blocked_status(tmp_path, monkeypatch):
+def test_kernel_audit_endpoint_forwards_request_and_preserves_blocked_status(
+    tmp_path, monkeypatch, warden_openapi_document,
+):
     transport = FakeTransport([
         HEALTH,
+        (200, warden_openapi_document),
         (200, []),
         (200, ["contract-1"]),
         (200, {"plan_id": "plan-9", "status": "blocked", "blockers": ["Probe not found"]}),
@@ -190,6 +198,6 @@ def test_kernel_audit_endpoint_forwards_request_and_preserves_blocked_status(tmp
     assert body["status"] == "blocked"
     assert body["run"] is None
     assert body["causal_claim_status"] == "not_assessed"
-    sent = json.loads(transport.calls[3][3])
+    sent = json.loads(transport.calls[4][3])
     assert "start_run" not in sent
     assert sent["request_id"] == "req-1"

@@ -41,6 +41,12 @@ class FakeKernel:
     def health(self):
         return {"status": "ok", "version": "0.2.0", "api_version": "v1"}
 
+    def openapi_summary(self, *, force_refresh=False):
+        return {
+            "compatible": True, "openapi_version": "3.1.0", "service_version": "0.3.0",
+            "path_count": 8, "schema_sha256": "a" * 64,
+        }
+
     def capabilities(self):
         return [
             {"component_id": "agent.runtime", "available": self.ready,
@@ -239,18 +245,23 @@ def test_observation_audit_timeout_uses_remaining_loop_budget(tmp_path):
     assert result[0] == "blocked"
 
 
-def test_http_stub_observation_feedback_informs_the_next_decision(tmp_path, monkeypatch):
+def test_http_stub_observation_feedback_informs_the_next_decision(
+    tmp_path, monkeypatch, warden_openapi_document,
+):
     """The HTTP stub is contract evidence only, not a live WARDEN/model run."""
 
     class WardenHTTPStub:
-        def __init__(self):
+        def __init__(self, openapi_document):
             self.calls = []
+            self.openapi_document = openapi_document
 
         def __call__(self, method, url, headers, body, timeout):
             path = url.removeprefix("https://warden.stub")
             payload = json.loads(body) if body else None
             self.calls.append((method, path, payload))
-            if path == "/v1/health":
+            if path == "/openapi.json":
+                response = self.openapi_document
+            elif path == "/v1/health":
                 response = {"status": "ok", "version": "stub", "api_version": "v1"}
             elif path == "/v1/contracts":
                 response = ["contract-loop"]
@@ -281,7 +292,7 @@ def test_http_stub_observation_feedback_informs_the_next_decision(tmp_path, monk
                 raise AssertionError(f"Unexpected WARDEN API request: {method} {path}")
             return 200, json.dumps(response).encode("utf-8")
 
-    transport = WardenHTTPStub()
+    transport = WardenHTTPStub(warden_openapi_document)
     kernel = WardenKernelClient("https://warden.stub", transport=transport)
     monkeypatch.setattr("agentguard.services.warden_lifecycle.time.sleep", lambda _: None)
     service = _service(tmp_path, kernel=kernel)
@@ -308,7 +319,7 @@ def test_http_stub_observation_feedback_informs_the_next_decision(tmp_path, monk
     submitted = next(payload for method, path, payload in transport.calls
                      if method == "POST" and path == "/v1/audit-plans")
     assert submitted["request_id"] == report.created_audit_request_ids[0]
-    assert submitted["mode"] == "observation"
+    assert submitted["mode"] == "capture_only"
     assert "scenario_id" not in submitted
     assert "authorization_ref" not in submitted
     submitted = next(payload for method, path, payload in transport.calls

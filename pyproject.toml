@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "agentguard"
-version = "1.1.0rc2"
+version = "1.1.0rc3"
 description = "Contract-first multi-agent causal security investigation and targeted defense framework"
 readme = "README.md"
 requires-python = ">=3.11"

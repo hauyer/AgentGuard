@@ -1,25 +1,33 @@
-# I7: QWB-App API 交接合同
+# I8: QWB-App API 交接合同
 
 ## 固定接口快照
 
 | 项目 | 固定值 |
 | --- | --- |
 | AgentGuard 分支 | `feature/i-reliability-and-live-validation` |
-| API 实现快照 SHA | `5c3fc5e198a6d052979d76e417b909087054b94f` |
-| 包版本 | `1.1.0rc2` |
+| API 实现基线 SHA | `63fe1b5662df93fbf06750ecf09c14ee9e6bd5cc`（本地工作树含未提交 I5/I8 变更） |
+| 包版本 | `1.1.0rc3` |
 | Python 支持范围 | `>=3.11`；CI 矩阵为 3.11、3.12、3.13 |
-| OpenAPI 文件 | [`openapi-1.1.0rc2.json`](openapi-1.1.0rc2.json) |
-| OpenAPI 文件 SHA-256（UTF-8、LF 换行） | `2ce83660a67111a346a2de9772fcaec1938a4a5de713439de34a83e372b9a5e5` |
-| 规范化运行时 OpenAPI SHA-256 | `d0a04af3d87c9dca3b30aa7feed89f84447103ed9e8c32c063257c8214a25834` |
+| OpenAPI 文件 | [`openapi-1.1.0rc3.json`](openapi-1.1.0rc3.json) |
+| rc2→rc3 差异 | [`openapi-1.1.0rc3.diff.md`](openapi-1.1.0rc3.diff.md) |
+| OpenAPI 文件 SHA-256（UTF-8、LF 换行） | `fadab4d701d23fabda785413cf0c4536fcffec521ea09cbe6ad73a417c15de1e` |
+| 规范化运行时 OpenAPI SHA-256 | `52ad0d5dc175e58759196588d1c4ab5b45e82751f882c82ed8540cb963d942f6` |
 | OpenAPI 版本 | `3.1.0` |
 | OpenAPI 路径数 | `86` |
 
-API 实现快照 SHA 标识当前 API 实现，不代表仅更新交接文档后的仓库 HEAD。OpenAPI 文件
-SHA 按 UTF-8 编码和 LF 换行计算，以便不同操作系统得到相同结果。发布构建应通过
+本轮工作树尚未提交，因此表中列出 Git 基线，不声称它表示包含本地差异的 commit。
+OpenAPI 文件 SHA 按 UTF-8 编码和 LF 换行计算，以便不同操作系统得到相同结果。发布构建应通过
 `AGENTGUARD_BUILD_COMMIT` 注入实际 40 位 commit SHA；本地
 开发构建会明确返回 `unknown`。`GET /v1/system/identity` 返回软件/API 版本、提交身份、
 能力状态和规范化 OpenAPI SHA。规范化算法为 UTF-8 JSON、键排序、紧凑分隔符、不转义
 Unicode，再计算 SHA-256。部署应分别核验快照文件 SHA 与运行时身份返回值。
+
+本版本没有增加路由；I5/I8 快照仍为 86 条路径。公开 Schema 的 `CausalValidationCriteria`
+升级至 0.3，加入预注册方案、独立案例家族、sham/无关位置负对照、随机/置换基线、前后输出、
+执行日志、干预参数、评价器、统计结果和内容寻址工件引用。`PairedExperimentDesign` 增加
+真实执行所需的预注册条件（paired schema 兼容旧 0.1 数据并默认使用 0.2）。GovernedEvidence
+增加 provenance 字段。结构完整只使报告通过合同检查，不能替代对真实工件内容、执行来源和独立审查的验证；
+具体阻塞见 [`I5_PAIRED_CAUSAL_GATE.md`](I5_PAIRED_CAUSAL_GATE.md)。
 
 ## 路由
 
@@ -204,12 +212,22 @@ Operator token 时回退到 API token 值”的路由级规则。
 
 ## 真实模型与 WARDEN 状态
 
+- Evidence Gateway 的公开证据视图保留 `source_type`、`production_phase`、run/experiment ID、
+  model ID/revision、data version、工件引用和 `artifact_hashes`。缺失信息显式返回 `unknown`；
+  `artifact_hashes` 只包含本地内容寻址存储中已验证字节的哈希。`source_type=warden_api`
+  表示数据经 WARDEN API 到达，不代表 source authenticity 已验证。
+- Synthetic/stub 证据不会被标作真实 WARDEN 观察；上游因果自称仍降级。证据完整性、来源真实性、
+  执行状态和方法审查状态分开呈现，缺少真实结果或报告工件不能补写为成功。
+- 配对干预需预注册、可信方案与输出工件验证器，并在完成报告中保留五臂记录；详情见
+  [`I5_PAIRED_CAUSAL_GATE.md`](I5_PAIRED_CAUSAL_GATE.md)。
+
 - AgentGuard 内置研究后端为 synthetic。真实审计通过 WARDEN 公共接口，不直接注入
   AgentGuard 底层模型运行时。
 - 默认 Loop observation 仍为关闭状态。WARDEN 的计划/运行状态缺少可证明的远端重启
   恢复与提交幂等语义；真实 Live Loop 保持 **BLOCKED**，未知 POST 结果不能盲目重试。
-- 本轮 I5 只完成 HTTP Stub 合同/证据反馈测试。没有真实 WARDEN Loop、真实模型观察或
-  本轮产生的真实新增证据。Stub 引用不会作为真实证据展示。
+- 本轮 I5 完成公开 API/Schema 合同核对、read-only 对账保护、Probe 配置合同和配对因果门控；
+  HTTP Stub 仅作为合同测试。没有真实 WARDEN Loop、真实模型观察或本轮产生的真实新增证据。
+  Stub 引用不会作为真实证据展示。
 - WARDEN 的远端提交幂等、重启后持久状态、可验证授权与证据来源能力尚不能从当前公开
   API 合同中确认；Live 保持 BLOCKED。逐项审查和验收状态见
   [`I5_WARDEN_LIVE_GATE.md`](I5_WARDEN_LIVE_GATE.md)。

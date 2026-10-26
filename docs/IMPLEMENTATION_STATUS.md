@@ -1,5 +1,13 @@
 # AgentGuard 上层平台开发状态（2026-10-24）
 
+## 2026-10-26 I 阶段基线复核
+
+- 分支：`feature/i-reliability-and-live-validation`；核查 HEAD：`63fe1b5662df93fbf06750ecf09c14ee9e6bd5cc`；包版本：`1.1.0rc2`。与 `main` 的共同祖先是 `3bc9584`，本轮不需要合并。
+- [开发分支 CI](https://github.com/hauyer/AgentGuard/actions/runs/40314646080)：Python 3.11/3.12/3.13 均通过；每个版本 485 passed、6 skipped、1 warning。跳过原因为 PyTorch 可选依赖缺失 1 项，及 `AGENTGUARD_LIVE_WARDEN_URL` 未配置导致的实时 WARDEN 测试 5 项。
+- [main CI](https://github.com/hauyer/AgentGuard/actions/runs/39966200492) 在 Ruff 阶段失败，报告 173 项问题；测试未运行。
+- WARDEN 官方源码核查基线为 `381fc08170386a2dbd4c2ded3f0f724f871e9636`。本机 WARDEN 地址未配置且服务不可达，在线 OpenAPI 抓取、真实 WARDEN、真实模型、Probe 和干预实验均为 `NOT_RUN`。源码合同与缺失接口见 [`integration/WARDEN_CAPABILITY_MATRIX.md`](integration/WARDEN_CAPABILITY_MATRIX.md)。
+- Live WARDEN 保持 `BLOCKED`；历史 7B 观察仍为 6/8 条件完成、2 失败，I 阶段策略对照仍为 synthetic，均不构成因果验证。
+
 ## 上层平台重构 A7
 
 - [x] 新增 system/workflow/investigation/evidence/defense-policy/report 业务路由；旧 kernel/run 路由保留，工作流列表支持 limit/offset。

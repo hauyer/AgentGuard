@@ -12,6 +12,58 @@ from agentguard.adapters.warden import WardenKernelClient, WardenKernelError, wa
 HEALTH = {"status": "ok", "version": "0.2.0", "api_version": "v1"}
 
 
+def _openapi_document():
+    read = {"responses": {"200": {"description": "ok"}}}
+
+    def write(schema_name):
+        return {
+            "requestBody": {"content": {"application/json": {
+                "schema": {"$ref": f"#/components/schemas/{schema_name}"},
+            }}},
+            "responses": {"200": {"description": "ok"}},
+        }
+
+    return {
+        "openapi": "3.1.0", "info": {"title": "WARDEN API", "version": "0.3.0"},
+        "paths": {
+            "/v1/health": {"get": read},
+            "/v1/capabilities": {"get": read},
+            "/v1/resources": {"get": read},
+            "/v1/contracts": {"get": read},
+            "/v1/audit-plans": {"get": read, "post": write("AuditRequestSchema")},
+            "/v1/audit-plans/{plan_id}": {"get": read},
+            "/v1/runs": {"get": read, "post": write("RunRequestSchema")},
+            "/v1/runs/{run_id}": {"get": read},
+        },
+        "components": {"schemas": {
+            "AuditRequestSchema": {
+                "type": "object",
+                "required": ["request_id", "contract_id", "model_id", "runtime_id"],
+                "properties": {
+                    key: {"type": "string"}
+                    for key in ("request_id", "contract_id", "model_id", "runtime_id")
+                } | {
+                    "mode": {"$ref": "#/components/schemas/AuditMode"},
+                    "capture_targets": {
+                        "type": "array", "items": {"$ref": "#/components/schemas/CaptureTargetSchema"},
+                    },
+                },
+            },
+            "AuditMode": {
+                "type": "string",
+                "enum": ["capture_only", "detection", "causal_audit", "defense_evaluation"],
+            },
+            "CaptureTargetSchema": {"type": "object", "properties": {
+                "target_id": {"type": "string"}, "agent_ids": {"type": "array"},
+            }},
+            "RunRequestSchema": {
+                "type": "object", "required": ["plan_id"],
+                "properties": {"plan_id": {"type": "string"}},
+            },
+        }},
+    }
+
+
 @pytest.mark.parametrize("url", [
     "https://user:credential-sentinel@warden.example",
     "https://warden.example/?token=credential-sentinel",
@@ -84,8 +136,113 @@ def test_only_get_retries_transient_network_and_http_errors():
     assert sleeps == [0.1, 0.2]
     calls.clear()
     with pytest.raises(WardenKernelError):
-        client.create_audit_plan({"request_id": "request-1"})
+        client._request("POST", "/v1/audit-plans", {"request_id": "request-1"})
     assert calls == ["POST"]
+
+
+def test_openapi_summary_validates_required_routes_and_request_schemas():
+    calls = []
+
+    def transport(method, url, headers, body, timeout):
+        calls.append((method, url))
+        return 200, json.dumps(_openapi_document()).encode()
+
+    summary = WardenKernelClient("https://warden.example", transport=transport).openapi_summary()
+    assert summary["compatible"] is True
+    assert summary["path_count"] == 8
+    assert summary["schema_sha256"]
+    assert summary["whitebox_workflow_api_available"] == "unsupported"
+    assert summary["intervention_api_available"] == "unsupported"
+    assert summary["artifact_access_available"] == "unsupported"
+    assert calls == [("GET", "https://warden.example/openapi.json")]
+
+
+def test_list_audit_plans_uses_only_the_published_read_route():
+    calls = []
+
+    def transport(method, url, headers, body, timeout):
+        calls.append((method, url, body))
+        return 200, json.dumps([{
+            "plan_id": "plan-1", "status": "planned", "blockers": [],
+        }]).encode()
+
+    plans = WardenKernelClient("https://warden.example", transport=transport).list_audit_plans()
+    assert plans == [{"plan_id": "plan-1", "status": "planned", "blockers": []}]
+    assert calls == [("GET", "https://warden.example/v1/audit-plans", None)]
+
+
+def test_missing_openapi_contract_blocks_audit_submission_before_post():
+    document = _openapi_document()
+    del document["paths"]["/v1/runs"]["post"]
+    calls = []
+
+    def transport(method, url, headers, body, timeout):
+        calls.append((method, url))
+        payload = HEALTH if url.endswith("/v1/health") else document
+        return 200, json.dumps(payload).encode()
+
+    client = WardenKernelClient("https://warden.example", transport=transport)
+    from agentguard.contracts.warden import WardenAuditRequest
+
+    request = WardenAuditRequest(
+        request_id="req-contract", contract_id="contract-a",
+        model_id="model-a", runtime_id="runtime-a",
+    )
+    with pytest.raises(WardenKernelError) as caught:
+        client.create_audit_plan(request.to_warden_payload())
+    assert caught.value.code == "WARDEN_API_CONTRACT_INCOMPATIBLE"
+    assert calls == [
+        ("GET", "https://warden.example/v1/health"),
+        ("GET", "https://warden.example/openapi.json"),
+    ]
+
+
+def test_observation_request_uses_the_warden_capture_only_mode():
+    from agentguard.contracts.warden import WardenAuditRequest
+
+    calls = []
+    payloads = [
+        HEALTH,
+        _openapi_document(),
+        {"plan_id": "plan-observation", "status": "planned", "blockers": []},
+    ]
+
+    def transport(method, url, headers, body, timeout):
+        payload = payloads.pop(0)
+        if body is not None:
+            calls.append(json.loads(body))
+        return 200, json.dumps(payload).encode()
+
+    client = WardenKernelClient("https://warden.example", transport=transport)
+    request = WardenAuditRequest(
+        request_id="req-observation", contract_id="contract-a",
+        model_id="model-a", runtime_id="runtime-a", mode="observation",
+    )
+    client.create_audit_plan(request.to_warden_payload())
+    assert calls[0]["mode"] == "capture_only"
+
+
+def test_openapi_audit_mode_schema_mismatch_blocks_before_post():
+    document = _openapi_document()
+    document["components"]["schemas"]["AuditMode"]["enum"].append("observation")
+    calls = []
+
+    def transport(method, url, headers, body, timeout):
+        calls.append(method)
+        payload = HEALTH if url.endswith("/v1/health") else document
+        return 200, json.dumps(payload).encode()
+
+    client = WardenKernelClient("https://warden.example", transport=transport)
+    from agentguard.contracts.warden import WardenAuditRequest
+
+    request = WardenAuditRequest(
+        request_id="req-contract", contract_id="contract-a",
+        model_id="model-a", runtime_id="runtime-a",
+    )
+    with pytest.raises(WardenKernelError) as caught:
+        client.create_audit_plan(request.to_warden_payload())
+    assert caught.value.code == "WARDEN_API_CONTRACT_INCOMPATIBLE"
+    assert calls == ["GET", "GET"]
 
 
 def test_timeout_wrapped_in_urlerror_is_classified_and_sanitized(monkeypatch):

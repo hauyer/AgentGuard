@@ -17,7 +17,9 @@ class FakeWardenClient:
         capabilities=None,
         resources=None,
         contracts=None,
+        openapi=None,
         error: str | None = None,
+        openapi_error: tuple[int | None, str] | None = None,
     ) -> None:
         self.base_url = "https://warden.invalid"
         self._health = health or {"status": "ok", "version": "0.2.0", "api_version": "v1"}
@@ -33,7 +35,16 @@ class FakeWardenClient:
             {"resource_id": "sae-1", "kind": "sae", "state": "declared", "version": "1"},
         ]
         self._contracts = contracts if contracts is not None else ["contract-a", "contract-b"]
+        self._openapi = openapi if openapi is not None else {
+            "openapi_version": "3.1.0", "service_version": "0.3.0", "path_count": 8,
+            "schema_sha256": "a" * 64, "path_methods": {},
+            "missing_contract_items": [], "compatible": True,
+            "whitebox_workflow_api_available": "unsupported",
+            "intervention_api_available": "unsupported",
+            "artifact_access_available": "unsupported",
+        }
         self._error = error
+        self._openapi_error = openapi_error
 
     def _maybe_raise(self):
         if self._error:
@@ -42,6 +53,13 @@ class FakeWardenClient:
     def health(self):
         self._maybe_raise()
         return self._health
+
+    def openapi_summary(self):
+        self._maybe_raise()
+        if self._openapi_error:
+            status_code, code = self._openapi_error
+            raise WardenKernelError("fake OpenAPI failure", status_code=status_code, code=code)
+        return self._openapi
 
     def capabilities(self):
         self._maybe_raise()
@@ -88,7 +106,10 @@ def test_ready_kernel_reports_layers_without_promoting_health():
         "agentguard_api", "multi_host_storage", "warden_connectivity", "warden_api_compatibility",
         "contract_source", "available_contracts", "model_runtime", "probe_resources",
         "sae_resources", "audit_execution", "live_loop_execution",
-        "intervention_execution", "evidence_access",
+        "intervention_execution", "evidence_access", "api_reachable", "kernel_available",
+        "threat_contracts_available", "runtime_available", "probe_resources_available",
+        "sae_resources_available", "whitebox_workflow_api_available",
+        "intervention_api_available", "artifact_access_available",
     }
     assert checks["agentguard_api"].status == "available"
     assert checks["agentguard_api"].capability_version
@@ -97,6 +118,15 @@ def test_ready_kernel_reports_layers_without_promoting_health():
     assert checks["multi_host_storage"].diagnostics["supported_topology"] == "single_host"
     assert checks["multi_host_storage"].diagnostics["cross_host_locking"] is False
     assert checks["warden_connectivity"].status == "available"
+    assert checks["api_reachable"].status == "available"
+    assert checks["kernel_available"].status == "available"
+    assert checks["threat_contracts_available"].status == "available"
+    assert checks["runtime_available"].status == "available"
+    assert checks["probe_resources_available"].status == "available"
+    assert checks["sae_resources_available"].status == "unavailable"
+    assert checks["whitebox_workflow_api_available"].status == "unsupported"
+    assert checks["intervention_api_available"].status == "unsupported"
+    assert checks["artifact_access_available"].status == "unsupported"
     assert checks["available_contracts"].status == "available"
     assert checks["available_contracts"].diagnostics["contract_count"] == 2
     assert checks["model_runtime"].status == "available"
@@ -128,6 +158,37 @@ def test_unconfigured_warden_reports_unavailable_with_blocker():
     assert "WARDEN_URL_NOT_CONFIGURED" in checks["live_loop_execution"].blockers
     assert "AGENTGUARD_LOOP_OBSERVATION_DISABLED" in checks["live_loop_execution"].blockers
     assert checks["agentguard_api"].status == "available"
+    assert checks["api_reachable"].status == "unavailable"
+    assert checks["kernel_available"].status == "unknown"
+    assert checks["whitebox_workflow_api_available"].status == "unknown"
+
+
+def test_live_openapi_contract_mismatch_blocks_kernel_submission_options():
+    service, _ = _service(FakeWardenClient(openapi={
+        "openapi_version": "3.1.0", "service_version": "0.3.0", "path_count": 7,
+        "schema_sha256": "b" * 64, "path_methods": {},
+        "missing_contract_items": ["POST /v1/runs request schema RunRequestSchema"],
+        "compatible": False,
+        "whitebox_workflow_api_available": "unsupported",
+        "intervention_api_available": "unsupported",
+        "artifact_access_available": "unsupported",
+    }))
+    checks = {item.name: item for item in service.readiness().checks}
+    assert checks["api_reachable"].status == "available"
+    assert checks["kernel_available"].status == "blocked"
+    options = service.investigation_options()
+    assert all(not mode.submittable for mode in options.modes)
+    assert "WARDEN_API_CONTRACT_INCOMPATIBLE" in options.missing_dependencies
+
+
+def test_missing_live_openapi_keeps_api_reachable_but_blocks_kernel_options():
+    service, _ = _service(FakeWardenClient(openapi_error=(404, "WARDEN_HTTP_ERROR")))
+    checks = {item.name: item for item in service.readiness().checks}
+    assert checks["api_reachable"].status == "available"
+    assert checks["kernel_available"].status == "unknown"
+    options = service.investigation_options()
+    assert all(not mode.submittable for mode in options.modes)
+    assert "WARDEN_OPENAPI_NOT_VERIFIED" in options.missing_dependencies
 
 
 def test_transport_failure_and_degraded_health_are_distinguished():

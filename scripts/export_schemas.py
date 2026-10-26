@@ -70,6 +70,7 @@ from agentguard.contracts.research import (
 )
 from agentguard.contracts.scenario import ScenarioSpec
 from agentguard.contracts.warden import WardenAuditRequest
+from agentguard.contracts.warden_probe import WardenWhiteboxProbeExperimentConfig
 from agentguard.contracts.whitebox import ActivationPatchSpec
 
 SCHEMAS = {
@@ -126,6 +127,7 @@ SCHEMAS = {
     "path-shift-analysis-report.schema.json": PathShiftAnalysisReport,
     "activation-patch-spec.schema.json": ActivationPatchSpec,
     "warden-audit-request.schema.json": WardenAuditRequest,
+    "warden-whitebox-probe-experiment.schema.json": WardenWhiteboxProbeExperimentConfig,
 }
 
 def main() -> None:

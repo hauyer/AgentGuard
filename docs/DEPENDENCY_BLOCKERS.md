@@ -1,5 +1,17 @@
 # 只读底层依赖阻塞
 
+## 2026-10-26 核查补记
+
+AgentGuard 当前基线为 `feature/i-reliability-and-live-validation` / `63fe1b5`
+（版本 `1.1.0rc2`）。WARDEN 官方 `main` 固定源码为 `381fc08170386a2dbd4c2ded3f0f724f871e9636`
+（版本 `0.3.0`）。该源码公开白盒 Probe CLI，但没有白盒任务 REST、取消/恢复或工件下载
+路由。在线 WARDEN URL 未配置，本机服务不可访问，因此本次在线 OpenAPI 抓取和真实服务
+验证均为 **NOT_RUN**；源码路由核对不能代替在线验证。详见
+[`WARDEN_CAPABILITY_MATRIX.md`](integration/WARDEN_CAPABILITY_MATRIX.md)。
+
+此补记与下方历史运行记录分开：下方记录中的 WARDEN `077f540` 在线检查是先前日期的
+运行证据，不代表当前环境在线，也不证明新版本服务可用。
+
 日期：2026-10-24。WARDEN、FRACTAL-Bench、StegoPot 均为只读依赖。
 本文件描述接口需求与缺失能力，不授权修改这些仓库。
 

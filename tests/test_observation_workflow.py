@@ -39,6 +39,12 @@ class FakeKernel:
         self.calls.append("health")
         return {"status": "ok", "version": "0.2.0", "api_version": "v1"}
 
+    def openapi_summary(self, *, force_refresh=False):
+        return {
+            "compatible": True, "openapi_version": "3.1.0", "service_version": "0.3.0",
+            "path_count": 8, "schema_sha256": "a" * 64,
+        }
+
     def capabilities(self):
         return self._components
 

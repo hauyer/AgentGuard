@@ -1,5 +1,16 @@
 # Changelog
 
+## 1.1.0rc3 — I5 live gate and I8 interface freeze
+
+- Audited WARDEN 0.3.0 routes and Schemas from the pinned public source; verified live OpenAPI and Live execution remain `NOT_RUN` because no service URL is configured. Readiness now reports each missing capability with its distinct blocker.
+- Validated WARDEN OpenAPI request/response shapes before mutation; mapped AgentGuard's observation intent to WARDEN's supported `capture_only` mode.
+- Added read-only plan listing for ambiguous POST reconciliation. A missing list entry is not proof of absence; uncertain submissions remain ambiguous and are never automatically repeated.
+- Added a WARDEN whitebox Probe configuration contract pinned to the upstream JSON Schema; AgentGuard validates configuration only and does not load data, models or run the WARDEN CLI.
+- Added pre-registered paired-design fields, exact design fingerprint checks, real-executor gates for five execution arms, and required content-addressed causal-validation references. The synthetic runner remains `synthetic_only`; Evidence Gateway continues to withhold upstream causal claims.
+- Extended governed evidence with source/production type, run and experiment identity, model/data version and content hashes for locally verified artifacts; unknown provenance stays explicit.
+- Bumped the local candidate to `1.1.0rc3`, exported public JSON Schemas, and added the 86-path OpenAPI snapshot. The existing `rc2` snapshot remains unchanged for history.
+- Real WARDEN, real model, Probe training, paired intervention and causal-validation runs remain `BLOCKED` / `NOT_RUN`; baseline GitHub Actions are not evidence for this uncommitted candidate.
+
 ## Unreleased — I8 interface freeze and A1–A6 reliability review
 
 - Hardened governed evidence provenance: local content integrity, run/plan ownership, source authenticity, and methodology review remain separate; untrusted upstream causal claims are downgraded, and synthetic/stub or cross-run items are excluded from real WARDEN evidence.

@@ -30,6 +30,58 @@ def _request():
                               model_id="model-1", runtime_id="runtime-1", mode="observation")
 
 
+def _openapi_document():
+    read = {"responses": {"200": {"description": "ok"}}}
+
+    def write(schema_name):
+        return {
+            "requestBody": {"content": {"application/json": {
+                "schema": {"$ref": f"#/components/schemas/{schema_name}"},
+            }}},
+            "responses": {"200": {"description": "ok"}},
+        }
+
+    return {
+        "openapi": "3.1.0", "info": {"title": "WARDEN API", "version": "0.3.0"},
+        "paths": {
+            "/v1/health": {"get": read},
+            "/v1/capabilities": {"get": read},
+            "/v1/resources": {"get": read},
+            "/v1/contracts": {"get": read},
+            "/v1/audit-plans": {"get": read, "post": write("AuditRequestSchema")},
+            "/v1/audit-plans/{plan_id}": {"get": read},
+            "/v1/runs": {"get": read, "post": write("RunRequestSchema")},
+            "/v1/runs/{run_id}": {"get": read},
+        },
+        "components": {"schemas": {
+            "AuditRequestSchema": {
+                "type": "object",
+                "required": ["request_id", "contract_id", "model_id", "runtime_id"],
+                "properties": {
+                    key: {"type": "string"}
+                    for key in ("request_id", "contract_id", "model_id", "runtime_id")
+                } | {
+                    "mode": {"$ref": "#/components/schemas/AuditMode"},
+                    "capture_targets": {
+                        "type": "array", "items": {"$ref": "#/components/schemas/CaptureTargetSchema"},
+                    },
+                },
+            },
+            "AuditMode": {
+                "type": "string",
+                "enum": ["capture_only", "detection", "causal_audit", "defense_evaluation"],
+            },
+            "CaptureTargetSchema": {"type": "object", "properties": {
+                "target_id": {"type": "string"}, "agent_ids": {"type": "array"},
+            }},
+            "RunRequestSchema": {
+                "type": "object", "required": ["plan_id"],
+                "properties": {"plan_id": {"type": "string"}},
+            },
+        }},
+    }
+
+
 def test_concurrent_same_request_has_one_external_submission(tmp_path):
     started, release = Event(), Event()
     calls = []
@@ -37,6 +89,9 @@ def test_concurrent_same_request_has_one_external_submission(tmp_path):
     class Kernel:
         def health(self):
             return {"status": "ok", "version": "0.2.0", "api_version": "v1"}
+
+        def openapi_summary(self, *, force_refresh=False):
+            return {"compatible": True, "missing_contract_items": []}
 
         def capabilities(self):
             return []
@@ -155,6 +210,7 @@ def _kernel_client():
         path = url.removeprefix("https://warden.example")
         responses = {
             "/v1/health": {"status": "ok", "version": "0.2.0", "api_version": "v1"},
+            "/openapi.json": _openapi_document(),
             "/v1/capabilities": [], "/v1/contracts": ["contract-1"],
             "/v1/audit-plans": {"plan_id": "plan-1", "status": "planned"},
             "/v1/runs": {"run_id": "run-1", "plan_id": "plan-1", "status": "completed"},
@@ -172,7 +228,7 @@ def test_audit_compatibility_alias_shares_durable_idempotency(tmp_path, monkeypa
         assert first["submission_status"] == "completed"
         second = client.post("/v1/kernel/workflows", json=_request().model_dump(mode="json")).json()
         assert second["idempotent_replay"] is True
-        assert len(calls) == 5
+        assert len(calls) == 6
         saved = client.get("/v1/kernel/workflows/request-1").json()
         assert saved["workflow_status"] == "completed"
         assert saved["statistics"]["run_submission_attempts"] == 1
@@ -189,4 +245,4 @@ def test_cli_submit_uses_same_journal_and_replays_result(tmp_path, monkeypatch, 
     assert json.loads(capsys.readouterr().out)["submission_status"] == "completed"
     main()
     assert json.loads(capsys.readouterr().out)["idempotent_replay"] is True
-    assert len(calls) == 5
+    assert len(calls) == 6

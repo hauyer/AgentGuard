@@ -3,8 +3,11 @@
   "description": "Reproducible paired treatment/control design metadata.",
   "properties": {
     "schema_version": {
-      "const": "0.1",
-      "default": "0.1",
+      "default": "0.2",
+      "enum": [
+        "0.1",
+        "0.2"
+      ],
       "title": "Schema Version",
       "type": "string"
     },
@@ -39,6 +42,18 @@
       "title": "Control Operation",
       "type": "string"
     },
+    "sham_control_operation": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Sham Control Operation"
+    },
     "negative_control_operation": {
       "anyOf": [
         {
@@ -48,8 +63,222 @@
           "type": "null"
         }
       ],
-      "default": "sham_intervention",
+      "default": null,
       "title": "Negative Control Operation"
+    },
+    "scenario_id": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Scenario Id"
+    },
+    "model_revision": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Model Revision"
+    },
+    "decoding_settings": {
+      "additionalProperties": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "integer"
+          },
+          {
+            "type": "number"
+          },
+          {
+            "type": "boolean"
+          }
+        ]
+      },
+      "title": "Decoding Settings",
+      "type": "object"
+    },
+    "control_condition": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Control Condition"
+    },
+    "treatment_condition": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Treatment Condition"
+    },
+    "candidate_target_type": {
+      "anyOf": [
+        {
+          "enum": [
+            "message",
+            "tool_call",
+            "tool_result",
+            "activation"
+          ],
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Candidate Target Type"
+    },
+    "candidate_target_ref": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Candidate Target Ref"
+    },
+    "candidate_component": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Candidate Component"
+    },
+    "token_position": {
+      "anyOf": [
+        {
+          "type": "integer"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Token Position"
+    },
+    "utility_metric": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Utility Metric"
+    },
+    "secret_recovery_metric": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Secret Recovery Metric"
+    },
+    "stopping_condition": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Stopping Condition"
+    },
+    "exclusion_rules": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Exclusion Rules",
+      "type": "array"
+    },
+    "randomization_or_permutation_baseline": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Randomization Or Permutation Baseline"
+    },
+    "hidden_truth_excluded_from_model_input": {
+      "default": false,
+      "title": "Hidden Truth Excluded From Model Input",
+      "type": "boolean"
+    },
+    "independent_case_family_ids": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Independent Case Family Ids",
+      "type": "array"
+    },
+    "preregistration_artifact_ref": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Preregistration Artifact Ref"
+    },
+    "preregistration_sha256": {
+      "anyOf": [
+        {
+          "pattern": "^[0-9a-f]{64}$",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Preregistration Sha256"
     },
     "seed": {
       "title": "Seed",

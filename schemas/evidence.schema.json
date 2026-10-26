@@ -35,6 +35,24 @@
       "title": "Grade",
       "type": "string"
     },
+    "source_type": {
+      "default": "unknown",
+      "enum": [
+        "synthetic",
+        "stub",
+        "warden_api",
+        "agentguard_local",
+        "historical_record",
+        "unknown"
+      ],
+      "title": "Source Type",
+      "type": "string"
+    },
+    "production_phase": {
+      "default": "unknown",
+      "title": "Production Phase",
+      "type": "string"
+    },
     "source": {
       "title": "Source",
       "type": "string"
@@ -90,6 +108,28 @@
       "default": "unknown",
       "title": "Source Version",
       "type": "string"
+    },
+    "model_id": {
+      "default": "unknown",
+      "title": "Model Id",
+      "type": "string"
+    },
+    "model_version": {
+      "default": "unknown",
+      "title": "Model Version",
+      "type": "string"
+    },
+    "data_version": {
+      "default": "unknown",
+      "title": "Data Version",
+      "type": "string"
+    },
+    "artifact_hashes": {
+      "additionalProperties": {
+        "type": "string"
+      },
+      "title": "Artifact Hashes",
+      "type": "object"
     },
     "conclusion_scope": {
       "default": "supports_only_the_summary_and_linked_artifacts",

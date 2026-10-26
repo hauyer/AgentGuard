@@ -1,0 +1,129 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/Xinyuan20061/WARDEN/schemas/whitebox-probe-experiment.schema.json",
+  "title": "WARDEN White-box Probe Experiment",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "experiment_id",
+    "model_id",
+    "model",
+    "dataset_path",
+    "output_directory",
+    "agent_ids",
+    "capture_targets"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "warden.whitebox-probe-experiment/1"
+    },
+    "experiment_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "model_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "model": {
+      "$ref": "#/$defs/model"
+    },
+    "dataset_path": {
+      "type": "string",
+      "minLength": 1
+    },
+    "output_directory": {
+      "type": "string",
+      "minLength": 1
+    },
+    "agent_ids": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
+    },
+    "capture_targets": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "$ref": "#/$defs/captureTarget"
+      }
+    },
+    "probe": {
+      "$ref": "#/$defs/probe"
+    }
+  },
+  "$defs": {
+    "model": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["model_path"],
+      "properties": {
+        "model_path": {"type": "string", "minLength": 1},
+        "tokenizer_path": {"type": ["string", "null"], "minLength": 1},
+        "revision": {"type": ["string", "null"], "minLength": 1},
+        "device": {"type": "string", "minLength": 1, "default": "auto"},
+        "dtype": {
+          "enum": ["auto", "float32", "float16", "bfloat16"],
+          "default": "auto"
+        },
+        "trust_remote_code": {"type": "boolean", "default": false},
+        "local_files_only": {"type": "boolean", "default": true},
+        "use_safetensors": {"type": "boolean", "default": true},
+        "parameter_gradients": {"type": "boolean", "default": false},
+        "quantization": {
+          "enum": ["none", "bnb_4bit", "bnb_8bit"],
+          "default": "none"
+        },
+        "bnb_4bit_compute_dtype": {
+          "enum": ["float32", "float16", "bfloat16"],
+          "default": "bfloat16"
+        },
+        "bnb_4bit_quant_type": {
+          "enum": ["nf4", "fp4"],
+          "default": "nf4"
+        },
+        "bnb_4bit_use_double_quant": {"type": "boolean", "default": true}
+      }
+    },
+    "captureTarget": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["target_id", "agent_ids"],
+      "properties": {
+        "target_id": {"type": "string", "minLength": 1},
+        "agent_ids": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {"type": "string", "minLength": 1}
+        },
+        "module": {"type": ["string", "null"], "minLength": 1},
+        "layer": {"type": ["integer", "null"], "minimum": 0},
+        "component": {"type": ["string", "null"], "default": "resid_post"},
+        "token_policy": {
+          "enum": ["all", "last_token", "mean_tokens"],
+          "default": "last_token"
+        },
+        "retain_gradient": {"const": false}
+      },
+      "anyOf": [
+        {"required": ["module"]},
+        {"required": ["layer"]}
+      ]
+    },
+    "probe": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "c": {"type": "number", "exclusiveMinimum": 0, "default": 1.0},
+        "max_iter": {"type": "integer", "minimum": 1, "default": 2000},
+        "random_seed": {"type": "integer", "default": 0}
+      }
+    }
+  }
+}
