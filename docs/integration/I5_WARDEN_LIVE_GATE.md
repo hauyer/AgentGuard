@@ -6,9 +6,24 @@
 WARDEN 源码并运行本地软件/Stub 测试，没有向真实 WARDEN 提交计划或运行，没有真实模型
 调用，也没有产生真实新增证据。
 
-本轮 AgentGuard API 实现快照为
-`5c3fc5e198a6d052979d76e417b909087054b94f`；后续仅更新测试和交接/门控文档的提交不改变
-该 API 实现快照。核验的 WARDEN
+## 2026-10-26 rc3 候选复核
+
+候选版本为 `1.1.0rc3`，AgentGuard 提交为
+`9a8ee1f5e78a0b254c17ea66ac5b140aa7e1e89a`。[GitHub Actions `40336215846`](https://github.com/hauyer/AgentGuard/actions/runs/40336215846)
+在 Python 3.11、3.12、3.13 均通过，每个版本 508 passed、6 skipped、0 failed、1 warning；
+Ruff、compileall、架构审计、构建和隔离 wheel 安装通过。
+跳过项为 1 个可选 PyTorch 测试和 5 个未配置 WARDEN URL 的 Live 测试。该结果只说明本地软件
+和合同门控行为；不改变 Live 状态。
+
+WARDEN 在线 OpenAPI、真实 WARDEN 计划/运行、真实模型或 Probe、真实配对干预和因果验证均为
+**NOT_RUN**。远端 POST 幂等、跨重启查询、白盒 REST 执行、受控工件来源/访问及公开干预接口仍缺失，
+所以 Live 继续 **BLOCKED**。rc3 OpenAPI 快照信息见
+[`openapi-1.1.0rc3.diff.md`](openapi-1.1.0rc3.diff.md)；详细候选验收见
+[`../release/TEST_REPORT.md`](../release/TEST_REPORT.md)。
+
+历史 I5 审查的 AgentGuard API 实现快照为
+`5c3fc5e198a6d052979d76e417b909087054b94f`；当前 rc3 候选实现快照为上方记录的
+`9a8ee1f5e78a0b254c17ea66ac5b140aa7e1e89a`。核验的 WARDEN
 仓库快照为 `077f5405619261d6c4c8f989f8cfc996cc2391a6`（历史在线服务快照；本轮另核对 WARDEN `main` 源码 `381fc08170386a2dbd4c2ded3f0f724f871e9636`。本机服务未配置，在线 OpenAPI 抓取和真实服务验收为 `NOT_RUN`）。审查范围包括
 `warden/interface/api/app.py`、`warden/interface/api/schemas.py`、
 `warden/application/service.py`、`warden/application/compiler.py`、

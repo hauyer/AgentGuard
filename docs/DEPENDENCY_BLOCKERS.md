@@ -1,5 +1,22 @@
 # 只读底层依赖阻塞
 
+## 2026-10-26 I5/I8 rc3 本地候选状态
+
+候选 `1.1.0rc3` 的 AgentGuard 提交为
+`9a8ee1f5e78a0b254c17ea66ac5b140aa7e1e89a`，已位于开发分支远端。对应
+[GitHub Actions](https://github.com/hauyer/AgentGuard/actions/runs/40336215846) 的三版本矩阵通过。
+软件合同、故障注入与 Stub 测试通过；它们不解除以下真实依赖阻塞。WARDEN 固定源码
+核对及本地验收见 [`WARDEN_CAPABILITY_MATRIX.md`](integration/WARDEN_CAPABILITY_MATRIX.md) 和
+[`I5_WARDEN_LIVE_GATE.md`](integration/I5_WARDEN_LIVE_GATE.md)。
+
+- WARDEN 地址未配置，在线 OpenAPI 与真实服务验收为 **NOT_RUN**；部署版本、运行时、模型及资源在线状态仍为 unknown。
+- WARDEN 的计划/运行 POST 没有客户端幂等键合同；计划和运行保存在进程内，重启后无法可靠查询。
+  AgentGuard 对不确定提交保持 ambiguous，不自动重提。
+- 公开 REST 没有白盒 Probe 任务提交/状态、干预执行、取消/恢复或受控工件下载接口；本地 CLI 不等于远端 API。
+- WARDEN 没有已核实的工件来源签名/独立完整性获取合同；外部工件来源和内容保持 unverified。
+- 因此真实 Probe、模型观察/干预、配对对照、因果验证及新增 Recorded/Live Observational 研究均为
+  **NOT_RUN**。合成结果继续隔离，不报告真实检测或防御效果指标。
+
 ## 2026-10-26 核查补记
 
 AgentGuard 当前基线为 `feature/i-reliability-and-live-validation` / `63fe1b5`

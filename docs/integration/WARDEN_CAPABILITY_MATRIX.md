@@ -1,8 +1,8 @@
 # WARDEN 接口能力矩阵
 
 **核查日期：** 2026-10-26  
-**AgentGuard Git 基线：** `63fe1b5662df93fbf06750ecf09c14ee9e6bd5cc`，初始版本 `1.1.0rc2`；本地未提交候选 `1.1.0rc3`  
-**WARDEN 源码基线：** `381fc08170386a2dbd4c2ded3f0f724f871e9636`（官方仓库 `main`，版本 `0.3.0`）  
+**AgentGuard Git 基线：** `9a8ee1f5e78a0b254c17ea66ac5b140aa7e1e89a`，版本 `1.1.0rc3`；[三版本 CI](https://github.com/hauyer/AgentGuard/actions/runs/40336215846) 通过
+**WARDEN 源码基线：** `381fc08170386a2dbd4c2ded3f0f724f871e9636`（官方仓库 `main`，版本 `0.3.0`）
 **在线 OpenAPI 抓取：** `NOT_RUN`。本机 WARDEN URL 未配置，`127.0.0.1:8765/openapi.json`
 不可访问。
 

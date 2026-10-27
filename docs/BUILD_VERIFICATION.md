@@ -2,6 +2,27 @@
 
 验证范围：严格数据合同、Mock 闭环、主动调查与配对设计、图关系/行为检测、线性探针、统计工具、定向防御、REST API、经验库、工件存储、CLI 和发布压缩脚本。
 
+## 1.1.0rc3 候选（2026-10-26）
+
+候选提交为 `9a8ee1f5e78a0b254c17ea66ac5b140aa7e1e89a`，分支
+`feature/i-reliability-and-live-validation`，版本 `1.1.0rc3`。GitHub Actions
+[40336215846](https://github.com/hauyer/AgentGuard/actions/runs/40336215846) 在 Python 3.11、3.12、
+3.13 均成功。
+
+- 每个 CI 版本：**508 passed、0 failed、6 skipped、1 warning**。1 项因未安装可选
+  PyTorch 跳过；5 项真实 WARDEN 测试因 `AGENTGUARD_LIVE_WARDEN_URL` 未配置跳过。
+- 本地 `.venv\\Scripts\\python.exe -m pytest -o addopts='' -q -rs` 同为 **508 passed、0 failed、
+  6 skipped、1 warning**。
+- Ruff、`compileall`、架构审计和 `git diff --check` 通过；架构审计没有边界违规或依赖环。
+- `python -m build --sdist --wheel --no-isolation` 成功构建 sdist 与 wheel；隔离 wheel 安装检查成功，
+  并核对包版本、SDK 导入和 CLI 帮助。默认镜像 TLS 失败后使用本地构建依赖及官方 PyPI 完成验证。
+- Synthetic demo smoke 通过，但不构成真实研究或 Live 证据。在线 WARDEN OpenAPI、真实 WARDEN、模型、
+  Probe、配对干预和因果验证均为 **NOT_RUN**；真实 WARDEN 仍 **BLOCKED**。
+- rc3 OpenAPI 3.1.0 包含 86 paths；快照及运行时 SHA、rc2 语义差异见
+  [`integration/openapi-1.1.0rc3.diff.md`](integration/openapi-1.1.0rc3.diff.md)。
+
+历史 rc2 CI 仍作为独立基线保存；本节链接的是 rc3 提交对应的 Actions 运行。
+
 ## 本轮自动验证
 
 - AgentGuard 0.6.0 基线测试：**95 tests passed**。

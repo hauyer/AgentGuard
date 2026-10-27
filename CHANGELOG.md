@@ -9,7 +9,7 @@
 - Added pre-registered paired-design fields, exact design fingerprint checks, real-executor gates for five execution arms, and required content-addressed causal-validation references. The synthetic runner remains `synthetic_only`; Evidence Gateway continues to withhold upstream causal claims.
 - Extended governed evidence with source/production type, run and experiment identity, model/data version and content hashes for locally verified artifacts; unknown provenance stays explicit.
 - Bumped the local candidate to `1.1.0rc3`, exported public JSON Schemas, and added the 86-path OpenAPI snapshot. The existing `rc2` snapshot remains unchanged for history.
-- Real WARDEN, real model, Probe training, paired intervention and causal-validation runs remain `BLOCKED` / `NOT_RUN`; baseline GitHub Actions are not evidence for this uncommitted candidate.
+- GitHub Actions run [40336215846](https://github.com/hauyer/AgentGuard/actions/runs/40336215846) passed on Python 3.11, 3.12 and 3.13; each ran 508 passed, 6 skipped, 1 warning plus release build/install and synthetic demo checks. Real WARDEN, real model, Probe training, paired intervention and causal-validation runs remain `BLOCKED` / `NOT_RUN`.
 
 ## Unreleased — I8 interface freeze and A1–A6 reliability review
 

@@ -1,5 +1,30 @@
 # 1.1.0-rc1 测试报告（C0–C8：QWB 应用层集成）
 
+## 1.1.0rc3 候选验证（2026-10-26）
+
+本节记录 I5/I8 候选验证；下方 rc1、D 轮及历史 live 运行记录保持原样，不代表 rc3 的真实后端验收。
+候选提交为 `9a8ee1f5e78a0b254c17ea66ac5b140aa7e1e89a`，分支
+`feature/i-reliability-and-live-validation`，版本 `1.1.0rc3`。对应 [GitHub Actions
+`40336215846`](https://github.com/hauyer/AgentGuard/actions/runs/40336215846) 的 Python 3.11、3.12、
+3.13 矩阵全部通过。
+
+| 检查 | 结果 | 限制 |
+| --- | --- | --- |
+| CI pytest (Python 3.11/3.12/3.13) | 每个版本 **508 passed / 0 failed / 6 skipped / 1 warning** | 本地 `-rs` 记录将 6 项跳过归因为 PyTorch 可选模块 1 项和未配置 `AGENTGUARD_LIVE_WARDEN_URL` 的 Live 用例 5 项；warning 为 Starlette/httpx 弃用提示。 |
+| `.venv\\Scripts\\python.exe -m pytest -o addopts='' -q -rs` | **508 passed / 0 failed / 6 skipped / 1 warning** | 本地复核。 |
+| `.venv\\Scripts\\ruff.exe check src tests scripts` | 通过 | — |
+| `.venv\\Scripts\\python.exe -m compileall -q src scripts` | 通过 | — |
+| `.venv\\Scripts\\python.exe scripts/audit_architecture.py --check` | 通过 | 0 边界违规、0 依赖环 |
+| `.venv\\Scripts\\python.exe -m build --sdist --wheel --no-isolation` | 通过 | 默认镜像 TLS 下载失败；复用本地构建依赖后生成 rc3 sdist/wheel。 |
+| `scripts/verify_wheel_install.py` | 通过 | 隔离环境安装和 SDK/CLI 验证通过；依赖下载使用官方 PyPI。 |
+| Synthetic demo smoke | 通过 | 仅验证软件行为，报告保持 synthetic。 |
+| `git diff --check` | 通过 | — |
+
+上方 rc2 Actions 记录仍作为独立历史基线保留。在线 WARDEN OpenAPI、真实 WARDEN、模型/Probe、配对干预和因果
+实验均为 **NOT_RUN**；Live 保持 **BLOCKED**。未知的真实服务状态、未配置 WARDEN、可选 PyTorch
+缺失和六项跳过均未计作 Live 通过。OpenAPI rc3 为 3.1.0、86 paths；SHA 与 rc2 语义 diff 见
+[`../integration/openapi-1.1.0rc3.diff.md`](../integration/openapi-1.1.0rc3.diff.md)。
+
 日期：2026-10-24。分支 `feature/qwb-public-api-integration`（自 `7d42809` 创建）。
 范围：仅 AgentGuard 上层；WARDEN、FRACTAL-Bench、StegoPot 与 AgentGuard-QWB-App
 保持只读。历史 A8 验收记录见 [A8_TEST_REPORT.md](A8_TEST_REPORT.md)，未覆盖。

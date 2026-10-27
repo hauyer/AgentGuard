@@ -8,6 +8,34 @@
 - WARDEN 官方源码核查基线为 `381fc08170386a2dbd4c2ded3f0f724f871e9636`。本机 WARDEN 地址未配置且服务不可达，在线 OpenAPI 抓取、真实 WARDEN、真实模型、Probe 和干预实验均为 `NOT_RUN`。源码合同与缺失接口见 [`integration/WARDEN_CAPABILITY_MATRIX.md`](integration/WARDEN_CAPABILITY_MATRIX.md)。
 - Live WARDEN 保持 `BLOCKED`；历史 7B 观察仍为 6/8 条件完成、2 失败，I 阶段策略对照仍为 synthetic，均不构成因果验证。
 
+## 2026-10-26 I5/I8 rc3 候选验收
+
+- 候选提交 `9a8ee1f5e78a0b254c17ea66ac5b140aa7e1e89a` 位于分支
+  `feature/i-reliability-and-live-validation`，本地 `origin` 引用与 GitHub 分支一致；包版本为
+  `1.1.0rc3`。rc2 的 [CI `40314646080`](https://github.com/hauyer/AgentGuard/actions/runs/40314646080)
+  仍单独保留在上方作为历史基线。
+- [rc3 GitHub Actions `40336215846`](https://github.com/hauyer/AgentGuard/actions/runs/40336215846)：
+  Python 3.11、3.12、3.13 全部成功；每个版本 508 passed、6 skipped、1 warning。工作流也完成
+  Ruff、语法、sdist/wheel 构建、干净环境 wheel 安装和 synthetic demo 检查。
+- 全量本地测试：`.venv\\Scripts\\python.exe -m pytest -o addopts='' -q -rs`，
+  **508 passed、0 failed、6 skipped、1 warning**。跳过为 PyTorch 可选模块 1 项，以及 WARDEN
+  URL 未配置的 live Loop、观察、两项 C-round 和 HTTP 测试 5 项。warning 是 Starlette 对
+  `httpx` 的弃用提示。
+- `.venv\\Scripts\\ruff.exe check src tests scripts`、
+  `.venv\\Scripts\\python.exe -m compileall -q src scripts`、
+  `.venv\\Scripts\\python.exe scripts/audit_architecture.py --check` 与 `git diff --check`
+  均通过；架构审计为 0 边界违规、0 依赖环。Synthetic demo smoke 通过，结果仍标记为 synthetic。
+- `.venv\\Scripts\\python.exe -m build --sdist --wheel --no-isolation` 通过，生成 rc3 sdist 和
+  wheel；隔离安装验证通过，测试了 `agentguard 1.1.0rc3`、SDK 导入及 CLI 帮助。初次隔离构建/安装
+  因配置的镜像 TLS 失败，改用已安装构建依赖和官方 PyPI 重试后通过。
+- rc3 OpenAPI 为 `3.1.0`、86 paths；文件 SHA-256 为
+  `fadab4d701d23fabda785413cf0c4536fcffec521ea09cbe6ad73a417c15de1e`，规范化运行时 SHA-256 为
+  `52ad0d5dc175e58759196588d1c4ab5b45e82751f882c82ed8540cb963d942f6`。与 rc2 的语义差异报告确认
+  仅 `info.version` 变化；历史快照保留。详见 [`openapi-1.1.0rc3.diff.md`](integration/openapi-1.1.0rc3.diff.md)。
+- WARDEN URL 未配置；在线 OpenAPI、真实 WARDEN、真实模型/Probe、配对干预、真实因果实验均为
+  **NOT_RUN**。Live 仍为 **BLOCKED**；缺少远端提交幂等合同、跨重启持久状态查询、白盒执行 REST、
+  受控工件访问/来源验证和公开干预接口。合同/Stub 测试不计作真实接入通过。
+
 ## 上层平台重构 A7
 
 - [x] 新增 system/workflow/investigation/evidence/defense-policy/report 业务路由；旧 kernel/run 路由保留，工作流列表支持 limit/offset。
