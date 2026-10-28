@@ -317,6 +317,34 @@ class AgentGuardClient:
             "GET", f"/v1/research/strategy-evaluations/{quote(evaluation_id, safe='')}",
         )
 
+    def get_research_capabilities(self) -> dict[str, Any]:
+        """Read the WARDEN research capability gate; this never submits work."""
+        return self.request("GET", "/v1/research/capabilities")
+
+    def list_studies(self, *, limit: int = 100) -> dict[str, Any]:
+        return self.request("GET", "/v1/studies", query={"limit": limit})
+
+    def get_study(self, study_id: str) -> dict[str, Any]:
+        return self.request("GET", f"/v1/studies/{quote(study_id, safe='')}")
+
+    def register_study(
+        self, payload: Mapping[str, Any], *, approval_token: str | None = None,
+    ) -> dict[str, Any]:
+        headers = {"X-Approval-Token": approval_token} if approval_token else None
+        return self.request("POST", "/v1/studies", body=payload, operator=True, extra_headers=headers)
+
+    def analyze_study(
+        self, study_id: str, payload: Mapping[str, Any], *, approval_token: str | None = None,
+    ) -> dict[str, Any]:
+        headers = {"X-Approval-Token": approval_token} if approval_token else None
+        return self.request(
+            "POST", f"/v1/studies/{quote(study_id, safe='')}/analyses",
+            body=payload, operator=True, extra_headers=headers,
+        )
+
+    def list_study_analyses(self, study_id: str) -> dict[str, Any]:
+        return self.request("GET", f"/v1/studies/{quote(study_id, safe='')}/analyses")
+
     def activate_experience_policy(self, payload: Mapping[str, Any], *, activate: bool = True) -> dict[str, Any]:
         return self.request(
             "POST", "/v1/experiences/recommendation-policies", query={"activate": str(activate).lower()},

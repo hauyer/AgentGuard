@@ -63,10 +63,17 @@ from agentguard.contracts.probe import (
 from agentguard.contracts.report import RunReport
 from agentguard.contracts.research import (
     OutcomePairs,
+    ProbeEffectAssociationInput,
     RegisteredStudy,
+    ResearchArmDefinition,
     StudyAnalysisReport,
     StudyAnalysisRequest,
+    StudyArmAnalysisInput,
     StudyRegistrationRequest,
+)
+from agentguard.contracts.research_capability import (
+    ResearchCapabilityItem,
+    ResearchCapabilityReport,
 )
 from agentguard.contracts.scenario import ScenarioSpec
 from agentguard.contracts.warden import WardenAuditRequest
@@ -121,6 +128,11 @@ SCHEMAS = {
     "study-outcome-pairs.schema.json": OutcomePairs,
     "study-analysis-request.schema.json": StudyAnalysisRequest,
     "study-analysis-report.schema.json": StudyAnalysisReport,
+    "research-arm-definition.schema.json": ResearchArmDefinition,
+    "study-arm-analysis-input.schema.json": StudyArmAnalysisInput,
+    "probe-effect-association-input.schema.json": ProbeEffectAssociationInput,
+    "research-capability-item.schema.json": ResearchCapabilityItem,
+    "research-capability-report.schema.json": ResearchCapabilityReport,
     "attribution-node-analysis-request.schema.json": AttributionNodeAnalysisRequest,
     "attribution-node-analysis-report.schema.json": AttributionNodeAnalysisReport,
     "path-shift-analysis-request.schema.json": PathShiftAnalysisRequest,
@@ -138,6 +150,7 @@ def main() -> None:
         (destination / filename).write_text(
             json.dumps(payload, ensure_ascii=False, indent=2) + "\n",
             encoding="utf-8",
+            newline="\n",
         )
     print(f"Exported {len(SCHEMAS)} JSON Schemas to {destination}")
 

@@ -1,0 +1,91 @@
+{
+  "additionalProperties": false,
+  "description": "Held-out family-level Probe scores paired with measured intervention effects.",
+  "properties": {
+    "probe_scores": {
+      "items": {
+        "type": "number"
+      },
+      "maxItems": 100000,
+      "minItems": 4,
+      "title": "Probe Scores",
+      "type": "array"
+    },
+    "intervention_effects": {
+      "items": {
+        "type": "number"
+      },
+      "maxItems": 100000,
+      "minItems": 4,
+      "title": "Intervention Effects",
+      "type": "array"
+    },
+    "case_families": {
+      "items": {
+        "type": "string"
+      },
+      "maxItems": 100000,
+      "minItems": 4,
+      "title": "Case Families",
+      "type": "array"
+    },
+    "probe_scope": {
+      "maxLength": 128,
+      "minLength": 1,
+      "title": "Probe Scope",
+      "type": "string"
+    },
+    "target": {
+      "maxLength": 256,
+      "minLength": 1,
+      "title": "Target",
+      "type": "string"
+    },
+    "layer": {
+      "maxLength": 128,
+      "minLength": 1,
+      "title": "Layer",
+      "type": "string"
+    },
+    "token": {
+      "maxLength": 128,
+      "minLength": 1,
+      "title": "Token",
+      "type": "string"
+    },
+    "model_revision": {
+      "maxLength": 128,
+      "minLength": 1,
+      "title": "Model Revision",
+      "type": "string"
+    },
+    "label_semantics": {
+      "enum": [
+        "decoded_directive",
+        "secret_bit",
+        "misaligned"
+      ],
+      "title": "Label Semantics",
+      "type": "string"
+    },
+    "split": {
+      "const": "test",
+      "default": "test",
+      "title": "Split",
+      "type": "string"
+    }
+  },
+  "required": [
+    "probe_scores",
+    "intervention_effects",
+    "case_families",
+    "probe_scope",
+    "target",
+    "layer",
+    "token",
+    "model_revision",
+    "label_semantics"
+  ],
+  "title": "ProbeEffectAssociationInput",
+  "type": "object"
+}

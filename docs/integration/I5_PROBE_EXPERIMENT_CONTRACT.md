@@ -1,6 +1,6 @@
 # WARDEN 白盒 Probe 实验合同
 
-**状态：** AgentGuard 配置合同已对齐；真实模型运行 `NOT_RUN`，Live 执行 `BLOCKED`。候选版本 `1.1.0rc3`，AgentGuard 提交 `9a8ee1f5e78a0b254c17ea66ac5b140aa7e1e89a`；三版本 CI 通过。
+**状态：** AgentGuard 配置合同已对齐；真实模型运行 `NOT_RUN`，Live 执行 `BLOCKED`。该 WARDEN Probe 配置合同最初在 `1.1.0rc3` (`9a8ee1f5e78a0b254c17ea66ac5b140aa7e1e89a`) 冻结；`1.1.0rc4` 增加 Study/Arm 预注册和研究能力诊断，不增加 Probe REST 执行接口。rc4 GitHub Actions 尚未运行。
 **WARDEN 源码：** `381fc08170386a2dbd4c2ded3f0f724f871e9636`，版本 `0.3.0`。
 **上游 JSON Schema SHA-256：** `cee132eed53bf81d64da68e68bcda881f0aa31f246bc33d6a96a86ccdc1fb0ae`。
 

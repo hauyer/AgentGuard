@@ -115,6 +115,59 @@
       },
       "title": "Limitations",
       "type": "array"
+    },
+    "arm_analyses": {
+      "additionalProperties": {
+        "additionalProperties": {
+          "$ref": "#/$defs/JsonValue"
+        },
+        "type": "object"
+      },
+      "title": "Arm Analyses",
+      "type": "object"
+    },
+    "rq2_probe_effect_association": {
+      "anyOf": [
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/JsonValue"
+          },
+          "type": "object"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Rq2 Probe Effect Association"
+    },
+    "rq3_safety_utility": {
+      "items": {
+        "additionalProperties": {
+          "$ref": "#/$defs/JsonValue"
+        },
+        "type": "object"
+      },
+      "title": "Rq3 Safety Utility",
+      "type": "array"
+    },
+    "causal_claim_status": {
+      "default": "not_assessed",
+      "enum": [
+        "synthetic_only",
+        "not_assessed"
+      ],
+      "title": "Causal Claim Status",
+      "type": "string"
+    },
+    "source_validation": {
+      "default": "unverified",
+      "enum": [
+        "unverified",
+        "synthetic_only"
+      ],
+      "title": "Source Validation",
+      "type": "string"
     }
   },
   "required": [

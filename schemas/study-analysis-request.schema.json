@@ -38,6 +38,154 @@
       ],
       "title": "OutcomePairs",
       "type": "object"
+    },
+    "ProbeEffectAssociationInput": {
+      "additionalProperties": false,
+      "description": "Held-out family-level Probe scores paired with measured intervention effects.",
+      "properties": {
+        "probe_scores": {
+          "items": {
+            "type": "number"
+          },
+          "maxItems": 100000,
+          "minItems": 4,
+          "title": "Probe Scores",
+          "type": "array"
+        },
+        "intervention_effects": {
+          "items": {
+            "type": "number"
+          },
+          "maxItems": 100000,
+          "minItems": 4,
+          "title": "Intervention Effects",
+          "type": "array"
+        },
+        "case_families": {
+          "items": {
+            "type": "string"
+          },
+          "maxItems": 100000,
+          "minItems": 4,
+          "title": "Case Families",
+          "type": "array"
+        },
+        "probe_scope": {
+          "maxLength": 128,
+          "minLength": 1,
+          "title": "Probe Scope",
+          "type": "string"
+        },
+        "target": {
+          "maxLength": 256,
+          "minLength": 1,
+          "title": "Target",
+          "type": "string"
+        },
+        "layer": {
+          "maxLength": 128,
+          "minLength": 1,
+          "title": "Layer",
+          "type": "string"
+        },
+        "token": {
+          "maxLength": 128,
+          "minLength": 1,
+          "title": "Token",
+          "type": "string"
+        },
+        "model_revision": {
+          "maxLength": 128,
+          "minLength": 1,
+          "title": "Model Revision",
+          "type": "string"
+        },
+        "label_semantics": {
+          "enum": [
+            "decoded_directive",
+            "secret_bit",
+            "misaligned"
+          ],
+          "title": "Label Semantics",
+          "type": "string"
+        },
+        "split": {
+          "const": "test",
+          "default": "test",
+          "title": "Split",
+          "type": "string"
+        }
+      },
+      "required": [
+        "probe_scores",
+        "intervention_effects",
+        "case_families",
+        "probe_scope",
+        "target",
+        "layer",
+        "token",
+        "model_revision",
+        "label_semantics"
+      ],
+      "title": "ProbeEffectAssociationInput",
+      "type": "object"
+    },
+    "StudyArmAnalysisInput": {
+      "additionalProperties": false,
+      "description": "Outcomes for one planned arm, preserving failed and unavailable arms.",
+      "properties": {
+        "status": {
+          "enum": [
+            "completed",
+            "partial",
+            "failed",
+            "blocked",
+            "not_run",
+            "unknown"
+          ],
+          "title": "Status",
+          "type": "string"
+        },
+        "outcomes": {
+          "additionalProperties": {
+            "$ref": "#/$defs/OutcomePairs"
+          },
+          "maxProperties": 31,
+          "title": "Outcomes",
+          "type": "object"
+        },
+        "failure_reason": {
+          "anyOf": [
+            {
+              "maxLength": 512,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Failure Reason"
+        },
+        "unknown_reason": {
+          "anyOf": [
+            {
+              "maxLength": 512,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Unknown Reason"
+        }
+      },
+      "required": [
+        "status"
+      ],
+      "title": "StudyArmAnalysisInput",
+      "type": "object"
     }
   },
   "additionalProperties": false,
@@ -101,6 +249,25 @@
       "minimum": 1000,
       "title": "Permutation Draws",
       "type": "integer"
+    },
+    "arm_analyses": {
+      "additionalProperties": {
+        "$ref": "#/$defs/StudyArmAnalysisInput"
+      },
+      "maxProperties": 64,
+      "title": "Arm Analyses",
+      "type": "object"
+    },
+    "probe_effect_association": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/ProbeEffectAssociationInput"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
     }
   },
   "required": [

@@ -13,6 +13,15 @@ class _FakeAPI:
     def capabilities(self):
         return {"backend_mode": "synthetic"}
 
+    def get_research_capabilities(self):
+        return {"backend_status": "not_configured", "capabilities": []}
+
+    def list_studies(self, **kwargs):
+        return {"items": [], **kwargs}
+
+    def get_study(self, study_id):
+        return {"study_id": study_id}
+
     def kernel_status(self):
         return {"kernel_status": "unavailable"}
 
@@ -74,6 +83,9 @@ def test_mcp_tools_use_only_public_client_and_plan_without_starting_run(monkeypa
     assert request_id == "mcp-request"
     assert payload["start_run"] is False
     assert payload["mode"] == "observation"
+    assert json.loads(server.tools["get_research_capabilities"]())["backend_status"] == "not_configured"
+    assert json.loads(server.tools["list_studies"](limit=5))["limit"] == 5
+    assert json.loads(server.tools["get_study"]("study-1"))["study_id"] == "study-1"
     assert "execute_defense" not in server.tools
     assert "start_experiment" not in server.tools
 

@@ -82,6 +82,32 @@ def test_sdk_reports_index_path_and_filters():
     )
 
 
+def test_sdk_research_capability_and_study_methods_use_public_routes_and_auth_headers():
+    calls = []
+
+    def opener(request, timeout):
+        calls.append(request)
+        return _Response({"ok": True})
+
+    client = AgentGuardClient(
+        "http://127.0.0.1:8000", token="api-token", operator_token="operator-token", opener=opener,
+    )
+    client.get_research_capabilities()
+    client.list_studies(limit=10)
+    client.get_study("study/1")
+    client.register_study({"title": "frozen"}, approval_token="approval-token")
+    client.analyze_study("study/1", {"outcomes": {}}, approval_token="approval-token")
+    client.list_study_analyses("study/1")
+    assert [call.full_url.rsplit("/v1", 1)[-1] for call in calls] == [
+        "/research/capabilities", "/studies?limit=10", "/studies/study%2F1",
+        "/studies", "/studies/study%2F1/analyses", "/studies/study%2F1/analyses",
+    ]
+    assert calls[3].get_header("X-agentguard-token") == "api-token"
+    assert calls[3].get_header("X-agentguard-operator-token") == "operator-token"
+    assert calls[3].get_header("X-approval-token") == "approval-token"
+    assert calls[4].get_header("X-approval-token") == "approval-token"
+
+
 def test_sdk_compare_surfaces_not_comparable_responses():
     error = HTTPError(
         "http://127.0.0.1:8000/v1/experiments/compare", 200, "OK",

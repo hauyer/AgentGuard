@@ -46,6 +46,7 @@ def test_openapi_changes_since_c0_are_additive_only():
         "/v1/investigations/{request_id}/risk-analysis",
         "/v1/investigations/{request_id}/timeline",
         "/v1/reports",
+        "/v1/research/capabilities",
         "/v1/research/strategy-evaluations",
         "/v1/research/strategy-evaluations/{evaluation_id}",
         "/v1/system/identity",

@@ -1,0 +1,98 @@
+{
+  "$defs": {
+    "OutcomePairs": {
+      "additionalProperties": false,
+      "properties": {
+        "control": {
+          "items": {
+            "type": "number"
+          },
+          "maxItems": 100000,
+          "minItems": 2,
+          "title": "Control",
+          "type": "array"
+        },
+        "treatment": {
+          "items": {
+            "type": "number"
+          },
+          "maxItems": 100000,
+          "minItems": 2,
+          "title": "Treatment",
+          "type": "array"
+        },
+        "case_families": {
+          "items": {
+            "type": "string"
+          },
+          "maxItems": 100000,
+          "minItems": 2,
+          "title": "Case Families",
+          "type": "array"
+        }
+      },
+      "required": [
+        "control",
+        "treatment",
+        "case_families"
+      ],
+      "title": "OutcomePairs",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "description": "Outcomes for one planned arm, preserving failed and unavailable arms.",
+  "properties": {
+    "status": {
+      "enum": [
+        "completed",
+        "partial",
+        "failed",
+        "blocked",
+        "not_run",
+        "unknown"
+      ],
+      "title": "Status",
+      "type": "string"
+    },
+    "outcomes": {
+      "additionalProperties": {
+        "$ref": "#/$defs/OutcomePairs"
+      },
+      "maxProperties": 31,
+      "title": "Outcomes",
+      "type": "object"
+    },
+    "failure_reason": {
+      "anyOf": [
+        {
+          "maxLength": 512,
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Failure Reason"
+    },
+    "unknown_reason": {
+      "anyOf": [
+        {
+          "maxLength": 512,
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Unknown Reason"
+    }
+  },
+  "required": [
+    "status"
+  ],
+  "title": "StudyArmAnalysisInput",
+  "type": "object"
+}

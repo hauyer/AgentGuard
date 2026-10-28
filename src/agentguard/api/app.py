@@ -79,6 +79,7 @@ from agentguard.contracts.research import (
     StudyAnalysisRequest,
     StudyRegistrationRequest,
 )
+from agentguard.contracts.research_capability import ResearchCapabilityReport
 from agentguard.contracts.system_identity import SystemIdentityResponse
 from agentguard.contracts.warden import WardenAuditRequest, WardenDefenseExecuteRequest
 from agentguard.core.attribution import analyze_attribution_node, analyze_path_shift
@@ -104,6 +105,7 @@ from agentguard.services.loop_public import (
 )
 from agentguard.services.loop_registry import InvestigationLoopRegistry
 from agentguard.services.report_index import ReportIndexService
+from agentguard.services.research_capability import build_research_capability_report
 from agentguard.services.risk_findings import RiskFindingService
 from agentguard.services.system_readiness import SystemReadinessService
 from agentguard.services.warden_diagnostics import diagnose_kernel
@@ -308,6 +310,7 @@ def create_app(
         operator_token = os.environ.get("AGENTGUARD_OPERATOR_API_TOKEN", "")
         supplied_api = request.headers.get("X-AgentGuard-Token", "")
         supplied_operator = request.headers.get("X-AgentGuard-Operator-Token", "")
+        supplied_approval = request.headers.get("X-Approval-Token", "")
         api_valid = bool(api_token and supplied_api and secrets.compare_digest(api_token, supplied_api))
         operator_valid = bool(
             operator_token and supplied_operator and secrets.compare_digest(operator_token, supplied_operator)
@@ -315,7 +318,11 @@ def create_app(
         legacy_operator_valid = bool(
             not operator_token and api_token and supplied_api and secrets.compare_digest(api_token, supplied_api)
         )
-        actor_role = "operator" if operator_valid or legacy_operator_valid else ("api" if api_valid else "anonymous")
+        approval_token = os.environ.get("AGENTGUARD_APPROVAL_TOKEN", "")
+        approval_valid = bool(
+            approval_token and supplied_approval and secrets.compare_digest(approval_token, supplied_approval)
+        )
+        actor_role = "operator" if operator_valid or legacy_operator_valid or approval_valid else ("api" if api_valid else "anonymous")
         try:
             audit_event_id = app.state.warden_workflows.begin_api_audit_event(
                 request_id=request_id, method=request.method, actor_role=actor_role,
@@ -515,6 +522,14 @@ def create_app(
         expected = os.environ.get("AGENTGUARD_APPROVAL_TOKEN", "")
         return bool(expected and token and secrets.compare_digest(expected, token))
 
+    def require_research_write_authorization(
+        operator_token: str | None, approval_token: str | None,
+    ) -> None:
+        """Require an operator or approval credential for persisted study writes."""
+        if approval_is_valid(approval_token):
+            return
+        require_operator_token(operator_token)
+
     def require_operator_token(token: str | None) -> None:
         """Require the operator credential, with an explicit legacy API-token fallback."""
         expected = os.environ.get("AGENTGUARD_OPERATOR_API_TOKEN") or os.environ.get("AGENTGUARD_API_TOKEN", "")
@@ -602,6 +617,17 @@ def create_app(
     def get_kernel_status() -> dict:
         """Report WARDEN integration state without treating missing infrastructure as low risk."""
         return warden_status()
+
+    @app.get("/v1/research/capabilities", response_model=ResearchCapabilityReport)
+    def get_research_capabilities() -> ResearchCapabilityReport:
+        """Inspect proposed research capabilities without creating a WARDEN plan or run."""
+        try:
+            client = _configured_warden_client()
+        except HTTPException as exc:
+            detail = exc.detail if isinstance(exc.detail, dict) else {}
+            code = detail.get("error") if isinstance(detail.get("error"), str) else "WARDEN_CONFIGURATION_ERROR"
+            return build_research_capability_report({"status": "unavailable", "blockers": [code]})
+        return build_research_capability_report(diagnose_kernel(client))
 
     @app.get("/v1/kernel/doctor")
     def get_kernel_doctor(
@@ -2234,9 +2260,24 @@ def create_app(
         except ValueError as exc:
             raise HTTPException(status_code=400, detail={"error": "PATH_SHIFT_INPUT_INVALID", "message": str(exc)}) from exc
 
-    @app.post("/v1/studies", response_model=RegisteredStudy, status_code=201)
-    def register_study(request: StudyRegistrationRequest) -> RegisteredStudy:
+    @app.post(
+        "/v1/studies", response_model=RegisteredStudy, status_code=201,
+        responses={
+            401: {"description": "Global API token is required when configured."},
+            403: {"description": "A configured operator or approval credential is required."},
+            409: {"description": "Study registration could not be persisted."},
+        },
+    )
+    def register_study(
+        request: StudyRegistrationRequest,
+        x_agentguard_operator_token: str | None = Header(default=None, alias="X-AgentGuard-Operator-Token"),
+        x_agentguard_token: str | None = Header(default=None, alias="X-AgentGuard-Token"),
+        x_approval_token: str | None = Header(default=None, alias="X-Approval-Token"),
+    ) -> RegisteredStudy:
         """Create an immutable preregistration before inspecting study outcomes."""
+        require_research_write_authorization(
+            x_agentguard_operator_token or x_agentguard_token, x_approval_token,
+        )
         try:
             return app.state.research_registry.register(request)
         except Exception as exc:
@@ -2263,8 +2304,25 @@ def create_app(
                 "integrity_valid": app.state.research_registry.verify_registration(study_id),
                 "note": "Hash integrity detects accidental changes; it is not a trusted timestamp or external notarization."}
 
-    @app.post("/v1/studies/{study_id}/analyses", response_model=StudyAnalysisReport, status_code=201)
-    def analyze_study(study_id: str, request: StudyAnalysisRequest) -> StudyAnalysisReport:
+    @app.post(
+        "/v1/studies/{study_id}/analyses", response_model=StudyAnalysisReport, status_code=201,
+        responses={
+            400: {"description": "Study analysis input or preregistered comparison is invalid."},
+            401: {"description": "Global API token is required when configured."},
+            403: {"description": "A configured operator or approval credential is required."},
+            404: {"description": "The study does not exist."},
+        },
+    )
+    def analyze_study(
+        study_id: str,
+        request: StudyAnalysisRequest,
+        x_agentguard_operator_token: str | None = Header(default=None, alias="X-AgentGuard-Operator-Token"),
+        x_agentguard_token: str | None = Header(default=None, alias="X-AgentGuard-Token"),
+        x_approval_token: str | None = Header(default=None, alias="X-Approval-Token"),
+    ) -> StudyAnalysisReport:
+        require_research_write_authorization(
+            x_agentguard_operator_token or x_agentguard_token, x_approval_token,
+        )
         study = app.state.research_registry.get(study_id)
         if study is None:
             raise HTTPException(status_code=404, detail="study_id not found")

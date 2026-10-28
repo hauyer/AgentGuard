@@ -5,16 +5,16 @@
 | 项目 | 固定值 |
 | --- | --- |
 | AgentGuard 分支 | `feature/i-reliability-and-live-validation` |
-| API 实现快照 SHA | `9a8ee1f5e78a0b254c17ea66ac5b140aa7e1e89a` |
-| 包版本 | `1.1.0rc3` |
-| CI | [GitHub Actions `40336215846`](https://github.com/hauyer/AgentGuard/actions/runs/40336215846)，Python 3.11/3.12/3.13 全通过 |
+| API 实现快照 SHA | 本地 rc4 候选；提交后记录实现快照 commit |
+| 包版本 | `1.1.0rc4` |
+| CI | 本地验收进行中；rc4 GitHub Actions 尚未运行 |
 | Python 支持范围 | `>=3.11`；CI 矩阵为 3.11、3.12、3.13 |
-| OpenAPI 文件 | [`openapi-1.1.0rc3.json`](openapi-1.1.0rc3.json) |
-| rc2→rc3 差异 | [`openapi-1.1.0rc3.diff.md`](openapi-1.1.0rc3.diff.md) |
-| OpenAPI 文件 SHA-256（UTF-8、LF 换行） | `fadab4d701d23fabda785413cf0c4536fcffec521ea09cbe6ad73a417c15de1e` |
-| 规范化运行时 OpenAPI SHA-256 | `52ad0d5dc175e58759196588d1c4ab5b45e82751f882c82ed8540cb963d942f6` |
+| OpenAPI 文件 | [`openapi-1.1.0rc4.json`](openapi-1.1.0rc4.json) |
+| rc3→rc4 差异 | [`openapi-1.1.0rc4.diff.md`](openapi-1.1.0rc4.diff.md) |
+| OpenAPI 文件 SHA-256（UTF-8、LF 换行） | `f2b802fd7928bf2701bfbc65e4cf655c8f801a465fe6dd853f938e9d8f75b978` |
+| 规范化运行时 OpenAPI SHA-256 | `09b21ab3cd1e95dd3073142e4274b387ffb43689437be3fa60ad0939403f7894` |
 | OpenAPI 版本 | `3.1.0` |
-| OpenAPI 路径数 | `86` |
+| OpenAPI 路径数 | `87` |
 
 API 实现快照 SHA 标识候选实现；文件 SHA 按 UTF-8 编码和 LF 换行计算，以便不同操作系统得到相同结果。发布构建应通过
 `AGENTGUARD_BUILD_COMMIT` 注入实际 40 位 commit SHA；本地
@@ -22,12 +22,41 @@ API 实现快照 SHA 标识候选实现；文件 SHA 按 UTF-8 编码和 LF 换�
 能力状态和规范化 OpenAPI SHA。规范化算法为 UTF-8 JSON、键排序、紧凑分隔符、不转义
 Unicode，再计算 SHA-256。部署应分别核验快照文件 SHA 与运行时身份返回值。
 
-本版本没有增加路由；I5/I8 快照仍为 86 条路径。公开 Schema 的 `CausalValidationCriteria`
+rc4 增加只读 `GET /v1/research/capabilities`；OpenAPI 共 87 条路径。公开 Schema 的 `CausalValidationCriteria`
 升级至 0.3，加入预注册方案、独立案例家族、sham/无关位置负对照、随机/置换基线、前后输出、
 执行日志、干预参数、评价器、统计结果和内容寻址工件引用。`PairedExperimentDesign` 增加
 真实执行所需的预注册条件（paired schema 兼容旧 0.1 数据并默认使用 0.2）。GovernedEvidence
 增加 provenance 字段。结构完整只使报告通过合同检查，不能替代对真实工件内容、执行来源和独立审查的验证；
 具体阻塞见 [`I5_PAIRED_CAUSAL_GATE.md`](I5_PAIRED_CAUSAL_GATE.md)。
+
+## 研究能力、Study / Arm 与写权限
+
+`GET /v1/research/capabilities` 只读取 AgentGuard 对 WARDEN 的公开诊断，逐项返回提议研究能力的
+`SUPPORTED_AND_READY`、`SUPPORTED_BUT_BLOCKED`、`UNSUPPORTED`、`UNAVAILABLE` 或 `UNKNOWN`、
+观察时间、源版本与阻塞码。健康检查成功不会被解释成模型、Probe、GPU、干预或工件已就绪。
+未配置 WARDEN 时返回 `WARDEN_URL_NOT_CONFIGURED`；固定 WARDEN 0.3.0 对当前研究能力返回
+`WARDEN_RESEARCH_CAPABILITY_NOT_DECLARED`。此 GET 不提交 plan/run。
+
+已有 `/v1/studies` 仍负责不可变预注册，rc4 只在请求中增加可选字段：轨道
+`mechanism_testbed`/`live_steganography`、协议与数据集引用、split SHA-256、模型/tokenizer/解码版本、
+标签语义、指标定义以及 baseline/treatment/sham/irrelevant/randomization arms。启用 `track` 时，
+这些冻结元数据和至少一个 baseline + treatment 必须完整。`registration_sha256` 覆盖整个冻结
+预注册记录。Arm 只是条件定义，不会触发任何 WARDEN 操作。没有公开、持久且幂等的 WARDEN 研究接口时，
+AgentGuard 不创建真实 `RemoteRun`。
+
+Study 写路由：`POST /v1/studies` 和 `POST /v1/studies/{study_id}/analyses`。全局鉴权开启时，
+全局门禁需有效 API 或 Operator token；随后路由还需有效 Operator token 或审批 token。
+若没有配置专用 Operator token，现有 `require_operator_token` 兼容规则允许 API token 作为 Operator
+凭证；配置专用 Operator 后，API token 本身不替代该凭证，审批仍可通过路由级检查。全局鉴权配置后，
+审批 token 不能单独绕过全局门禁。每个请求写入现有 API audit journal；缺审计存储时请求失败关闭。
+Study GET 列表、详情、完整性和分析历史保持只读。
+
+RQ1 使用 preregistered endpoint 的现有配对/family-clustered bootstrap 与多重比较；RQ2 仅接受
+匹配预注册 Probe 坐标、模型 revision、标签语义及独立 test split 的 Probe/effect arrays，并给出
+family-bootstrap Spearman 区间；RQ3 分开呈现 `SRR_ITT` 安全效应与 `NORMAL_UTILITY` 损失及 Pareto
+frontier，不压成一个总分。未运行或失败的 Arm 保留状态、null 指标和原因。caller-supplied 数组及
+artifact refs 不是独立来源证明：synthetic 报告为 `synthetic_only`，observed/measured 报告为
+`unverified`，因果状态不自动晋级。
 
 ## 路由
 

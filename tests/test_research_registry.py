@@ -1,7 +1,7 @@
 import pytest
 
 from agentguard.contracts.research import StudyRegistrationRequest
-from agentguard.research_registry import ResearchRegistry
+from agentguard.research_registry import ResearchRegistry, canonical_json, sha256_json
 
 
 def registration_request():
@@ -46,3 +46,29 @@ def test_duplicate_outcomes_and_invalid_family_plan_are_rejected():
     values["planned_case_families"] = 30
     with pytest.raises(ValueError):
         StudyRegistrationRequest.model_validate(values)
+
+
+def test_old_registration_hash_survives_optional_contract_fields_added_later(tmp_path):
+    registry = ResearchRegistry(tmp_path / "studies.sqlite3")
+    study = registry.register(registration_request())
+    payload = study.model_dump(mode="json")
+    new_optional_fields = {
+        "track", "protocol_ref", "dataset_ref", "split_sha256", "case_family_ref",
+        "model_id", "model_revision", "tokenizer_revision", "decoding_config_ref",
+        "probe_scope", "probe_target", "probe_layer", "probe_token", "probe_validation_ref",
+        "label_semantics", "metric_definitions", "arms",
+    }
+    for field in new_optional_fields:
+        payload.pop(field, None)
+    registration_payload = dict(payload)
+    registration_payload.pop("registration_sha256")
+    registration_payload.pop("study_id")
+    registration_payload.pop("registered_at")
+    registration_payload.pop("status")
+    payload["registration_sha256"] = sha256_json(registration_payload)
+    with registry._connect() as connection, connection:
+        connection.execute(
+            "UPDATE registered_studies SET registration_sha256=?, payload_json=? WHERE study_id=?",
+            (payload["registration_sha256"], canonical_json(payload), study.study_id),
+        )
+    assert registry.verify_registration(study.study_id) is True

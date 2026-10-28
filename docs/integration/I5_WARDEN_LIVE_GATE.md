@@ -30,6 +30,36 @@ WARDEN 在线 OpenAPI、真实 WARDEN 计划/运行、真实模型或 Probe、�
 `warden/infrastructure/execution/in_process.py` 和 `warden/core/domain/models.py`。
 AgentGuard 的当前 API 实现快照与本文件对应；后续纯文档提交不改变该代码快照。
 
+## 2026-10-28 rc4 研究能力和真实接入复核
+
+候选版本 `1.1.0rc4` 基于仓库基线 `a5d5603cc653e17025038f3eb0606bc28d8bbd70`；该
+候选的本地变更和固定 OpenAPI 见 [`openapi-1.1.0rc4.diff.md`](openapi-1.1.0rc4.diff.md)。
+新增 `GET /v1/research/capabilities` 只读投影：未配置/错误配置返回 `UNAVAILABLE`；固定
+WARDEN 0.3.0 合同下未声明的研究能力返回 `UNSUPPORTED`；未来仅声明能力但缺少经审查的
+版本化操作合同，则返回 `SUPPORTED_BUT_BLOCKED`。该查询只用健康、OpenAPI、capabilities、
+resources 与 contracts 诊断，不提交 WARDEN plan/run。`health=ok` 不会把研究能力标为 ready。
+
+已逐项建档的建议能力键为 `research_dataset_mechanism`、`sender_receiver_baseline`、
+`agent_isolation`、`message_block`、`message_replace`、`leace_fit_apply`、
+`activation_patch`、`residual_edge_patch`、`probe_training`、`persistent_run` 和
+`artifact_content_read`。这些仍是 AgentGuard 侧候选键；其定义不构成 WARDEN 现有合同。
+
+真实 Live 仍为 **BLOCKED / NOT_RUN**。阻塞依据来自固定 WARDEN 0.3.0 源码与已有公开路由合同：
+
+- 计划/运行 POST 没有远端幂等键和重复提交语义，故不具备安全 exactly-once。
+- 计划/运行只保存在进程内存；服务重启后无法查询既有任务。
+- 白盒 Probe 只有 CLI 流程，没有受支持的 REST 提交/状态接口；AgentGuard 禁止用 SSH、CLI 或本地数据库绕过。
+- 公开 REST 没有 Agent isolation、message block/replace、LEACE fit/apply、activation patch、residual edge patch 等执行端点。
+- 运行 ID 状态查询仅在当前进程可见；无跨重启稳定任务记录和可信提交 ID。
+- 结果中可有 artifact URI/hash，但缺受控内容读取、字节哈希复算与来源签名/权限合同。
+- 没有本轮可授权使用的真实 WARDEN URL、真实模型服务、独立真值和新增真实数据。
+
+AgentGuard 仍复用 `WardenKernelClient`、`WardenLifecycleService` 和 `WardenWorkflowStore`；
+超时、已知 ID 对账、状态未知和服务重启测试继续证明不会盲目重复提交。没有远端稳定 ID 的
+提交保持 `reconciliation_required`。研究分析对缺失/未运行 arm 保留 null 与原因，synthetic
+分析标为 `synthetic_only`；observed/measured 的 caller-supplied arrays 标为 `unverified`，不会
+晋级为因果验证。真实运行及真实工件读取均 `NOT_RUN`。
+
 ## WARDEN v1 公共接口
 
 实际 FastAPI 路由定义于 `warden/interface/api/app.py`：

@@ -182,3 +182,92 @@ def adjust_pvalues(p_values: dict[str, float], method: str = "holm") -> dict[str
         name: {"p_value": values[name], "adjusted_p_value": adjusted[name], "reject_at_0_05": adjusted[name] <= 0.05}
         for name in names
     }
+
+
+def _average_ranks(values: Sequence[float]) -> list[float]:
+    ordered = sorted(enumerate(float(value) for value in values), key=lambda item: item[1])
+    ranks = [0.0] * len(ordered)
+    index = 0
+    while index < len(ordered):
+        stop = index + 1
+        while stop < len(ordered) and ordered[stop][1] == ordered[index][1]:
+            stop += 1
+        rank = (index + 1 + stop) / 2
+        for position in range(index, stop):
+            ranks[ordered[position][0]] = rank
+        index = stop
+    return ranks
+
+
+def _spearman_rho(left: Sequence[float], right: Sequence[float]) -> float | None:
+    if len(left) != len(right) or len(left) < 2:
+        return None
+    x = _average_ranks(left)
+    y = _average_ranks(right)
+    x_mean = mean(x)
+    y_mean = mean(y)
+    covariance = sum((a - x_mean) * (b - y_mean) for a, b in zip(x, y))
+    x_ss = sum((a - x_mean) ** 2 for a in x)
+    y_ss = sum((b - y_mean) ** 2 for b in y)
+    if x_ss <= 0 or y_ss <= 0:
+        return None
+    return covariance / math.sqrt(x_ss * y_ss)
+
+
+def spearman_family_bootstrap(
+    probe_scores: Sequence[float],
+    intervention_effects: Sequence[float],
+    case_families: Sequence[str],
+    *,
+    seed: int = 7,
+    bootstrap_draws: int = 5000,
+) -> dict:
+    """Estimate held-out Spearman association with whole-family bootstrap intervals."""
+    if not (len(probe_scores) == len(intervention_effects) == len(case_families)):
+        raise ValueError("Probe scores, intervention effects, and case families must align")
+    if len(probe_scores) < 4 or any(not math.isfinite(float(v)) for v in [*probe_scores, *intervention_effects]):
+        raise ValueError("at least four finite Probe/effect pairs are required")
+    grouped: dict[str, tuple[list[float], list[float]]] = {}
+    for score, effect, family in zip(probe_scores, intervention_effects, case_families):
+        key = str(family).strip()
+        if not key:
+            raise ValueError("case family identifiers must be non-empty")
+        scores, effects = grouped.setdefault(key, ([], []))
+        scores.append(float(score))
+        effects.append(float(effect))
+    if len(grouped) < 2:
+        raise ValueError("at least two independent case families are required")
+    rho = _spearman_rho(probe_scores, intervention_effects)
+    if rho is None:
+        return {
+            "status": "undefined",
+            "spearman_rho": None,
+            "family_bootstrap_95_ci": None,
+            "n_pairs": len(probe_scores),
+            "n_case_families": len(grouped),
+            "valid_bootstrap_draws": 0,
+            "unknown_reason": "PROBE_OR_EFFECT_HAS_NO_RANK_VARIATION",
+        }
+    families = list(grouped.values())
+    rng = random.Random(seed)
+    draws: list[float] = []
+    for _ in range(max(100, bootstrap_draws)):
+        selected = rng.choices(families, k=len(families))
+        scores = [value for family_scores, _ in selected for value in family_scores]
+        effects = [value for _, family_effects in selected for value in family_effects]
+        sample_rho = _spearman_rho(scores, effects)
+        if sample_rho is not None:
+            draws.append(sample_rho)
+    return {
+        "status": "estimated" if len(draws) >= 100 else "undefined",
+        "spearman_rho": rho,
+        "family_bootstrap_95_ci": [_quantile(draws, 0.025), _quantile(draws, 0.975)] if len(draws) >= 100 else None,
+        "n_pairs": len(probe_scores),
+        "n_case_families": len(grouped),
+        "valid_bootstrap_draws": len(draws),
+        "limitations": [
+            "Probe scope, target, layer, token, model revision, label semantics, and test split must match the preregistered study.",
+            "The association is family-clustered and does not establish that Probe scores cause intervention effects.",
+            "Bootstrap intervals may be unstable with few independent case families.",
+        ],
+    }

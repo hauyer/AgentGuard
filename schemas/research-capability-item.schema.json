@@ -1,0 +1,78 @@
+{
+  "additionalProperties": false,
+  "properties": {
+    "capability": {
+      "enum": [
+        "research_dataset_mechanism",
+        "sender_receiver_baseline",
+        "agent_isolation",
+        "message_block",
+        "message_replace",
+        "leace_fit_apply",
+        "activation_patch",
+        "residual_edge_patch",
+        "probe_training",
+        "persistent_run",
+        "artifact_content_read"
+      ],
+      "title": "Capability",
+      "type": "string"
+    },
+    "status": {
+      "enum": [
+        "SUPPORTED_AND_READY",
+        "SUPPORTED_BUT_BLOCKED",
+        "UNSUPPORTED",
+        "UNAVAILABLE",
+        "UNKNOWN"
+      ],
+      "title": "Status",
+      "type": "string"
+    },
+    "blockers": {
+      "items": {
+        "type": "string"
+      },
+      "maxItems": 16,
+      "title": "Blockers",
+      "type": "array"
+    },
+    "source_version": {
+      "anyOf": [
+        {
+          "maxLength": 128,
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Source Version"
+    },
+    "advertised_by_warden": {
+      "anyOf": [
+        {
+          "type": "boolean"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Advertised By Warden"
+    },
+    "observed_at": {
+      "minLength": 1,
+      "title": "Observed At",
+      "type": "string"
+    }
+  },
+  "required": [
+    "capability",
+    "status",
+    "observed_at"
+  ],
+  "title": "ResearchCapabilityItem",
+  "type": "object"
+}

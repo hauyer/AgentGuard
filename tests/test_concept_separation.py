@@ -155,8 +155,10 @@ def test_graph_edges_are_observations_not_leak_findings(tmp_path):
     )
 
 
-def test_study_analysis_requires_preregistration_before_claims(tmp_path):
+def test_study_analysis_requires_preregistration_before_claims(tmp_path, monkeypatch):
     """Significance-style output only exists under a registered study protocol."""
+    monkeypatch.delenv("AGENTGUARD_API_TOKEN", raising=False)
+    monkeypatch.setenv("AGENTGUARD_OPERATOR_API_TOKEN", "study-test-operator")
     app = create_app(data_dir=tmp_path / "data")
     valid_outcome = {
         "control": [0.1, 0.2, 0.3, 0.4],
@@ -166,7 +168,7 @@ def test_study_analysis_requires_preregistration_before_claims(tmp_path):
     with TestClient(app) as client:
         missing = client.post("/v1/studies/study-missing/analyses", json={
             "outcomes": {"risk_exposure": valid_outcome},
-        })
+        }, headers={"X-AgentGuard-Operator-Token": "study-test-operator"})
     assert missing.status_code == 404
 
 

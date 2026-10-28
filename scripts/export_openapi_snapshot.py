@@ -15,5 +15,5 @@ with tempfile.TemporaryDirectory() as tmp:
 
 version = spec["info"]["version"]
 out = Path(__file__).resolve().parents[1] / "docs" / "integration" / f"openapi-{version}.json"
-out.write_text(json.dumps(spec, ensure_ascii=False, indent=2), encoding="utf-8")
+out.write_text(json.dumps(spec, ensure_ascii=False, indent=2), encoding="utf-8", newline="\n")
 print(f"paths: {len(spec['paths'])}, version: {version}, written: {out}")

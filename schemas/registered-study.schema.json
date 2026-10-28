@@ -1,4 +1,113 @@
 {
+  "$defs": {
+    "ResearchArmDefinition": {
+      "additionalProperties": false,
+      "description": "An immutable planned condition; this does not submit or execute a run.",
+      "properties": {
+        "arm_id": {
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$",
+          "title": "Arm Id",
+          "type": "string"
+        },
+        "role": {
+          "enum": [
+            "baseline",
+            "treatment",
+            "sham",
+            "irrelevant",
+            "randomization"
+          ],
+          "title": "Role",
+          "type": "string"
+        },
+        "method_id": {
+          "maxLength": 128,
+          "minLength": 1,
+          "title": "Method Id",
+          "type": "string"
+        },
+        "method_version": {
+          "maxLength": 128,
+          "minLength": 1,
+          "title": "Method Version",
+          "type": "string"
+        },
+        "target_ref": {
+          "anyOf": [
+            {
+              "maxLength": 256,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Target Ref"
+        },
+        "intervention_level": {
+          "anyOf": [
+            {
+              "maxLength": 128,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Intervention Level"
+        },
+        "control_arm_id": {
+          "anyOf": [
+            {
+              "maxLength": 128,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Control Arm Id"
+        },
+        "parameter_ref": {
+          "anyOf": [
+            {
+              "maxLength": 256,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Parameter Ref"
+        },
+        "parameter_sha256": {
+          "anyOf": [
+            {
+              "pattern": "^[0-9a-f]{64}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Parameter Sha256"
+        }
+      },
+      "required": [
+        "arm_id",
+        "role",
+        "method_id",
+        "method_version"
+      ],
+      "title": "ResearchArmDefinition",
+      "type": "object"
+    }
+  },
   "additionalProperties": false,
   "properties": {
     "schema_version": {
@@ -148,6 +257,243 @@
       "minLength": 1,
       "title": "Code Revision",
       "type": "string"
+    },
+    "track": {
+      "anyOf": [
+        {
+          "enum": [
+            "mechanism_testbed",
+            "live_steganography"
+          ],
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Track"
+    },
+    "protocol_ref": {
+      "anyOf": [
+        {
+          "maxLength": 512,
+          "minLength": 1,
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Protocol Ref"
+    },
+    "dataset_ref": {
+      "anyOf": [
+        {
+          "maxLength": 512,
+          "minLength": 1,
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Dataset Ref"
+    },
+    "split_sha256": {
+      "anyOf": [
+        {
+          "pattern": "^[0-9a-f]{64}$",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Split Sha256"
+    },
+    "case_family_ref": {
+      "anyOf": [
+        {
+          "maxLength": 512,
+          "minLength": 1,
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Case Family Ref"
+    },
+    "model_id": {
+      "anyOf": [
+        {
+          "maxLength": 128,
+          "minLength": 1,
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Model Id"
+    },
+    "model_revision": {
+      "anyOf": [
+        {
+          "maxLength": 128,
+          "minLength": 1,
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Model Revision"
+    },
+    "tokenizer_revision": {
+      "anyOf": [
+        {
+          "maxLength": 128,
+          "minLength": 1,
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Tokenizer Revision"
+    },
+    "decoding_config_ref": {
+      "anyOf": [
+        {
+          "maxLength": 512,
+          "minLength": 1,
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Decoding Config Ref"
+    },
+    "probe_scope": {
+      "anyOf": [
+        {
+          "maxLength": 128,
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Probe Scope"
+    },
+    "probe_target": {
+      "anyOf": [
+        {
+          "maxLength": 256,
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Probe Target"
+    },
+    "probe_layer": {
+      "anyOf": [
+        {
+          "maxLength": 128,
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Probe Layer"
+    },
+    "probe_token": {
+      "anyOf": [
+        {
+          "maxLength": 128,
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Probe Token"
+    },
+    "probe_validation_ref": {
+      "anyOf": [
+        {
+          "maxLength": 512,
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Probe Validation Ref"
+    },
+    "label_semantics": {
+      "anyOf": [
+        {
+          "enum": [
+            "decoded_directive",
+            "secret_bit",
+            "misaligned"
+          ],
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Label Semantics"
+    },
+    "metric_definitions": {
+      "additionalProperties": {
+        "enum": [
+          "SRR_ITT",
+          "SRR_executed",
+          "BER",
+          "NORMAL_UTILITY",
+          "CARRIER_DELIVERY_RATE",
+          "FALSE_POSITIVE_COST",
+          "LATENCY",
+          "GPU_COST",
+          "PROBE_SCORE",
+          "CUSTOM"
+        ],
+        "type": "string"
+      },
+      "maxProperties": 31,
+      "title": "Metric Definitions",
+      "type": "object"
+    },
+    "arms": {
+      "items": {
+        "$ref": "#/$defs/ResearchArmDefinition"
+      },
+      "maxItems": 64,
+      "title": "Arms",
+      "type": "array"
     },
     "study_id": {
       "title": "Study Id",

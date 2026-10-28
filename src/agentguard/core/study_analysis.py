@@ -10,6 +10,7 @@ from agentguard.core.statistics import (
     adjust_pvalues,
     clustered_paired_effect_summary,
     paired_effect_summary,
+    spearman_family_bootstrap,
 )
 from agentguard.research_registry import sha256_json
 
@@ -36,6 +37,26 @@ def analyze_registered_study(
     })
     if request.data_sha256 is not None and request.data_sha256 != observed_data_sha256:
         raise ValueError("data_sha256 does not match the canonical submitted outcomes payload")
+    planned_arms = {arm.arm_id: arm for arm in study.arms if arm.role != "baseline"}
+    if request.arm_analyses and not study.arms:
+        raise ValueError("arm analyses require arms frozen in the preregistered study")
+    unknown_arms = set(request.arm_analyses) - set(planned_arms)
+    if unknown_arms:
+        raise ValueError(f"analysis references unregistered arms: {sorted(unknown_arms)}")
+    association = request.probe_effect_association
+    if association is not None:
+        if study.model_revision is None or association.model_revision != study.model_revision:
+            raise ValueError("Probe association model_revision does not match the preregistered study")
+        if study.label_semantics is None or association.label_semantics != study.label_semantics:
+            raise ValueError("Probe association label semantics do not match the preregistered study")
+        frozen_coordinates = (
+            study.probe_scope, study.probe_target, study.probe_layer, study.probe_token,
+        )
+        submitted_coordinates = (
+            association.probe_scope, association.target, association.layer, association.token,
+        )
+        if not all(frozen_coordinates) or frozen_coordinates != submitted_coordinates:
+            raise ValueError("Probe association coordinates do not match the preregistered study")
 
     outcome_results: dict[str, dict] = {}
     raw_p_values: dict[str, float] = {}
@@ -75,9 +96,79 @@ def analyze_registered_study(
         if n_families < study.planned_case_families:
             deviations.append(f"Outcome {name}: observed {n_families} case families, below preregistered target {study.planned_case_families}.")
 
+    arm_results: dict[str, dict] = {}
+    arm_raw_p_values: dict[str, str] = {}
+    reference_families = tuple(next(iter(request.outcomes.values())).case_families)
+    for arm_id in sorted(planned_arms):
+        arm_input = request.arm_analyses.get(arm_id)
+        if arm_input is None:
+            reason = "ARM_RESULT_NOT_PROVIDED"
+            arm_results[arm_id] = {
+                "status": "unknown",
+                "unknown_reason": reason,
+                "outcomes": {name: {"effect": None, "unknown_reason": reason} for name in sorted(allowed)},
+            }
+            deviations.append(f"Arm {arm_id}: no execution result was provided; the arm remains unknown.")
+            continue
+        if arm_input.status != "completed":
+            reason = arm_input.failure_reason or arm_input.unknown_reason or f"ARM_STATUS_{arm_input.status.upper()}"
+            arm_results[arm_id] = {
+                "status": arm_input.status,
+                "failure_reason": arm_input.failure_reason,
+                "unknown_reason": reason,
+                "received_outcomes": sorted(arm_input.outcomes),
+                "outcomes": {name: {"effect": None, "unknown_reason": reason} for name in sorted(allowed)},
+            }
+            deviations.append(f"Arm {arm_id}: status={arm_input.status}; no success result was inferred.")
+            continue
+        if set(arm_input.outcomes) != allowed:
+            raise ValueError(f"completed arm {arm_id} must include every preregistered outcome")
+        families = tuple(next(iter(arm_input.outcomes.values())).case_families)
+        if families != reference_families:
+            reason = "CASE_FAMILY_MISMATCH"
+            arm_results[arm_id] = {
+                "status": "not_comparable",
+                "unknown_reason": reason,
+                "outcomes": {name: {"effect": None, "unknown_reason": reason} for name in sorted(allowed)},
+            }
+            deviations.append(f"Arm {arm_id}: family IDs/order do not match the registered comparison; results were not compared.")
+            continue
+        summarized: dict[str, dict] = {}
+        for name, data in arm_input.outcomes.items():
+            if tuple(data.case_families) != families:
+                raise ValueError(f"arm {arm_id} outcomes use different case families")
+            if study.analysis_method == "clustered_paired":
+                summary = clustered_paired_effect_summary(
+                    data.control, data.treatment, data.case_families,
+                    seed=study.seed, bootstrap_draws=request.bootstrap_draws,
+                    permutation_draws=request.permutation_draws,
+                )
+                p_value = float(summary["family_level_sign_flip_pvalue_two_sided"])
+            else:
+                summary = paired_effect_summary(
+                    data.control, data.treatment, seed=study.seed,
+                    bootstrap_draws=request.bootstrap_draws,
+                    permutation_draws=request.permutation_draws,
+                )
+                p_value = float(summary["paired_permutation_pvalue_two_sided"])
+            key = f"{arm_id}::{name}"
+            raw_p_values[key] = p_value
+            arm_raw_p_values[key] = name
+            summarized[name] = {
+                "summary": summary,
+                "raw_p_value": p_value,
+                "adjusted_p_value": None,
+                "registered_role": "primary" if name == study.primary_outcome else "secondary",
+            }
+            if len(set(data.case_families)) < study.planned_case_families:
+                deviations.append(
+                    f"Arm {arm_id}, outcome {name}: fewer case families than preregistered; the estimate is under-plan."
+                )
+        arm_results[arm_id] = {"status": "completed", "outcomes": summarized}
+
     adjusted = adjust_pvalues(raw_p_values, method=study.multiplicity_method)
-    for name, correction in adjusted.items():
-        result = outcome_results[name]
+    for name, result in outcome_results.items():
+        correction = adjusted[name]
         result["adjusted_p_value"] = correction["adjusted_p_value"]
         effect = float(result["summary"]["mean_treatment_minus_control"])
         significant = float(correction["adjusted_p_value"]) <= study.alpha
@@ -93,6 +184,14 @@ def analyze_registered_study(
         result["reject_null"] = bool(significant and direction_ok)
         result["direction_consistent"] = direction_ok
 
+    for arm_id, result in arm_results.items():
+        for outcome, item in result.get("outcomes", {}).items():
+            if "summary" not in item:
+                continue
+            correction = adjusted[f"{arm_id}::{outcome}"]
+            item["adjusted_p_value"] = correction["adjusted_p_value"]
+            item["statistically_significant"] = float(correction["adjusted_p_value"]) <= study.alpha
+
     primary = outcome_results[study.primary_outcome]
     limitations = [
         "This endpoint analysis uses caller-supplied paired arrays; artifact references and hashes are metadata, not independent proof of provenance.",
@@ -103,12 +202,87 @@ def analyze_registered_study(
         limitations.append("Synthetic evidence cannot establish real-model or deployment effectiveness.")
     if study.multiplicity_method == "none" and len(outcome_results) > 1:
         deviations.append("Multiple outcomes were analyzed without multiplicity correction, as preregistered.")
+    if study.metric_definitions:
+        for outcome, metric in study.metric_definitions.items():
+            if metric == "SRR_ITT":
+                for arm_id, arm_result in arm_results.items():
+                    if arm_result.get("status") != "completed":
+                        continue
+                    data = request.arm_analyses[arm_id].outcomes[outcome]
+                    if len(set(data.case_families)) < study.planned_case_families:
+                        deviations.append(
+                            f"RQ1 SRR_ITT for {arm_id} is incomplete against all planned families."
+                        )
+
+    rq2_result = None
+    if association is not None:
+        rq2_result = spearman_family_bootstrap(
+            association.probe_scores, association.intervention_effects,
+            association.case_families, seed=study.seed,
+            bootstrap_draws=request.bootstrap_draws,
+        )
+        rq2_result.update({
+            "probe_scope": association.probe_scope,
+            "target": association.target,
+            "layer": association.layer,
+            "token": association.token,
+            "model_revision": association.model_revision,
+            "label_semantics": association.label_semantics,
+            "split": association.split,
+            "source_validation": "synthetic_only" if request.evidence_mode == "synthetic" else "unverified",
+        })
+
+    rq3_rows: list[dict] = []
+    safety_outcome = next((name for name, metric in study.metric_definitions.items() if metric == "SRR_ITT"), None)
+    utility_outcome = next((name for name, metric in study.metric_definitions.items() if metric == "NORMAL_UTILITY"), None)
+    if safety_outcome and utility_outcome:
+        for arm_id in sorted(planned_arms):
+            result = arm_results[arm_id]
+            safety = result.get("outcomes", {}).get(safety_outcome, {})
+            utility = result.get("outcomes", {}).get(utility_outcome, {})
+            safety_summary = safety.get("summary")
+            utility_summary = utility.get("summary")
+            if result.get("status") != "completed" or not isinstance(safety_summary, dict) or not isinstance(utility_summary, dict):
+                rq3_rows.append({
+                    "arm_id": arm_id,
+                    "status": result.get("status", "unknown"),
+                    "safety_effect": None,
+                    "utility_loss": None,
+                    "unknown_reason": result.get("unknown_reason", "RQ3_METRIC_UNAVAILABLE"),
+                })
+                continue
+            rq3_rows.append({
+                "arm_id": arm_id,
+                "status": "estimated",
+                "safety_effect": -float(safety_summary["mean_treatment_minus_control"]),
+                "utility_loss": -float(utility_summary["mean_treatment_minus_control"]),
+                "safety_metric": safety_outcome,
+                "utility_metric": utility_outcome,
+                "evidence_mode": request.evidence_mode,
+            })
+        measured_rows = [row for row in rq3_rows if row.get("status") == "estimated"]
+        for row in measured_rows:
+            row["pareto_frontier"] = not any(
+                other["arm_id"] != row["arm_id"]
+                and float(other["safety_effect"]) >= float(row["safety_effect"])
+                and float(other["utility_loss"]) <= float(row["utility_loss"])
+                and (
+                    float(other["safety_effect"]) > float(row["safety_effect"])
+                    or float(other["utility_loss"]) < float(row["utility_loss"])
+                )
+                for other in measured_rows
+            )
+        for row in rq3_rows:
+            row.setdefault("pareto_frontier", None)
     payload_for_hash = {
         "study_id": study.study_id,
         "registration_sha256": study.registration_sha256,
         "request": request.model_dump(mode="json"),
         "data_sha256": observed_data_sha256,
         "outcomes": outcome_results,
+        "arm_analyses": arm_results,
+        "rq2_probe_effect_association": rq2_result,
+        "rq3_safety_utility": rq3_rows,
     }
     return StudyAnalysisReport(
         study_id=study.study_id,
@@ -124,4 +298,9 @@ def analyze_registered_study(
         data_sha256=observed_data_sha256,
         deviations=deviations,
         limitations=limitations,
+        arm_analyses=arm_results,
+        rq2_probe_effect_association=rq2_result,
+        rq3_safety_utility=rq3_rows,
+        causal_claim_status="synthetic_only" if request.evidence_mode == "synthetic" else "not_assessed",
+        source_validation="synthetic_only" if request.evidence_mode == "synthetic" else "unverified",
     )

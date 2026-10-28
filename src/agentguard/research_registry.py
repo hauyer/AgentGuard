@@ -114,10 +114,16 @@ class ResearchRegistry:
         return [StudyAnalysisReport.model_validate_json(row["payload_json"]) for row in rows]
 
     def verify_registration(self, study_id: str) -> bool:
-        study = self.get(study_id)
-        if study is None:
+        with closing(self._connect()) as connection, connection:
+            row = connection.execute(
+                "SELECT payload_json FROM registered_studies WHERE study_id=?", (study_id,)
+            ).fetchone()
+        if row is None:
             return False
-        payload = study.model_dump(mode="json")
+        # Hash the exact immutable payload stored at registration time. Rehydrating
+        # through a newer contract would inject optional defaults and invalidate
+        # valid registrations created by older AgentGuard versions.
+        payload = json.loads(row["payload_json"])
         recorded = payload.pop("registration_sha256", None)
         payload.pop("study_id", None)
         payload.pop("registered_at", None)

@@ -6,6 +6,26 @@
 **在线 OpenAPI 抓取：** `NOT_RUN`。本机 WARDEN URL 未配置，`127.0.0.1:8765/openapi.json`
 不可访问。
 
+## AgentGuard rc4 研究能力投影（2026-10-28）
+
+AgentGuard 当前本地候选为 `1.1.0rc4`，基于 rc3 代码和 `a5d5603cc653e17025038f3eb0606bc28d8bbd70`
+基线；rc4 OpenAPI 为 87 paths，新增只读 `GET /v1/research/capabilities`。QWB-App 固定 33 个旧
+operation object 全部保持相同。候选能力列表来源于开发指南，不是 WARDEN API 能力名或端点。
+
+固定 WARDEN `381fc08170386a2dbd4c2ded3f0f724f871e9636` / 0.3.0 的源码合同未声明上述研究键，
+也没有对应白盒/干预/持久运行/受控工件读取 REST。静态能力状态为 `UNSUPPORTED`；实际线上状态
+由于 URL 未配置为 `UNAVAILABLE` / `NOT_RUN`，不以静态状态冒充线上探测。精确键若由未来服务声明、
+但 AgentGuard 尚未审阅对应版本化执行操作，则报告 `SUPPORTED_BUT_BLOCKED`。本轮没有能力报告能进入
+`SUPPORTED_AND_READY`。
+
+候选键：`research_dataset_mechanism`、`sender_receiver_baseline`、`agent_isolation`、
+`message_block`、`message_replace`、`leace_fit_apply`、`activation_patch`、
+`residual_edge_patch`、`probe_training`、`persistent_run`、`artifact_content_read`。
+
+新增状态报告不执行 WARDEN POST。它的测试替身只证明状态映射、脱敏与兼容逻辑；在线服务、真实模型、
+真实资源和工件读取仍为 `NOT_RUN`。AgentGuard 不通过 CLI、SSH、本地文件或 WARDEN 内部 Python API
+补足接口。
+
 本表是对固定 WARDEN 源码和契约测试的只读核对，不是运行中服务的 OpenAPI 导出。在线
 服务版本、配置、模型与资源仍为 `unknown`，不能用本表解除真实服务或模型验收阻塞。
 

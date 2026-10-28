@@ -37,6 +37,21 @@ def create_mcp_server(client: AgentGuardClient | None = None):
         return render(api.capabilities)
 
     @mcp.tool()
+    def get_research_capabilities() -> str:
+        """Read proposed WARDEN research capabilities and blockers without starting work."""
+        return render(api.get_research_capabilities)
+
+    @mcp.tool()
+    def list_studies(limit: int = 100) -> str:
+        """List immutable research preregistrations through the public API."""
+        return render(lambda: api.list_studies(limit=limit))
+
+    @mcp.tool()
+    def get_study(study_id: str) -> str:
+        """Read one immutable study preregistration through the public API."""
+        return render(lambda: api.get_study(study_id))
+
+    @mcp.tool()
     def get_kernel_status() -> str:
         """Read the WARDEN integration status reported by AgentGuard."""
         return render(api.kernel_status)
