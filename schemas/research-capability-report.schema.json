@@ -52,6 +52,19 @@
           "default": null,
           "title": "Source Version"
         },
+        "source_api_version": {
+          "anyOf": [
+            {
+              "maxLength": 64,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Source Api Version"
+        },
         "advertised_by_warden": {
           "anyOf": [
             {
@@ -68,6 +81,40 @@
           "minLength": 1,
           "title": "Observed At",
           "type": "string"
+        },
+        "evidence_refs": {
+          "items": {
+            "type": "string"
+          },
+          "maxItems": 16,
+          "title": "Evidence Refs",
+          "type": "array"
+        },
+        "operation_id": {
+          "anyOf": [
+            {
+              "maxLength": 256,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Operation Id"
+        },
+        "contract_ref": {
+          "anyOf": [
+            {
+              "maxLength": 512,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Contract Ref"
         }
       },
       "required": [

@@ -48,6 +48,12 @@ class WardenAuditRequest(ContractModel):
     sae_id: str | None = None
     capture_targets: list[WardenCaptureTarget] = Field(default_factory=list, max_length=128)
     metadata: dict[str, Any] = Field(default_factory=dict)
+    # WARDEN v0.4 research association fields. `study_id` and `study_arm_id`
+    # remain AgentGuard journal keys; only the public references cross the API.
+    research_protocol_ref: str | None = Field(default=None, min_length=1, max_length=512)
+    study_arm_ref: str | None = Field(default=None, min_length=1, max_length=256)
+    study_id: str | None = Field(default=None, min_length=1, max_length=128)
+    study_arm_id: str | None = Field(default=None, min_length=1, max_length=128)
     # AgentGuard control-plane fields; never sent to WARDEN's strict domain contract.
     authorization_ref: str | None = Field(default=None, max_length=256)
     scenario_id: str | None = Field(default=None, min_length=1, max_length=256)
@@ -65,12 +71,28 @@ class WardenAuditRequest(ContractModel):
             raise ValueError(f"metadata must not contain hidden evaluator fields: {sorted(present)}")
         return value
 
+    @model_validator(mode="after")
+    def validate_research_association(self) -> WardenAuditRequest:
+        if (self.research_protocol_ref is None) != (self.study_arm_ref is None):
+            raise ValueError("research_protocol_ref and study_arm_ref must be provided together")
+        if (self.study_id is None) != (self.study_arm_id is None):
+            raise ValueError("study_id and study_arm_id must be provided together")
+        if self.study_id is not None and self.research_protocol_ref is None:
+            raise ValueError("a Study/Arm association requires WARDEN research references")
+        return self
+
     def to_warden_payload(self) -> dict[str, Any]:
         """Project the AgentGuard request onto WARDEN's public REST contract."""
-        payload = self.model_dump(mode="json", exclude={
+        excluded = {
             "start_run", "authorization_ref", "scenario_id", "risk_type",
             "wait_for_completion", "timeout_seconds", "poll_interval_seconds",
-        })
+            "study_id", "study_arm_id",
+        }
+        if self.research_protocol_ref is None:
+            # Keep requests compatible with pre-research WARDEN v1 contracts,
+            # which reject unknown keys even when their values are null.
+            excluded.update({"research_protocol_ref", "study_arm_ref"})
+        payload = self.model_dump(mode="json", exclude=excluded)
         # `observation` is an AgentGuard workflow label. WARDEN's AuditMode enum
         # represents the corresponding non-causal collection as `capture_only`.
         if payload["mode"] == "observation":

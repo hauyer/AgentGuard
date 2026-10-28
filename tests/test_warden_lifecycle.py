@@ -206,6 +206,24 @@ def test_preflight_blocks_missing_contract_without_creating_plan():
     assert not any(call[0] == "create_audit_plan" for call in kernel.calls)
 
 
+def test_research_run_stays_blocked_without_token_stage_allowlist_and_durable_dispatcher():
+    kernel = FakeKernel()
+    study_request = request(
+        study_id="study-1", study_arm_id="treatment",
+        research_protocol_ref="protocol:study-1", study_arm_ref="study-1/treatment",
+    )
+    result = WardenLifecycleService(kernel).execute(study_request, approval_valid=True)
+    assert result["status"] == "blocked"
+    blockers = set(result["preflight"]["blockers"])
+    assert {
+        "WARDEN_RESEARCH_REQUEST_FIELDS_UNAVAILABLE",
+        "WARDEN_RESEARCH_TOKEN_MISSING",
+        "WARDEN_RESEARCH_STAGE_ALLOWLIST_NOT_ADVERTISED",
+        "WARDEN_DURABLE_DISPATCHER_NOT_ADVERTISED",
+    }.issubset(blockers)
+    assert not any(call[0] in {"create_audit_plan", "start_run"} for call in kernel.calls)
+
+
 def test_preflight_blocks_probe_not_ready():
     kernel = FakeKernel(probes=[{"resource_id": "probe-1", "state": "unavailable"}])
     result = WardenLifecycleService(kernel).execute(request())

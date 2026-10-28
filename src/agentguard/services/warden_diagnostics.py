@@ -35,6 +35,9 @@ def diagnose_kernel(
             "whitebox_workflow_api_available": "unknown",
             "intervention_api_available": "unknown",
             "artifact_access_available": "unknown",
+            "research_execution_available": "unknown",
+            "persistent_run_available": "unknown",
+            "artifact_reader_available": "unknown",
         },
     }
     if client is None:
@@ -46,11 +49,14 @@ def diagnose_kernel(
                 **summary["capability_statuses"], "api_reachable": "unavailable",
             },
             "base_url": None,
+            "research_token_configured": False,
             "blockers": ["WARDEN_URL_NOT_CONFIGURED"],
         }
 
     result: dict[str, Any] = {
         **summary, "base_url": client.base_url, "mode": mode, "blockers": [],
+        "research_blockers": [],
+        "research_token_configured": bool(getattr(client, "research_token_configured", False)),
     }
     try:
         health = client.health()
@@ -128,6 +134,50 @@ def diagnose_kernel(
     if not contracts:
         result["blockers"].append("NO_THREAT_CONTRACTS")
     by_component = {item.get("component_id"): item for item in capabilities}
+    advertised_values = {
+        value.casefold()
+        for item in capabilities
+        for value in (item.get("capabilities", []) if isinstance(item.get("capabilities"), list) else [])
+        if isinstance(value, str)
+    }
+
+    research_allowlist = any(
+        value in {"research_stage_allowlist", "research_stages", "research_stage_mapping"}
+        or value.startswith("research_stage:")
+        for value in advertised_values
+    )
+    dispatcher = by_component.get("run.dispatcher")
+    durable_dispatch = bool(
+        isinstance(dispatcher, dict)
+        and dispatcher.get("available") is True
+        and advertised_values.intersection({"durable_run_dispatch", "persistent_run", "cross_restart_run_lookup"})
+    )
+    artifact_reader = by_component.get("artifact.reader")
+    artifact_reader_available = bool(
+        isinstance(artifact_reader, dict) and artifact_reader.get("available") is True
+    )
+    result["research_stage_allowlist_advertised"] = research_allowlist
+    result["persistent_dispatcher_advertised"] = durable_dispatch
+    result["artifact_reader_available"] = artifact_reader_available
+    result["capability_statuses"].update({
+        "research_execution_available": "available" if research_allowlist else "unsupported",
+        "persistent_run_available": "available" if durable_dispatch else "unsupported",
+        "artifact_reader_available": "available" if artifact_reader_available else "unsupported",
+    })
+    if result.get("openapi_summary", {}).get("research_request_fields_available") is not True:
+        result["research_blockers"].append("WARDEN_RESEARCH_REQUEST_FIELDS_UNAVAILABLE")
+    if not research_allowlist:
+        result["research_blockers"].append("WARDEN_RESEARCH_STAGE_ALLOWLIST_NOT_ADVERTISED")
+    if not durable_dispatch:
+        result["research_blockers"].append("WARDEN_DURABLE_DISPATCHER_NOT_ADVERTISED")
+    if not artifact_reader_available:
+        result["research_blockers"].append("WARDEN_ARTIFACT_READER_NOT_CONFIGURED")
+    if result.get("openapi_summary", {}).get("artifact_content_operation_available") is True and (
+        result.get("openapi_summary", {}).get("artifact_content_media_type_compatible") is not True
+    ):
+        result["research_blockers"].append("WARDEN_ARTIFACT_OPENAPI_MEDIA_TYPE_MISMATCH")
+    if not result["research_token_configured"]:
+        result["research_blockers"].append("WARDEN_RESEARCH_TOKEN_MISSING")
 
     def availability(component_id: str) -> bool | Literal["unknown"]:
         component = by_component.get(component_id)

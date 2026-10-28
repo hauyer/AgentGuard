@@ -106,6 +106,84 @@
       ],
       "title": "ResearchArmDefinition",
       "type": "object"
+    },
+    "WardenCaptureTarget": {
+      "additionalProperties": false,
+      "properties": {
+        "target_id": {
+          "maxLength": 256,
+          "minLength": 1,
+          "title": "Target Id",
+          "type": "string"
+        },
+        "agent_ids": {
+          "items": {
+            "type": "string"
+          },
+          "maxItems": 64,
+          "minItems": 1,
+          "title": "Agent Ids",
+          "type": "array"
+        },
+        "module": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Module"
+        },
+        "layer": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Layer"
+        },
+        "component": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": "resid_post",
+          "title": "Component"
+        },
+        "token_policy": {
+          "default": "last_token",
+          "enum": [
+            "all",
+            "last_token",
+            "mean_tokens"
+          ],
+          "title": "Token Policy",
+          "type": "string"
+        },
+        "retain_gradient": {
+          "default": false,
+          "title": "Retain Gradient",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "target_id",
+        "agent_ids"
+      ],
+      "title": "WardenCaptureTarget",
+      "type": "object"
     }
   },
   "additionalProperties": false,
@@ -302,6 +380,20 @@
       "default": null,
       "title": "Dataset Ref"
     },
+    "dataset_version": {
+      "anyOf": [
+        {
+          "maxLength": 128,
+          "minLength": 1,
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Dataset Version"
+    },
     "split_sha256": {
       "anyOf": [
         {
@@ -487,6 +579,14 @@
       "title": "Metric Definitions",
       "type": "object"
     },
+    "metric_units": {
+      "additionalProperties": {
+        "type": "string"
+      },
+      "maxProperties": 31,
+      "title": "Metric Units",
+      "type": "object"
+    },
     "arms": {
       "items": {
         "$ref": "#/$defs/ResearchArmDefinition"
@@ -494,6 +594,115 @@
       "maxItems": 64,
       "title": "Arms",
       "type": "array"
+    },
+    "warden_contract_id": {
+      "anyOf": [
+        {
+          "maxLength": 256,
+          "minLength": 1,
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Warden Contract Id"
+    },
+    "warden_runtime_id": {
+      "anyOf": [
+        {
+          "maxLength": 256,
+          "minLength": 1,
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Warden Runtime Id"
+    },
+    "warden_mode": {
+      "anyOf": [
+        {
+          "enum": [
+            "capture_only",
+            "detection",
+            "causal_audit",
+            "defense_evaluation"
+          ],
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Warden Mode"
+    },
+    "warden_probe_id": {
+      "anyOf": [
+        {
+          "maxLength": 256,
+          "minLength": 1,
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Warden Probe Id"
+    },
+    "warden_sae_id": {
+      "anyOf": [
+        {
+          "maxLength": 256,
+          "minLength": 1,
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Warden Sae Id"
+    },
+    "warden_capture_targets": {
+      "items": {
+        "$ref": "#/$defs/WardenCaptureTarget"
+      },
+      "maxItems": 128,
+      "title": "Warden Capture Targets",
+      "type": "array"
+    },
+    "approval_requirements": {
+      "items": {
+        "enum": [
+          "operator",
+          "approval"
+        ],
+        "type": "string"
+      },
+      "maxItems": 2,
+      "minItems": 1,
+      "title": "Approval Requirements",
+      "type": "array"
+    },
+    "supersedes_study_id": {
+      "anyOf": [
+        {
+          "maxLength": 128,
+          "minLength": 1,
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Supersedes Study Id"
     },
     "study_id": {
       "title": "Study Id",

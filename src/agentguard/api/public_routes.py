@@ -5,7 +5,7 @@ from __future__ import annotations
 from collections.abc import Callable
 from typing import Any
 
-from fastapi import APIRouter, Header, Query
+from fastapi import APIRouter, Header, Query, Request
 
 from agentguard.contracts.defense import DefensePreview
 from agentguard.contracts.experiment_index import ExperimentCompareRequest
@@ -79,7 +79,7 @@ def create_public_router(
     *,
     health_handler: Callable[[], dict[str, Any]],
     capabilities_handler: Callable[[], dict[str, Any]],
-    create_workflow_handler: Callable[[WardenAuditRequest], dict[str, Any]],
+    create_workflow_handler: Callable[..., dict[str, Any]],
     list_workflows_handler: Callable[..., dict[str, Any]],
     get_workflow_handler: Callable[[str], dict[str, Any]],
     get_evidence_handler: Callable[[str], dict[str, Any]],
@@ -118,13 +118,19 @@ def create_public_router(
         return capabilities_handler()
 
     @router.post("/v1/investigations")
-    def create_public_investigation(request: WardenAuditRequest) -> dict[str, Any]:
+    def create_public_investigation(
+        request: WardenAuditRequest,
+        http_request: Request,
+    ) -> dict[str, Any]:
         """Submit a governed WARDEN workflow through the public business API."""
-        return create_workflow_handler(request)
+        return create_workflow_handler(request, http_request)
 
     @router.post("/v1/workflows")
-    def create_public_workflow(request: WardenAuditRequest) -> dict[str, Any]:
-        return create_workflow_handler(request)
+    def create_public_workflow(
+        request: WardenAuditRequest,
+        http_request: Request,
+    ) -> dict[str, Any]:
+        return create_workflow_handler(request, http_request)
 
     @router.get("/v1/investigations")
     def list_public_investigations(

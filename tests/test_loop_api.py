@@ -764,16 +764,16 @@ def test_openapi_registers_loop_routes(tmp_path):
     assert request_schema["properties"]["max_seconds"]["default"] == 300.0
     assert request_schema["properties"]["max_model_calls"]["default"] == 4
     assert request_schema["properties"]["no_new_evidence_rounds"]["default"] == 2
-    snapshot = Path(__file__).resolve().parents[1] / "docs/integration/openapi-1.1.0rc4.json"
+    snapshot = Path(__file__).resolve().parents[1] / "docs/integration/openapi-1.1.0rc5.json"
     assert schema["openapi"] == "3.1.0"
-    assert schema["info"]["version"] == "1.1.0rc4"
+    assert schema["info"]["version"] == "1.1.0rc5"
     assert len(schema["paths"]) == 87
     assert schema == json.loads(snapshot.read_text(encoding="utf-8"))
     # Normalize checkout line endings so the pinned file digest is identical on
     # Windows (CRLF) and Linux/macOS (LF).
     normalized_snapshot = snapshot.read_text(encoding="utf-8").encode("utf-8")
     assert hashlib.sha256(normalized_snapshot).hexdigest() == (
-        "f2b802fd7928bf2701bfbc65e4cf655c8f801a465fe6dd853f938e9d8f75b978"
+        "605a9cd95f0edeedd4d7235fe46a4a6d8c99ffeb4aab00e2e7f51b2addc2a6b7"
     )
 
 

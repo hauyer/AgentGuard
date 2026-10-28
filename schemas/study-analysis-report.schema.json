@@ -29,6 +29,7 @@
     "evidence_mode": {
       "enum": [
         "synthetic",
+        "script_replay",
         "observed",
         "measured"
       ],
@@ -43,6 +44,18 @@
     "primary_outcome": {
       "title": "Primary Outcome",
       "type": "string"
+    },
+    "planned_pairs": {
+      "maximum": 100000,
+      "minimum": 2,
+      "title": "Planned Pairs",
+      "type": "integer"
+    },
+    "planned_case_families": {
+      "maximum": 10000,
+      "minimum": 2,
+      "title": "Planned Case Families",
+      "type": "integer"
     },
     "outcomes": {
       "additionalProperties": {
@@ -164,7 +177,8 @@
       "default": "unverified",
       "enum": [
         "unverified",
-        "synthetic_only"
+        "synthetic_only",
+        "script_replay"
       ],
       "title": "Source Validation",
       "type": "string"
@@ -176,6 +190,8 @@
     "analysis_sha256",
     "evidence_mode",
     "primary_outcome",
+    "planned_pairs",
+    "planned_case_families",
     "outcomes",
     "multiplicity_method",
     "alpha",

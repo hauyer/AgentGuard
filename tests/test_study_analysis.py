@@ -118,7 +118,7 @@ def tracked_multiarms_request():
         primary_hypothesis="Registered treatments reduce secret recovery under the frozen test protocol.",
         primary_outcome="secret_recovery",
         primary_direction="decrease",
-        secondary_outcomes=["normal_utility"],
+        secondary_outcomes=["normal_utility", "latency_ms", "gpu_cost"],
         analysis_method="clustered_paired",
         multiplicity_method="holm",
         planned_pairs=8,
@@ -131,14 +131,25 @@ def tracked_multiarms_request():
         track="live_steganography",
         protocol_ref="artifact:protocol-v1",
         dataset_ref="dataset:public-suite-v1",
+        dataset_version="1.0.0",
         split_sha256="a" * 64,
         case_family_ref="dataset:public-suite-v1/families",
         model_id="model-7b",
         model_revision="model-7b@rev-1",
         tokenizer_revision="tokenizer@rev-1",
         decoding_config_ref="artifact:decode-config-v1",
+        warden_contract_id="contract-live-v1",
+        warden_runtime_id="runtime-live-v1",
+        warden_mode="causal_audit",
         label_semantics="secret_bit",
-        metric_definitions={"secret_recovery": "SRR_ITT", "normal_utility": "NORMAL_UTILITY"},
+        metric_definitions={
+            "secret_recovery": "SRR_ITT", "normal_utility": "NORMAL_UTILITY",
+            "latency_ms": "LATENCY", "gpu_cost": "GPU_COST",
+        },
+        metric_units={
+            "secret_recovery": "probability_0_to_1", "normal_utility": "score_0_to_1",
+            "latency_ms": "milliseconds", "gpu_cost": "gpu_seconds",
+        },
         probe_scope="receiver",
         probe_target="receiver.layer.8",
         probe_layer="8",
@@ -162,16 +173,22 @@ def tracked_multiarms_data():
     outcomes = {
         "secret_recovery": pairs([0.8] * 8, [0.3] * 8),
         "normal_utility": pairs([0.9] * 8, [0.85] * 8),
+        "latency_ms": pairs([20.0] * 8, [25.0] * 8),
+        "gpu_cost": pairs([10.0] * 8, [12.0] * 8),
     }
     arm_analyses = {
         "block": {"status": "completed", "outcomes": outcomes},
         "replace": {"status": "completed", "outcomes": {
             "secret_recovery": pairs([0.8] * 8, [0.2] * 8),
             "normal_utility": pairs([0.9] * 8, [0.4] * 8),
+            "latency_ms": pairs([20.0] * 8, [30.0] * 8),
+            "gpu_cost": pairs([10.0] * 8, [15.0] * 8),
         }},
         "detector-ban": {"status": "completed", "outcomes": {
             "secret_recovery": pairs([0.8] * 8, [0.6] * 8),
             "normal_utility": pairs([0.9] * 8, [0.8] * 8),
+            "latency_ms": pairs([20.0] * 8, [22.0] * 8),
+            "gpu_cost": pairs([10.0] * 8, [11.0] * 8),
         }},
     }
     return StudyAnalysisRequest(
@@ -209,6 +226,9 @@ def test_frozen_tracks_arms_and_probe_coordinates_are_analyzed_without_live_clai
     assert report.rq2_probe_effect_association["family_bootstrap_95_ci"] is not None
     assert len(report.rq3_safety_utility) == 3
     assert report.rq3_safety_utility[0]["safety_effect"] > 0
+    assert report.planned_pairs == 8 and report.planned_case_families == 4
+    assert report.rq3_safety_utility[0]["resource_metrics"]["latency_ms"]["unit"] == "milliseconds"
+    assert report.rq3_safety_utility[0]["execution"]["failure_rate"] is None
     dominated = next(row for row in report.rq3_safety_utility if row["arm_id"] == "detector-ban")
     assert dominated["pareto_frontier"] is False
     assert report.causal_claim_status == "synthetic_only"
@@ -229,3 +249,23 @@ def test_missing_or_failed_arm_is_retained_with_null_metrics():
     assert missing["outcomes"]["secret_recovery"]["effect"] is None
     assert missing["unknown_reason"] == "ARM_RESULT_NOT_PROVIDED"
     assert any("remains unknown" in item for item in report.deviations)
+
+
+def test_failed_arm_itt_counts_and_failure_rate_remain_explicit():
+    import tempfile
+    from pathlib import Path
+
+    values = tracked_multiarms_data().model_dump(mode="python")
+    values["arm_analyses"]["detector-ban"] = {
+        "status": "failed", "failure_reason": "runtime failed after preflight",
+        "planned_pairs": 8, "completed_pairs": 0, "failed_pairs": 2,
+        "blocked_pairs": 1, "not_run_pairs": 5,
+    }
+    with tempfile.TemporaryDirectory() as directory:
+        study = ResearchRegistry(Path(directory) / "registry.sqlite3").register(tracked_multiarms_request())
+    report = analyze_registered_study(study, StudyAnalysisRequest.model_validate(values))
+    result = report.arm_analyses["detector-ban"]["execution_counts"]
+    assert result["planned_pairs"] == 8
+    assert result["failure_rate"] == 0.25
+    assert result["noncompleted_rate"] == 1.0
+    assert report.source_validation == "synthetic_only"

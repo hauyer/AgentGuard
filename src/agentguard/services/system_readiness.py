@@ -189,7 +189,8 @@ class SystemReadinessService:
             "api_reachable", "kernel_available", "threat_contracts_available",
             "runtime_available", "probe_resources_available", "sae_resources_available",
             "whitebox_workflow_api_available", "intervention_api_available",
-            "artifact_access_available",
+            "artifact_access_available", "research_execution_available",
+            "persistent_run_available", "artifact_reader_available",
         )
         capability_states = diagnosis.get("capability_statuses")
         capability_states = capability_states if isinstance(capability_states, dict) else {}
@@ -203,6 +204,9 @@ class SystemReadinessService:
             "whitebox_workflow_api_available": "WARDEN_WHITEBOX_WORKFLOW_API_UNSUPPORTED",
             "intervention_api_available": "NO_PUBLIC_INTERVENTION_API:DEP-007",
             "artifact_access_available": "WARDEN_ARTIFACT_DOWNLOAD_NOT_PUBLIC:DEP-004",
+            "research_execution_available": "WARDEN_RESEARCH_STAGE_ALLOWLIST_NOT_ADVERTISED",
+            "persistent_run_available": "WARDEN_DURABLE_DISPATCHER_NOT_ADVERTISED",
+            "artifact_reader_available": "WARDEN_ARTIFACT_READER_NOT_CONFIGURED",
         }
         for name in capability_names:
             if name == "api_reachable":
@@ -220,6 +224,20 @@ class SystemReadinessService:
             capability_blockers: list[str] = []
             if capability_state not in {"available", "unknown"}:
                 capability_blockers.append(blocker_codes[name])
+            observed_blockers = diagnosis.get("research_blockers")
+            if isinstance(observed_blockers, list):
+                if name == "research_execution_available":
+                    capability_blockers.extend(
+                        item for item in observed_blockers
+                        if isinstance(item, str) and item.startswith("WARDEN_RESEARCH_")
+                    )
+                elif name in {"persistent_run_available", "artifact_reader_available"}:
+                    capability_blockers.extend(
+                        item for item in observed_blockers
+                        if isinstance(item, str) and item.startswith((
+                            "WARDEN_DURABLE_", "WARDEN_CROSS_RESTART_", "WARDEN_ARTIFACT_",
+                        ))
+                    )
             if name == "kernel_available" and capability_state in {"unknown", "blocked"}:
                 if diagnosis.get("api_contract_compatible") is False:
                     capability_blockers.append("WARDEN_API_CONTRACT_INCOMPATIBLE")

@@ -164,12 +164,18 @@ class WardenWorkflowStore:
                 status_code INTEGER NOT NULL,
                 actor_role TEXT NOT NULL,
                 created_at TEXT NOT NULL,
-                completed INTEGER NOT NULL DEFAULT 0
+                completed INTEGER NOT NULL DEFAULT 0,
+                payload_sha256 TEXT,
+                approval_status TEXT NOT NULL DEFAULT 'not_recorded'
             )""")
             audit_columns = {row["name"] for row in db.execute("PRAGMA table_info(api_audit_events)")}
             if "completed" not in audit_columns:
                 # Older completed events remain explicitly complete after this additive migration.
                 db.execute("ALTER TABLE api_audit_events ADD COLUMN completed INTEGER NOT NULL DEFAULT 1")
+            if "payload_sha256" not in audit_columns:
+                db.execute("ALTER TABLE api_audit_events ADD COLUMN payload_sha256 TEXT")
+            if "approval_status" not in audit_columns:
+                db.execute("ALTER TABLE api_audit_events ADD COLUMN approval_status TEXT NOT NULL DEFAULT 'not_recorded'")
             db.execute("CREATE INDEX IF NOT EXISTS idx_api_audit_created ON api_audit_events(event_id DESC)")
 
     @staticmethod
@@ -325,12 +331,30 @@ class WardenWorkflowStore:
             if cursor.rowcount != 1:
                 raise KeyError(f"API audit event {event_id} is missing or already completed")
 
+    def record_api_audit_details(
+        self, event_id: int, *, payload_sha256: str, approval_status: str,
+    ) -> None:
+        """Attach a payload digest and non-secret authorization outcome to a reserved event."""
+        if len(payload_sha256) != 64 or any(char not in "0123456789abcdef" for char in payload_sha256):
+            raise ValueError("payload_sha256 must be a lowercase SHA-256 digest")
+        if approval_status not in {"operator_authorized", "approval_authorized"}:
+            raise ValueError("approval_status is not a supported audit value")
+        with self._connect() as db:
+            cursor = db.execute(
+                "UPDATE api_audit_events SET payload_sha256=?, approval_status=? "
+                "WHERE event_id=? AND completed=0",
+                (payload_sha256, approval_status, event_id),
+            )
+            if cursor.rowcount != 1:
+                raise KeyError(f"API audit event {event_id} is missing or already completed")
+
     def list_api_audit_events(self, *, limit: int = 100, offset: int = 0) -> list[dict[str, Any]]:
         if not 1 <= limit <= 500 or offset < 0:
             raise ValueError("audit pagination is out of range")
         with self._connect() as db:
             rows = db.execute(
-                "SELECT event_id, request_id, method, path, status_code, actor_role, created_at, completed "
+                "SELECT event_id, request_id, method, path, status_code, actor_role, created_at, completed, "
+                "payload_sha256, approval_status "
                 "FROM api_audit_events ORDER BY event_id DESC LIMIT ? OFFSET ?",
                 (limit, offset),
             ).fetchall()

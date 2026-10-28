@@ -14,6 +14,7 @@ import secrets
 import time
 import uuid
 from collections import deque
+from collections.abc import Mapping
 from concurrent.futures import Future, ThreadPoolExecutor
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime
@@ -92,7 +93,7 @@ from agentguard.core.planner import DefensePlanner, InvestigationPlanner
 from agentguard.core.policy import InterventionPolicyEngine
 from agentguard.core.study_analysis import analyze_registered_study
 from agentguard.memory.store import ExperienceStore
-from agentguard.research_registry import ResearchRegistry
+from agentguard.research_registry import IdempotencyConflictError, ResearchRegistry
 from agentguard.services.evaluation_registry import EvaluationRegistry
 from agentguard.services.evidence_gateway import EvidenceGateway
 from agentguard.services.experiment_index import ExperimentIndexService
@@ -113,6 +114,37 @@ from agentguard.services.warden_lifecycle import WardenLifecycleService
 from agentguard.services.warden_workflow_store import WardenWorkflowStore, WorkflowConflictError
 
 logger = logging.getLogger(__name__)
+_MAX_API_REQUEST_BYTES = 16 * 1024 * 1024
+
+_RESEARCH_ERROR_OBJECT_SCHEMA = {
+    "type": "object",
+    "required": ["detail"],
+    "properties": {
+        "detail": {
+            "oneOf": [
+                {"type": "string"},
+                {"type": "array", "items": {"type": "object"}},
+                {
+                    "type": "object",
+                    "properties": {
+                        "error": {"type": "string"},
+                        "message": {"type": "string"},
+                        "code": {"type": "string"},
+                        "request_id": {"type": "string"},
+                    },
+                    "additionalProperties": True,
+                },
+            ],
+        },
+    },
+}
+
+
+def _research_error_response(description: str) -> dict[str, Any]:
+    return {
+        "description": description,
+        "content": {"application/json": {"schema": _RESEARCH_ERROR_OBJECT_SCHEMA}},
+    }
 
 
 class DefenseExecuteRequest(ContractModel):
@@ -338,6 +370,7 @@ def create_app(
                 content={"detail": {"error": "API_AUDIT_UNAVAILABLE", "request_id": request_id}},
             )
         else:
+            request.state.audit_event_id = audit_event_id
             public_paths = {
                 "/health", "/v1/system/health", "/v1/system/identity",
                 "/openapi.json", "/docs", "/redoc", "/console",
@@ -362,7 +395,17 @@ def create_app(
                         retry_after = max(1, int(60 - (now - window[0])))
                     else:
                         window.append(now)
-            if throttled:
+            content_length = request.headers.get("content-length")
+            try:
+                request_size = int(content_length) if content_length is not None else 0
+            except ValueError:
+                request_size = _MAX_API_REQUEST_BYTES + 1
+            if request_size > _MAX_API_REQUEST_BYTES:
+                response = JSONResponse(
+                    status_code=413,
+                    content={"detail": {"error": "REQUEST_BODY_TOO_LARGE", "request_id": request_id}},
+                )
+            elif throttled:
                 response = JSONResponse(
                     status_code=429,
                     content={"detail": {"error": "RATE_LIMIT_EXCEEDED", "request_id": request_id}},
@@ -530,6 +573,34 @@ def create_app(
             return
         require_operator_token(operator_token)
 
+    def audit_research_write(
+        http_request: Request,
+        payload: Mapping[str, Any],
+        *,
+        approval_valid: bool,
+    ) -> None:
+        event_id = getattr(http_request.state, "audit_event_id", None)
+        if not isinstance(event_id, int):
+            raise HTTPException(status_code=503, detail={"error": "API_AUDIT_UNAVAILABLE"})
+        encoded = json.dumps(
+            payload, ensure_ascii=False, sort_keys=True, separators=(",", ":"),
+        ).encode("utf-8")
+        try:
+            app.state.warden_workflows.record_api_audit_details(
+                event_id,
+                payload_sha256=hashlib.sha256(encoded).hexdigest(),
+                approval_status="approval_authorized" if approval_valid else "operator_authorized",
+            )
+        except Exception as exc:
+            logger.error(
+                "AgentGuard API audit details could not be persisted (request_id=%s, exception_type=%s)",
+                http_request.state.request_id,
+                type(exc).__name__,
+            )
+            raise HTTPException(
+                status_code=503, detail={"error": "API_AUDIT_UNAVAILABLE", "request_id": http_request.state.request_id},
+            ) from exc
+
     def require_operator_token(token: str | None) -> None:
         """Require the operator credential, with an explicit legacy API-token fallback."""
         expected = os.environ.get("AGENTGUARD_OPERATOR_API_TOKEN") or os.environ.get("AGENTGUARD_API_TOKEN", "")
@@ -680,9 +751,14 @@ def create_app(
             raise HTTPException(status_code=502, detail={"error": exc.code, "message": str(exc)}) from exc
 
     @app.post("/v1/kernel/audits")
-    def submit_kernel_audit(request: WardenAuditRequest) -> dict:
+    def submit_kernel_audit(
+        request: WardenAuditRequest,
+        http_request: Request,
+    ) -> dict:
         """Compatibility alias using the same durable workflow and approval gate."""
-        result = execute_kernel_workflow(request)
+        result = execute_kernel_workflow(
+            request, http_request,
+        )
         return {**result, "submission_status": result["status"]}
 
     @app.get("/v1/kernel/audits/{plan_id}")
@@ -710,12 +786,25 @@ def create_app(
             raise HTTPException(status_code=status_code, detail={"error": exc.code, "message": str(exc)}) from exc
 
     @app.post("/v1/kernel/workflows")
-    def execute_kernel_workflow(request: WardenAuditRequest) -> dict:
+    def execute_kernel_workflow(
+        request: WardenAuditRequest,
+        http_request: Request,
+    ) -> dict:
         """Preflight, submit and optionally wait for a WARDEN audit; persist evidence-gated memory."""
         if request.mode == "defense_evaluation" and not approval_is_valid(request.authorization_ref):
             raise HTTPException(
                 status_code=403,
                 detail={"error": "OPERATOR_APPROVAL_REQUIRED", "message": "defense_evaluation requires a valid AgentGuard approval reference"},
+            )
+        if request.research_protocol_ref is not None:
+            require_research_write_authorization(
+                http_request.headers.get("X-AgentGuard-Operator-Token")
+                or http_request.headers.get("X-AgentGuard-Token"),
+                http_request.headers.get("X-Approval-Token"),
+            )
+            audit_research_write(
+                http_request, request.model_dump(mode="json"),
+                approval_valid=approval_is_valid(http_request.headers.get("X-Approval-Token")),
             )
         client = _configured_warden_client()
         if client is None:
@@ -2263,13 +2352,23 @@ def create_app(
     @app.post(
         "/v1/studies", response_model=RegisteredStudy, status_code=201,
         responses={
-            401: {"description": "Global API token is required when configured."},
-            403: {"description": "A configured operator or approval credential is required."},
-            409: {"description": "Study registration could not be persisted."},
+            401: _research_error_response("Global API token is required when configured."),
+            403: _research_error_response("A configured operator or approval credential is required."),
+            409: _research_error_response("Idempotency-Key conflicts or study registration could not be persisted."),
+            413: _research_error_response("Request body exceeds the configured 16 MiB limit."),
+            422: _research_error_response("Study registration contract validation failed."),
+            429: _research_error_response("The API request rate limit was exceeded."),
+            500: _research_error_response("An unexpected API error occurred."),
+            503: _research_error_response("The API audit record could not be persisted."),
         },
     )
     def register_study(
         request: StudyRegistrationRequest,
+        http_request: Request,
+        idempotency_key: str | None = Header(
+            default=None, alias="Idempotency-Key", min_length=1, max_length=128,
+            pattern=r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$",
+        ),
         x_agentguard_operator_token: str | None = Header(default=None, alias="X-AgentGuard-Operator-Token"),
         x_agentguard_token: str | None = Header(default=None, alias="X-AgentGuard-Token"),
         x_approval_token: str | None = Header(default=None, alias="X-Approval-Token"),
@@ -2278,15 +2377,39 @@ def create_app(
         require_research_write_authorization(
             x_agentguard_operator_token or x_agentguard_token, x_approval_token,
         )
+        audit_research_write(
+            http_request, request.model_dump(mode="json"),
+            approval_valid=approval_is_valid(x_approval_token),
+        )
+        actor_role = "approval" if approval_is_valid(x_approval_token) else "operator"
         try:
-            return app.state.research_registry.register(request)
+            return app.state.research_registry.register(
+                request, idempotency_key=idempotency_key, actor_role=actor_role,
+            )
+        except IdempotencyConflictError as exc:
+            raise HTTPException(status_code=409, detail={"error": "IDEMPOTENCY_CONFLICT", "message": str(exc)}) from exc
         except Exception as exc:
             raise HTTPException(status_code=409, detail={"error": "STUDY_REGISTRATION_FAILED", "code": type(exc).__name__}) from exc
 
     @app.get("/v1/studies")
-    def list_studies(limit: int = Query(default=100, ge=1, le=500)) -> dict:
-        items = app.state.research_registry.list(limit=limit)
-        return {"items": [item.model_dump(mode="json") for item in items], "total": len(items)}
+    def list_studies(
+        limit: int = Query(default=100, ge=1, le=500),
+        offset: int = Query(default=0, ge=0),
+        track: Literal["mechanism_testbed", "live_steganography"] | None = None,
+        sort_by: Literal["registered_at", "title"] = "registered_at",
+        sort_order: Literal["asc", "desc"] = "desc",
+    ) -> dict:
+        registry = app.state.research_registry
+        items = registry.list(
+            limit=limit, offset=offset, track=track, sort_by=sort_by, sort_order=sort_order,
+        )
+        total = registry.study_count(track=track)
+        next_offset = offset + len(items) if offset + len(items) < total else None
+        return {
+            "items": [item.model_dump(mode="json") for item in items],
+            "total": total, "limit": limit, "offset": offset, "next_offset": next_offset,
+            "track": track, "sort_by": sort_by, "sort_order": sort_order,
+        }
 
     @app.get("/v1/studies/{study_id}", response_model=RegisteredStudy)
     def get_study(study_id: str) -> RegisteredStudy:
@@ -2307,15 +2430,26 @@ def create_app(
     @app.post(
         "/v1/studies/{study_id}/analyses", response_model=StudyAnalysisReport, status_code=201,
         responses={
-            400: {"description": "Study analysis input or preregistered comparison is invalid."},
-            401: {"description": "Global API token is required when configured."},
-            403: {"description": "A configured operator or approval credential is required."},
-            404: {"description": "The study does not exist."},
+            400: _research_error_response("Study analysis input or preregistered comparison is invalid."),
+            401: _research_error_response("Global API token is required when configured."),
+            403: _research_error_response("A configured operator or approval credential is required."),
+            404: _research_error_response("The study does not exist."),
+            409: _research_error_response("Idempotency-Key conflicts with a previous request."),
+            413: _research_error_response("Request body exceeds the configured 16 MiB limit."),
+            422: _research_error_response("Measured outcomes are rejected until WARDEN artifacts are verified."),
+            429: _research_error_response("The API request rate limit was exceeded."),
+            500: _research_error_response("An unexpected API error occurred."),
+            503: _research_error_response("The API audit record could not be persisted."),
         },
     )
     def analyze_study(
         study_id: str,
         request: StudyAnalysisRequest,
+        http_request: Request,
+        idempotency_key: str | None = Header(
+            default=None, alias="Idempotency-Key", min_length=1, max_length=128,
+            pattern=r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$",
+        ),
         x_agentguard_operator_token: str | None = Header(default=None, alias="X-AgentGuard-Operator-Token"),
         x_agentguard_token: str | None = Header(default=None, alias="X-AgentGuard-Token"),
         x_approval_token: str | None = Header(default=None, alias="X-Approval-Token"),
@@ -2323,10 +2457,30 @@ def create_app(
         require_research_write_authorization(
             x_agentguard_operator_token or x_agentguard_token, x_approval_token,
         )
+        audit_research_write(
+            http_request, {"study_id": study_id, "analysis": request.model_dump(mode="json")},
+            approval_valid=approval_is_valid(x_approval_token),
+        )
         study = app.state.research_registry.get(study_id)
         if study is None:
             raise HTTPException(status_code=404, detail="study_id not found")
+        if request.evidence_mode == "measured":
+            raise HTTPException(
+                status_code=422,
+                detail={
+                    "error": "ARTIFACT_CONTENT_NOT_VERIFIED",
+                    "message": "measured outcomes require a verified WARDEN run and hash-checked artifact import",
+                },
+            )
+        actor_role = "approval" if approval_is_valid(x_approval_token) else "operator"
+        request_payload = request.model_dump(mode="json")
         try:
+            if idempotency_key is not None:
+                previous = app.state.research_registry.get_idempotent_analysis(
+                    study_id, idempotency_key, request_payload,
+                )
+                if previous is not None:
+                    return previous
             analysis = analyze_registered_study(study, request)
             artifact = app.state.artifacts.put(
                 analysis.model_dump_json(indent=2).encode("utf-8"),
@@ -2339,17 +2493,38 @@ def create_app(
                 media_type="application/json",
             )
             analysis = analysis.model_copy(update={"report_artifact_id": artifact.artifact_ref.artifact_id})
-            app.state.research_registry.add_analysis(analysis)
-            return analysis
+            return app.state.research_registry.add_analysis(
+                analysis, idempotency_key=idempotency_key,
+                request_payload=request_payload if idempotency_key is not None else None,
+                actor_role=actor_role,
+            )
+        except IdempotencyConflictError as exc:
+            raise HTTPException(status_code=409, detail={"error": "IDEMPOTENCY_CONFLICT", "message": str(exc)}) from exc
         except ValueError as exc:
             raise HTTPException(status_code=400, detail={"error": "STUDY_ANALYSIS_INVALID", "message": str(exc)}) from exc
 
     @app.get("/v1/studies/{study_id}/analyses")
-    def list_study_analyses(study_id: str) -> dict:
+    def list_study_analyses(
+        study_id: str,
+        limit: int = Query(default=100, ge=1, le=500),
+        offset: int = Query(default=0, ge=0),
+        evidence_mode: Literal["synthetic", "script_replay", "observed", "measured"] | None = None,
+        sort_order: Literal["asc", "desc"] = "asc",
+    ) -> dict:
         if app.state.research_registry.get(study_id) is None:
             raise HTTPException(status_code=404, detail="study_id not found")
-        items = app.state.research_registry.analyses(study_id)
-        return {"items": [item.model_dump(mode="json") for item in items], "total": len(items)}
+        registry = app.state.research_registry
+        items = registry.analyses(
+            study_id, limit=limit, offset=offset,
+            evidence_mode=evidence_mode, sort_order=sort_order,
+        )
+        total = registry.analysis_count(study_id, evidence_mode=evidence_mode)
+        next_offset = offset + len(items) if offset + len(items) < total else None
+        return {
+            "items": [item.model_dump(mode="json") for item in items],
+            "total": total, "limit": limit, "offset": offset, "next_offset": next_offset,
+            "evidence_mode": evidence_mode, "sort_order": sort_order,
+        }
 
     app.include_router(create_public_router(
         health_handler=health,

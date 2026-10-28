@@ -6,11 +6,12 @@ from datetime import UTC, datetime
 from typing import Literal
 from uuid import uuid4
 
-from pydantic import Field, model_validator
+from pydantic import Field, field_validator, model_validator
 from pydantic.types import JsonValue
 
 from agentguard.contracts.base import ContractModel
 from agentguard.contracts.truth_guard import find_hidden_truth_fields
+from agentguard.contracts.warden import WardenCaptureTarget
 
 ResearchTrack = Literal["mechanism_testbed", "live_steganography"]
 ResearchMetric = Literal[
@@ -108,6 +109,7 @@ class StudyRegistrationRequest(ContractModel):
     track: ResearchTrack | None = None
     protocol_ref: str | None = Field(default=None, min_length=1, max_length=512)
     dataset_ref: str | None = Field(default=None, min_length=1, max_length=512)
+    dataset_version: str | None = Field(default=None, min_length=1, max_length=128)
     split_sha256: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
     case_family_ref: str | None = Field(default=None, min_length=1, max_length=512)
     model_id: str | None = Field(default=None, min_length=1, max_length=128)
@@ -121,7 +123,18 @@ class StudyRegistrationRequest(ContractModel):
     probe_validation_ref: str | None = Field(default=None, max_length=512)
     label_semantics: LabelSemantics | None = None
     metric_definitions: dict[str, ResearchMetric] = Field(default_factory=dict, max_length=31)
+    metric_units: dict[str, str] = Field(default_factory=dict, max_length=31)
     arms: list[ResearchArmDefinition] = Field(default_factory=list, max_length=64)
+    warden_contract_id: str | None = Field(default=None, min_length=1, max_length=256)
+    warden_runtime_id: str | None = Field(default=None, min_length=1, max_length=256)
+    warden_mode: Literal["capture_only", "detection", "causal_audit", "defense_evaluation"] | None = None
+    warden_probe_id: str | None = Field(default=None, min_length=1, max_length=256)
+    warden_sae_id: str | None = Field(default=None, min_length=1, max_length=256)
+    warden_capture_targets: list[WardenCaptureTarget] = Field(default_factory=list, max_length=128)
+    approval_requirements: list[Literal["operator", "approval"]] = Field(
+        default_factory=lambda: ["operator", "approval"], min_length=1, max_length=2,
+    )
+    supersedes_study_id: str | None = Field(default=None, min_length=1, max_length=128)
 
     @model_validator(mode="after")
     def validate_outcomes(self):
@@ -135,6 +148,7 @@ class StudyRegistrationRequest(ContractModel):
         for name, value in (
             ("protocol_ref", self.protocol_ref),
             ("dataset_ref", self.dataset_ref),
+            ("dataset_version", self.dataset_version),
             ("case_family_ref", self.case_family_ref),
             ("decoding_config_ref", self.decoding_config_ref),
             ("probe_validation_ref", self.probe_validation_ref),
@@ -143,10 +157,13 @@ class StudyRegistrationRequest(ContractModel):
                 raise ValueError(f"{name} must be a public or content-addressed reference, not a local path")
         if self.metric_definitions and set(self.metric_definitions) != set(all_outcomes):
             raise ValueError("metric_definitions must name every preregistered outcome exactly once")
+        if self.metric_units and set(self.metric_units) != set(all_outcomes):
+            raise ValueError("metric_units must name every preregistered outcome exactly once")
         if self.track is not None:
             required = {
                 "protocol_ref": self.protocol_ref,
                 "dataset_ref": self.dataset_ref,
+                "dataset_version": self.dataset_version,
                 "split_sha256": self.split_sha256,
                 "case_family_ref": self.case_family_ref,
                 "model_id": self.model_id,
@@ -155,12 +172,22 @@ class StudyRegistrationRequest(ContractModel):
                 "decoding_config_ref": self.decoding_config_ref,
                 "label_semantics": self.label_semantics,
                 "metric_definitions": self.metric_definitions,
+                "metric_units": self.metric_units,
             }
             missing = [key for key, value in required.items() if not value]
             if missing:
                 raise ValueError(f"tracked study is missing frozen metadata: {', '.join(missing)}")
             if not self.arms:
                 raise ValueError("tracked study requires explicit baseline and treatment arms")
+        execution_fields = (
+            self.warden_contract_id, self.warden_runtime_id, self.warden_mode,
+        )
+        if any(execution_fields) and not all(execution_fields):
+            raise ValueError("WARDEN contract, runtime, and mode must be frozen together")
+        if self.track == "live_steganography" and not all(execution_fields):
+            raise ValueError("live_steganography requires a frozen WARDEN contract, runtime, and mode")
+        if len(self.approval_requirements) != len(set(self.approval_requirements)):
+            raise ValueError("approval_requirements must be unique")
         probe_fields = (self.probe_scope, self.probe_target, self.probe_layer, self.probe_token)
         if any(probe_fields) and not all(probe_fields):
             raise ValueError("Probe scope, target, layer, and token must be frozen together")
@@ -184,6 +211,14 @@ class StudyRegistrationRequest(ContractModel):
         if hidden:
             raise ValueError(f"hidden evaluator-only fields are not accepted: {sorted(hidden)}")
         return self
+
+    @field_validator("metric_units")
+    @classmethod
+    def validate_metric_units(cls, values: dict[str, str]) -> dict[str, str]:
+        cleaned = {name: unit.strip() for name, unit in values.items()}
+        if any(not name.strip() or not unit or len(unit) > 64 for name, unit in cleaned.items()):
+            raise ValueError("metric unit names and values must be nonblank and at most 64 characters")
+        return cleaned
 
 
 class RegisteredStudy(StudyRegistrationRequest):
@@ -214,6 +249,11 @@ class StudyArmAnalysisInput(ContractModel):
     outcomes: dict[str, OutcomePairs] = Field(default_factory=dict, max_length=31)
     failure_reason: str | None = Field(default=None, max_length=512)
     unknown_reason: str | None = Field(default=None, max_length=512)
+    planned_pairs: int | None = Field(default=None, ge=1, le=100000)
+    completed_pairs: int | None = Field(default=None, ge=0, le=100000)
+    failed_pairs: int | None = Field(default=None, ge=0, le=100000)
+    blocked_pairs: int | None = Field(default=None, ge=0, le=100000)
+    not_run_pairs: int | None = Field(default=None, ge=0, le=100000)
 
     @model_validator(mode="after")
     def validate_status_payload(self):
@@ -225,13 +265,24 @@ class StudyArmAnalysisInput(ContractModel):
             raise ValueError("failed arm requires failure_reason")
         if self.status in {"blocked", "not_run", "unknown"} and not self.unknown_reason:
             raise ValueError("blocked, not_run, and unknown arms require unknown_reason")
+        counts = (
+            self.planned_pairs, self.completed_pairs, self.failed_pairs,
+            self.blocked_pairs, self.not_run_pairs,
+        )
+        if any(value is not None for value in counts) and any(value is None for value in counts):
+            raise ValueError("arm pair counts must be provided together")
+        if all(value is not None for value in counts) and (
+            self.completed_pairs + self.failed_pairs + self.blocked_pairs + self.not_run_pairs
+            != self.planned_pairs
+        ):
+            raise ValueError("completed, failed, blocked, and not_run pairs must sum to planned_pairs")
         return self
 
 
 class StudyAnalysisRequest(ContractModel):
     schema_version: Literal["0.1"] = "0.1"
     outcomes: dict[str, OutcomePairs] = Field(min_length=1, max_length=31)
-    evidence_mode: Literal["synthetic", "observed", "measured"] = "observed"
+    evidence_mode: Literal["synthetic", "script_replay", "observed", "measured"] = "observed"
     source_artifact_refs: list[str] = Field(default_factory=list, max_length=1000)
     data_sha256: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
     bootstrap_draws: int = Field(default=5000, ge=100, le=100000)
@@ -255,9 +306,11 @@ class StudyAnalysisReport(ContractModel):
     study_id: str
     registration_sha256: str
     analysis_sha256: str
-    evidence_mode: Literal["synthetic", "observed", "measured"]
+    evidence_mode: Literal["synthetic", "script_replay", "observed", "measured"]
     analyzed_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
     primary_outcome: str
+    planned_pairs: int = Field(ge=2, le=100000)
+    planned_case_families: int = Field(ge=2, le=10000)
     outcomes: dict[str, dict[str, JsonValue]]
     multiplicity_method: Literal["none", "holm", "benjamini_hochberg"]
     alpha: float
@@ -271,4 +324,4 @@ class StudyAnalysisReport(ContractModel):
     rq2_probe_effect_association: dict[str, JsonValue] | None = None
     rq3_safety_utility: list[dict[str, JsonValue]] = Field(default_factory=list)
     causal_claim_status: Literal["synthetic_only", "not_assessed"] = "not_assessed"
-    source_validation: Literal["unverified", "synthetic_only"] = "unverified"
+    source_validation: Literal["unverified", "synthetic_only", "script_replay"] = "unverified"

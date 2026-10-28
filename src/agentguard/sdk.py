@@ -321,29 +321,52 @@ class AgentGuardClient:
         """Read the WARDEN research capability gate; this never submits work."""
         return self.request("GET", "/v1/research/capabilities")
 
-    def list_studies(self, *, limit: int = 100) -> dict[str, Any]:
-        return self.request("GET", "/v1/studies", query={"limit": limit})
+    def list_studies(
+        self,
+        *,
+        limit: int | None = None,
+        offset: int | None = None,
+        track: str | None = None,
+        sort_by: str | None = None,
+        sort_order: str | None = None,
+    ) -> dict[str, Any]:
+        return self.request(
+            "GET", "/v1/studies",
+            query={"limit": limit, "offset": offset, "track": track,
+                   "sort_by": sort_by, "sort_order": sort_order},
+        )
 
     def get_study(self, study_id: str) -> dict[str, Any]:
         return self.request("GET", f"/v1/studies/{quote(study_id, safe='')}")
 
     def register_study(
         self, payload: Mapping[str, Any], *, approval_token: str | None = None,
+        idempotency_key: str | None = None,
     ) -> dict[str, Any]:
         headers = {"X-Approval-Token": approval_token} if approval_token else None
+        headers = {**(headers or {}), **({"Idempotency-Key": idempotency_key} if idempotency_key else {})}
         return self.request("POST", "/v1/studies", body=payload, operator=True, extra_headers=headers)
 
     def analyze_study(
         self, study_id: str, payload: Mapping[str, Any], *, approval_token: str | None = None,
+        idempotency_key: str | None = None,
     ) -> dict[str, Any]:
         headers = {"X-Approval-Token": approval_token} if approval_token else None
+        headers = {**(headers or {}), **({"Idempotency-Key": idempotency_key} if idempotency_key else {})}
         return self.request(
             "POST", f"/v1/studies/{quote(study_id, safe='')}/analyses",
             body=payload, operator=True, extra_headers=headers,
         )
 
-    def list_study_analyses(self, study_id: str) -> dict[str, Any]:
-        return self.request("GET", f"/v1/studies/{quote(study_id, safe='')}/analyses")
+    def list_study_analyses(
+        self, study_id: str, *, limit: int | None = None, offset: int | None = None,
+        evidence_mode: str | None = None, sort_order: str | None = None,
+    ) -> dict[str, Any]:
+        return self.request(
+            "GET", f"/v1/studies/{quote(study_id, safe='')}/analyses",
+            query={"limit": limit, "offset": offset,
+                   "evidence_mode": evidence_mode, "sort_order": sort_order},
+        )
 
     def activate_experience_policy(self, payload: Mapping[str, Any], *, activate: bool = True) -> dict[str, Any]:
         return self.request(

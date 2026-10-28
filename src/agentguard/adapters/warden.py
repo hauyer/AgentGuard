@@ -10,6 +10,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import re
 import time
 from collections.abc import Callable, Mapping
 from typing import Any
@@ -18,6 +19,7 @@ from urllib.parse import quote, unquote, urlencode, urlparse
 from urllib.request import HTTPRedirectHandler, Request, build_opener
 
 _MAX_RESPONSE_BYTES = 2 * 1024 * 1024
+_MAX_ARTIFACT_BYTES = 1024 * 1024
 _RETRYABLE_STATUS = frozenset({408, 429, 502, 503, 504})
 _RETRYABLE_ERRORS = frozenset({"WARDEN_UNREACHABLE", "WARDEN_TIMEOUT", "WARDEN_TRANSPORT_ERROR"})
 _HTTP_METHODS = frozenset({"get", "post", "put", "patch", "delete", "head", "options"})
@@ -93,6 +95,7 @@ class WardenKernelClient:
         transport: Transport | None = None,
         read_retries: int = 0,
         sleep: Callable[[float], None] = time.sleep,
+        research_token: str | None = None,
     ) -> None:
         if (
             any(ord(char) < 32 for char in base_url)
@@ -123,6 +126,11 @@ class WardenKernelClient:
             raise ValueError("WARDEN read_retries must be an integer between 0 and 3")
         self.read_retries = read_retries
         self._sleep = sleep
+        if research_token is not None and (
+            not research_token.strip() or any(ord(char) < 32 for char in research_token)
+        ):
+            raise ValueError("WARDEN research token is invalid")
+        self._research_token = research_token.strip() if research_token else None
         self._api_version: str | None = None
         self._health_ok: bool | None = None
         self._openapi_summary_cache: dict[str, Any] | None = None
@@ -137,7 +145,10 @@ class WardenKernelClient:
         try:
             timeout = float(os.environ.get("AGENTGUARD_WARDEN_TIMEOUT", "15"))
             retries = int(os.environ.get("AGENTGUARD_WARDEN_READ_RETRIES", "0"))
-            return cls(base_url, timeout=timeout, transport=transport, read_retries=retries)
+            return cls(
+                base_url, timeout=timeout, transport=transport, read_retries=retries,
+                research_token=os.environ.get("AGENTGUARD_WARDEN_RESEARCH_TOKEN"),
+            )
         except ValueError:
             raise WardenKernelError(
                 "Invalid WARDEN connection configuration",
@@ -328,6 +339,21 @@ class WardenKernelClient:
             # versioned schema for it, path presence alone cannot enable execution.
             feature_state[name] = "unsupported" if not matching else "unknown"
 
+        audit_schema = component_schemas.get("AuditRequestSchema")
+        audit_properties = audit_schema.get("properties") if isinstance(audit_schema, dict) else None
+        research_fields_available = isinstance(audit_properties, dict) and {
+            "research_protocol_ref", "study_arm_ref",
+        }.issubset(audit_properties)
+        artifact_path = "/v1/artifacts/{artifact_id}/content"
+        artifact_operation = path_methods.get(artifact_path, {}).get("get")
+        artifact_responses = artifact_operation.get("responses") if isinstance(artifact_operation, dict) else None
+        artifact_media_types: set[str] = set()
+        if isinstance(artifact_responses, dict):
+            for response in artifact_responses.values():
+                content = response.get("content") if isinstance(response, dict) else None
+                if isinstance(content, dict):
+                    artifact_media_types.update(str(value) for value in content)
+
         canonical = json.dumps(
             schema, ensure_ascii=False, sort_keys=True, separators=(",", ":"), allow_nan=False,
         ).encode("utf-8")
@@ -341,6 +367,10 @@ class WardenKernelClient:
             },
             "missing_contract_items": missing,
             "compatible": not missing,
+            "research_request_fields_available": research_fields_available,
+            "artifact_content_operation_available": isinstance(artifact_operation, dict),
+            "artifact_content_media_types": sorted(artifact_media_types),
+            "artifact_content_media_type_compatible": "application/octet-stream" in artifact_media_types,
             **feature_state,
         }
         self._openapi_summary_cache = summary
@@ -443,21 +473,86 @@ class WardenKernelClient:
                 "AgentGuard audit request does not match the WARDEN v1 schema",
                 code="WARDEN_BAD_REQUEST",
             ) from None
+        research = bool(validated_payload.get("research_protocol_ref") or validated_payload.get("study_arm_ref"))
+        headers = None
+        if research:
+            summary = self.openapi_summary()
+            if summary.get("research_request_fields_available") is not True:
+                raise WardenKernelError(
+                    "WARDEN does not publish the paired research reference fields",
+                    code="WARDEN_RESEARCH_CONTRACT_UNAVAILABLE",
+                )
+            headers = self._research_headers()
         return self._public_plan(
-            self._request("POST", "/v1/audit-plans", validated_payload), "/v1/audit-plans"
+            self._request("POST", "/v1/audit-plans", validated_payload, extra_headers=headers),
+            "/v1/audit-plans",
         )
 
     def get_audit_plan(self, plan_id: str) -> dict[str, Any]:
         path = f"/v1/audit-plans/{quote(plan_id, safe='')}"
         return self._public_plan(self._request("GET", path), path)
 
-    def start_run(self, plan_id: str) -> dict[str, Any]:
+    def start_run(self, plan_id: str, *, research: bool = False) -> dict[str, Any]:
         self._require_public_contract()
         if not isinstance(plan_id, str) or not plan_id.strip():
             raise WardenKernelError("WARDEN run request is missing plan_id", code="WARDEN_BAD_REQUEST")
+        headers = None
+        if research:
+            if self.openapi_summary().get("research_request_fields_available") is not True:
+                raise WardenKernelError(
+                    "WARDEN does not publish the paired research reference fields",
+                    code="WARDEN_RESEARCH_CONTRACT_UNAVAILABLE",
+                )
+            headers = self._research_headers()
         return self._expect_run(
-            self._request("POST", "/v1/runs", {"plan_id": plan_id}), "/v1/runs"
+            self._request("POST", "/v1/runs", {"plan_id": plan_id}, extra_headers=headers),
+            "/v1/runs",
         )
+
+    @property
+    def research_token_configured(self) -> bool:
+        return self._research_token is not None
+
+    def _research_headers(self) -> dict[str, str]:
+        if self._research_token is None:
+            raise WardenKernelError(
+                "WARDEN research token is not configured", code="WARDEN_RESEARCH_TOKEN_MISSING",
+            )
+        return {"Authorization": f"Bearer {self._research_token}"}
+
+    def read_public_artifact(
+        self, artifact_id: str, expected_sha256: str, *, max_bytes: int = _MAX_ARTIFACT_BYTES,
+    ) -> bytes:
+        """Read one bounded public-summary artifact and verify its content digest.
+
+        This remains fail-closed while the published WARDEN artifact response
+        media type disagrees with the runtime contract.
+        """
+        if not isinstance(artifact_id, str) or not re.fullmatch(
+            r"public-summary-[A-Za-z0-9][A-Za-z0-9._:-]{0,191}", artifact_id,
+        ):
+            raise WardenKernelError("WARDEN artifact ID is not an approved public summary", code="WARDEN_ARTIFACT_NOT_PUBLIC")
+        if not isinstance(expected_sha256, str) or not re.fullmatch(r"[0-9a-f]{64}", expected_sha256):
+            raise WardenKernelError("Expected artifact SHA-256 is invalid", code="WARDEN_BAD_REQUEST")
+        if type(max_bytes) is not int or not 1 <= max_bytes <= _MAX_ARTIFACT_BYTES:
+            raise WardenKernelError("Artifact byte limit must be between 1 and 1048576", code="WARDEN_BAD_REQUEST")
+        summary = self._require_public_contract()
+        if summary.get("artifact_content_operation_available") is not True:
+            raise WardenKernelError("WARDEN artifact content operation is unavailable", code="WARDEN_ARTIFACT_READ_UNAVAILABLE")
+        if summary.get("artifact_content_media_type_compatible") is not True:
+            raise WardenKernelError(
+                "WARDEN artifact response media type does not match the binary reader contract",
+                code="WARDEN_ARTIFACT_MEDIA_TYPE_MISMATCH",
+            )
+        headers = self._research_headers()
+        path = f"/v1/artifacts/{quote(artifact_id, safe='')}/content"
+        raw = self._request(
+            "GET", path, extra_headers=headers, accept="application/octet-stream",
+            parse_json=False, max_response_bytes=max_bytes,
+        )
+        if not isinstance(raw, bytes) or hashlib.sha256(raw).hexdigest() != expected_sha256:
+            raise WardenKernelError("WARDEN artifact content SHA-256 does not match", code="WARDEN_ARTIFACT_HASH_MISMATCH")
+        return raw
 
     def get_run(self, run_id: str) -> dict[str, Any]:
         path = f"/v1/runs/{quote(run_id, safe='')}"
@@ -511,7 +606,15 @@ class WardenKernelClient:
         return result
 
     def _request(
-        self, method: str, path: str, payload: Mapping[str, Any] | None = None
+        self,
+        method: str,
+        path: str,
+        payload: Mapping[str, Any] | None = None,
+        *,
+        extra_headers: Mapping[str, str] | None = None,
+        accept: str = "application/json",
+        parse_json: bool = True,
+        max_response_bytes: int = _MAX_RESPONSE_BYTES,
     ) -> Any:
         body = None if payload is None else json.dumps(
             payload, ensure_ascii=False, separators=(",", ":")
@@ -521,7 +624,10 @@ class WardenKernelClient:
             try:
                 status, raw = self._transport(
                     method, self.base_url + path,
-                    {"Accept": "application/json", "Content-Type": "application/json"},
+                    {
+                        "Accept": accept, "Content-Type": "application/json",
+                        **dict(extra_headers or {}),
+                    },
                     body, self.timeout,
                 )
             except WardenKernelError as exc:
@@ -545,8 +651,10 @@ class WardenKernelClient:
             raise WardenKernelError(
                 f"WARDEN API rejected request (HTTP {status})", status_code=status, code=code,
             )
-        if len(raw) > _MAX_RESPONSE_BYTES:
+        if len(raw) > max_response_bytes:
             raise WardenKernelError("WARDEN response exceeds size limit", code="WARDEN_BAD_RESPONSE")
+        if not parse_json:
+            return raw
         try:
             value = json.loads(
                 raw.decode("utf-8"), parse_constant=_invalid_constant,

@@ -87,6 +87,156 @@ def test_study_api_rejects_unregistered_endpoint(tmp_path, monkeypatch):
         assert response.json()["detail"]["error"] == "STUDY_ANALYSIS_INVALID"
 
 
+def test_study_api_idempotency_pagination_and_measured_gate(tmp_path, monkeypatch):
+    monkeypatch.setenv("AGENTGUARD_OPERATOR_API_TOKEN", "study-operator")
+    headers = {"X-AgentGuard-Operator-Token": "study-operator"}
+    with TestClient(create_app(data_dir=tmp_path / "data")) as client:
+        payload = registration_payload()
+        first = client.post(
+            "/v1/studies", json=payload,
+            headers={**headers, "Idempotency-Key": "study-reg-1"},
+        )
+        replay = client.post(
+            "/v1/studies", json=payload,
+            headers={**headers, "Idempotency-Key": "study-reg-1"},
+        )
+        assert first.status_code == replay.status_code == 201
+        assert first.json()["study_id"] == replay.json()["study_id"]
+        conflict = client.post(
+            "/v1/studies", json={**payload, "seed": 99},
+            headers={**headers, "Idempotency-Key": "study-reg-1"},
+        )
+        assert conflict.status_code == 409
+        assert conflict.json()["detail"]["error"] == "IDEMPOTENCY_CONFLICT"
+
+        for seed in (20, 21):
+            client.post("/v1/studies", json={**payload, "seed": seed}, headers=headers)
+        page = client.get(
+            "/v1/studies?limit=2&offset=0&sort_by=title&sort_order=asc", headers=headers,
+        ).json()
+        assert page["total"] == 3 and len(page["items"]) == 2
+        assert page["next_offset"] == 2
+        assert page["sort_by"] == "title" and page["sort_order"] == "asc"
+        tail = client.get("/v1/studies?limit=2&offset=2", headers=headers).json()
+        assert len(tail["items"]) == 1 and tail["next_offset"] is None
+        filtered = client.get(
+            "/v1/studies?track=live_steganography", headers=headers,
+        ).json()
+        assert filtered["total"] == 0 and filtered["track"] == "live_steganography"
+
+        study_id = first.json()["study_id"]
+        analysis_headers = {**headers, "Idempotency-Key": "analysis-key-1"}
+        analysis = client.post(
+            f"/v1/studies/{study_id}/analyses", json=analysis_payload(), headers=analysis_headers,
+        )
+        analysis_replay = client.post(
+            f"/v1/studies/{study_id}/analyses", json=analysis_payload(), headers=analysis_headers,
+        )
+        assert analysis.status_code == analysis_replay.status_code == 201
+        assert analysis.json()["analysis_id"] == analysis_replay.json()["analysis_id"]
+        analysis_conflict_payload = analysis_payload()
+        analysis_conflict_payload["permutation_draws"] = 2000
+        analysis_conflict = client.post(
+            f"/v1/studies/{study_id}/analyses", json=analysis_conflict_payload,
+            headers=analysis_headers,
+        )
+        assert analysis_conflict.status_code == 409
+        assert analysis_conflict.json()["detail"]["error"] == "IDEMPOTENCY_CONFLICT"
+        analysis_page = client.get(
+            f"/v1/studies/{study_id}/analyses?limit=1&offset=0&evidence_mode=synthetic", headers=headers,
+        ).json()
+        assert analysis_page["total"] == 1 and analysis_page["next_offset"] is None
+        assert analysis_page["evidence_mode"] == "synthetic"
+
+        measured = analysis_payload()
+        measured["evidence_mode"] = "measured"
+        blocked = client.post(
+            f"/v1/studies/{study_id}/analyses", json=measured, headers=headers,
+        )
+        assert blocked.status_code == 422
+        assert blocked.json()["detail"]["error"] == "ARTIFACT_CONTENT_NOT_VERIFIED"
+
+
+def test_study_analysis_script_replay_stays_separate_from_synthetic_and_observed(tmp_path, monkeypatch):
+    monkeypatch.setenv("AGENTGUARD_OPERATOR_API_TOKEN", "study-operator")
+    headers = {"X-AgentGuard-Operator-Token": "study-operator"}
+    with TestClient(create_app(data_dir=tmp_path / "data")) as client:
+        study = client.post("/v1/studies", json=registration_payload(), headers=headers).json()
+        replay = analysis_payload()
+        replay["evidence_mode"] = "script_replay"
+        response = client.post(
+            f"/v1/studies/{study['study_id']}/analyses", json=replay, headers=headers,
+        )
+    assert response.status_code == 201, response.text
+    assert response.json()["source_validation"] == "script_replay"
+    assert response.json()["causal_claim_status"] == "not_assessed"
+
+
+def test_study_and_analysis_idempotency_recover_after_api_restart(tmp_path, monkeypatch):
+    monkeypatch.setenv("AGENTGUARD_OPERATOR_API_TOKEN", "study-operator")
+    headers = {
+        "X-AgentGuard-Operator-Token": "study-operator",
+        "Idempotency-Key": "restart-study-key",
+    }
+    data_dir = tmp_path / "persistent-data"
+    with TestClient(create_app(data_dir=data_dir)) as client:
+        study = client.post("/v1/studies", json=registration_payload(), headers=headers).json()
+        analysis_headers = {**headers, "Idempotency-Key": "restart-analysis-key"}
+        analysis = client.post(
+            f"/v1/studies/{study['study_id']}/analyses", json=analysis_payload(),
+            headers=analysis_headers,
+        ).json()
+
+    with TestClient(create_app(data_dir=data_dir)) as restarted:
+        study_replay = restarted.post(
+            "/v1/studies", json=registration_payload(), headers=headers,
+        )
+        analysis_replay = restarted.post(
+            f"/v1/studies/{study['study_id']}/analyses", json=analysis_payload(),
+            headers=analysis_headers,
+        )
+        history = restarted.get(
+            f"/v1/studies/{study['study_id']}/analyses", headers=headers,
+        ).json()
+    assert study_replay.status_code == analysis_replay.status_code == 201
+    assert study_replay.json()["study_id"] == study["study_id"]
+    assert analysis_replay.json()["analysis_id"] == analysis["analysis_id"]
+    assert history["total"] == 1
+
+
+def test_research_warden_workflow_requires_operator_or_approval_before_remote_lookup(tmp_path, monkeypatch):
+    for name in (
+        "AGENTGUARD_API_TOKEN", "AGENTGUARD_OPERATOR_API_TOKEN", "AGENTGUARD_APPROVAL_TOKEN",
+        "AGENTGUARD_WARDEN_URL", "AGENTGUARD_WARDEN_RESEARCH_TOKEN",
+    ):
+        monkeypatch.delenv(name, raising=False)
+    payload = {
+        "request_id": "study-run-1", "contract_id": "contract-1", "model_id": "model-1",
+        "runtime_id": "runtime-1", "research_protocol_ref": "protocol:study-1",
+        "study_arm_ref": "study-1/treatment", "study_id": "study-1", "study_arm_id": "treatment",
+    }
+    with TestClient(create_app(data_dir=tmp_path / "data")) as client:
+        denied = client.post("/v1/workflows", json=payload)
+        assert denied.status_code == 403
+        assert denied.json()["detail"]["error"] == "OPERATOR_TOKEN_REQUIRED"
+        monkeypatch.setenv("AGENTGUARD_OPERATOR_API_TOKEN", "study-operator")
+        authorized_but_unconfigured = client.post(
+            "/v1/workflows", json=payload,
+            headers={"X-AgentGuard-Operator-Token": "study-operator"},
+        )
+    assert authorized_but_unconfigured.status_code == 503
+    assert authorized_but_unconfigured.json()["detail"]["error"] == "WARDEN_NOT_CONFIGURED"
+
+
+def test_research_write_rejects_oversized_declared_body_before_parsing(tmp_path):
+    with TestClient(create_app(data_dir=tmp_path / "data")) as client:
+        response = client.post(
+            "/v1/studies", content=b"", headers={"Content-Length": str(16 * 1024 * 1024 + 1)},
+        )
+    assert response.status_code == 413
+    assert response.json()["detail"]["error"] == "REQUEST_BODY_TOO_LARGE"
+
+
 def test_study_writes_require_operator_or_approval_and_are_audited(tmp_path, monkeypatch):
     monkeypatch.delenv("AGENTGUARD_API_TOKEN", raising=False)
     monkeypatch.delenv("AGENTGUARD_OPERATOR_API_TOKEN", raising=False)
@@ -126,6 +276,11 @@ def test_study_writes_require_operator_or_approval_and_are_audited(tmp_path, mon
         ]
         assert len(writes) == 4
         assert any(item["actor_role"] == "operator" and item["status_code"] == 201 for item in writes)
+        successful_writes = [item for item in writes if item["status_code"] == 201]
+        assert all(len(item["payload_sha256"]) == 64 for item in successful_writes)
+        assert {item["approval_status"] for item in successful_writes} == {
+            "approval_authorized", "operator_authorized",
+        }
 
 
 def test_research_capability_endpoint_is_read_only_and_reports_missing_warden(tmp_path, monkeypatch):

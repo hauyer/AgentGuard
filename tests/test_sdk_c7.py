@@ -108,6 +108,20 @@ def test_sdk_research_capability_and_study_methods_use_public_routes_and_auth_he
     assert calls[4].get_header("X-approval-token") == "approval-token"
 
 
+def test_sdk_study_list_filters_and_sorting_are_opt_in():
+    client, calls = _client({"items": [], "total": 0})
+    client.list_studies(limit=5, offset=2, track="live_steganography", sort_by="title", sort_order="asc")
+    client.list_study_analyses(
+        "study-1", limit=5, offset=2, evidence_mode="script_replay", sort_order="desc",
+    )
+    assert calls[0].endswith(
+        "/v1/studies?limit=5&offset=2&track=live_steganography&sort_by=title&sort_order=asc"
+    )
+    assert calls[1].endswith(
+        "/v1/studies/study-1/analyses?limit=5&offset=2&evidence_mode=script_replay&sort_order=desc"
+    )
+
+
 def test_sdk_compare_surfaces_not_comparable_responses():
     error = HTTPError(
         "http://127.0.0.1:8000/v1/experiments/compare", 200, "OK",

@@ -1,7 +1,9 @@
 """HTTP boundary security and bounded read retry behavior."""
 
+import hashlib
 import json
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from pathlib import Path
 from threading import Thread
 from urllib.error import URLError
 
@@ -155,6 +157,118 @@ def test_openapi_summary_validates_required_routes_and_request_schemas():
     assert summary["intervention_api_available"] == "unsupported"
     assert summary["artifact_access_available"] == "unsupported"
     assert calls == [("GET", "https://warden.example/openapi.json")]
+
+
+def _warden_rc1_openapi():
+    return json.loads(
+        (Path(__file__).parent / "fixtures" / "warden-openapi-0.4.0rc1.json").read_text(encoding="utf-8")
+    )
+
+
+def test_warden_rc1_contract_reports_research_fields_and_artifact_media_mismatch():
+    document = _warden_rc1_openapi()
+
+    def transport(method, url, headers, body, timeout):
+        return 200, json.dumps(document).encode()
+
+    summary = WardenKernelClient("https://warden.example", transport=transport).openapi_summary()
+    assert summary["compatible"] is True
+    assert summary["path_count"] == 9
+    assert summary["research_request_fields_available"] is True
+    assert summary["artifact_content_operation_available"] is True
+    assert summary["artifact_content_media_types"] == ["application/json"]
+    assert summary["artifact_content_media_type_compatible"] is False
+
+
+def test_research_plan_post_uses_bearer_token_only_after_paired_schema_check():
+    document = _warden_rc1_openapi()
+    calls = []
+
+    def transport(method, url, headers, body, timeout):
+        calls.append((method, url, dict(headers), json.loads(body) if body else None))
+        if url.endswith("/v1/health"):
+            return 200, json.dumps(HEALTH).encode()
+        if url.endswith("/openapi.json"):
+            return 200, json.dumps(document).encode()
+        return 200, json.dumps({"plan_id": "plan-research-1", "status": "planned", "blockers": []}).encode()
+
+    client = WardenKernelClient(
+        "https://warden.example", transport=transport, research_token="research-secret",
+    )
+    from agentguard.contracts.warden import WardenAuditRequest
+
+    request = WardenAuditRequest(
+        request_id="study-run-1", contract_id="contract-a", model_id="model-a",
+        runtime_id="runtime-a", research_protocol_ref="protocol:study-1",
+        study_arm_ref="study-1/treatment", study_id="study-1", study_arm_id="treatment",
+    )
+    result = client.create_audit_plan(request.to_warden_payload())
+    post = next(item for item in calls if item[0] == "POST")
+    assert result["plan_id"] == "plan-research-1"
+    assert post[2]["Authorization"] == "Bearer research-secret"
+    assert post[3]["research_protocol_ref"] == "protocol:study-1"
+    assert post[3]["study_arm_ref"] == "study-1/treatment"
+    assert "study_id" not in post[3] and "study_arm_id" not in post[3]
+
+
+def test_research_plan_without_token_and_artifact_media_mismatch_never_post_or_download():
+    document = _warden_rc1_openapi()
+    calls = []
+
+    def transport(method, url, headers, body, timeout):
+        calls.append((method, url))
+        if url.endswith("/v1/health"):
+            return 200, json.dumps(HEALTH).encode()
+        return 200, json.dumps(document).encode()
+
+    client = WardenKernelClient("https://warden.example", transport=transport)
+    from agentguard.contracts.warden import WardenAuditRequest
+
+    request = WardenAuditRequest(
+        request_id="study-run-1", contract_id="contract-a", model_id="model-a",
+        runtime_id="runtime-a", research_protocol_ref="protocol:study-1",
+        study_arm_ref="study-1/treatment",
+    )
+    with pytest.raises(WardenKernelError) as missing_token:
+        client.create_audit_plan(request.to_warden_payload())
+    assert missing_token.value.code == "WARDEN_RESEARCH_TOKEN_MISSING"
+    with pytest.raises(WardenKernelError) as media_mismatch:
+        client.read_public_artifact("public-summary-abc", "0" * 64)
+    assert media_mismatch.value.code == "WARDEN_ARTIFACT_MEDIA_TYPE_MISMATCH"
+    assert not any(method == "POST" or "/content" in url for method, url in calls)
+
+
+def test_public_artifact_read_is_bounded_and_hash_verified():
+    document = _warden_rc1_openapi()
+    document["paths"]["/v1/artifacts/{artifact_id}/content"]["get"]["responses"]["200"]["content"] = {
+        "application/octet-stream": {"schema": {"type": "string", "format": "binary"}},
+    }
+    payload = b"verified public summary"
+    calls = []
+
+    def transport(method, url, headers, body, timeout):
+        calls.append((method, url, dict(headers)))
+        if url.endswith("/v1/health"):
+            return 200, json.dumps(HEALTH).encode()
+        if url.endswith("/openapi.json"):
+            return 200, json.dumps(document).encode()
+        return 200, payload
+
+    client = WardenKernelClient(
+        "https://warden.example", transport=transport, research_token="read-secret",
+    )
+    result = client.read_public_artifact(
+        "public-summary-abc", hashlib.sha256(payload).hexdigest(), max_bytes=1024,
+    )
+    assert result == payload
+    method, url, headers = calls[-1]
+    assert method == "GET" and url.endswith("/v1/artifacts/public-summary-abc/content")
+    assert headers["Accept"] == "application/octet-stream"
+    assert headers["Authorization"] == "Bearer read-secret"
+
+    with pytest.raises(WardenKernelError) as too_large:
+        client.read_public_artifact("public-summary-abc", hashlib.sha256(payload).hexdigest(), max_bytes=1)
+    assert too_large.value.code == "WARDEN_BAD_RESPONSE"
 
 
 def test_list_audit_plans_uses_only_the_published_read_route():

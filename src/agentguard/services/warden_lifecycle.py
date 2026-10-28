@@ -413,7 +413,11 @@ class WardenLifecycleService:
             )
         if workflow_id and self.workflows:
             self.workflows.update(workflow_id, "run_submitting", context={"stage": "run_submitting", "preflight": preflight, "plan": plan}, detail={"operation": "start_run", "plan_id": plan_id})
-        run = self.client.start_run(plan_id)
+        run = (
+            self.client.start_run(plan_id, research=True)
+            if request.research_protocol_ref is not None
+            else self.client.start_run(plan_id)
+        )
         run_id = run.get("run_id")
         if not isinstance(run_id, str) or not run_id.strip():
             raise WardenKernelError(
@@ -852,6 +856,37 @@ class WardenLifecycleService:
         capabilities = self.client.capabilities()
         contracts = self.client.contracts()
         blockers: list[str] = []
+        if request.research_protocol_ref is not None:
+            if openapi.get("research_request_fields_available") is not True:
+                blockers.append("WARDEN_RESEARCH_REQUEST_FIELDS_UNAVAILABLE")
+            if not bool(getattr(self.client, "research_token_configured", False)):
+                blockers.append("WARDEN_RESEARCH_TOKEN_MISSING")
+            capability_values = {
+                value.casefold()
+                for item in capabilities
+                for value in (item.get("capabilities", []) if isinstance(item.get("capabilities"), list) else [])
+                if isinstance(value, str)
+            }
+            research_allowlist = any(
+                value in {"research_stage_allowlist", "research_stages", "research_stage_mapping"}
+                or value.startswith("research_stage:")
+                for value in capability_values
+            )
+            if not research_allowlist:
+                blockers.append("WARDEN_RESEARCH_STAGE_ALLOWLIST_NOT_ADVERTISED")
+            dispatcher = next(
+                (item for item in capabilities if item.get("component_id") == "run.dispatcher"),
+                None,
+            )
+            durable_dispatch = bool(
+                isinstance(dispatcher, Mapping)
+                and dispatcher.get("available") is True
+                and capability_values.intersection({
+                    "durable_run_dispatch", "persistent_run", "cross_restart_run_lookup",
+                })
+            )
+            if not durable_dispatch:
+                blockers.append("WARDEN_DURABLE_DISPATCHER_NOT_ADVERTISED")
         if request.contract_id not in contracts:
             blockers.append(f"THREAT_CONTRACT_NOT_AVAILABLE:{request.contract_id}")
 

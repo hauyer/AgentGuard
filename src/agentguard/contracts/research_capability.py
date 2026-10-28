@@ -34,8 +34,12 @@ class ResearchCapabilityItem(ContractModel):
     status: ResearchCapabilityState
     blockers: list[str] = Field(default_factory=list, max_length=16)
     source_version: str | None = Field(default=None, max_length=128)
+    source_api_version: str | None = Field(default=None, max_length=64)
     advertised_by_warden: bool | None = None
     observed_at: str = Field(min_length=1)
+    evidence_refs: list[str] = Field(default_factory=list, max_length=16)
+    operation_id: str | None = Field(default=None, max_length=256)
+    contract_ref: str | None = Field(default=None, max_length=512)
 
 
 class ResearchCapabilityReport(ContractModel):

@@ -36,7 +36,7 @@ def test_advertised_capability_without_reviewed_rest_operation_stays_blocked():
     })
     item = next(item for item in report.capabilities if item.capability == "message_block")
     assert item.status == "SUPPORTED_BUT_BLOCKED"
-    assert item.blockers == ["WARDEN_RESEARCH_OPERATION_CONTRACT_UNREVIEWED"]
+    assert item.blockers == ["WARDEN_RESEARCH_OPERATION_UNREVIEWED"]
     assert item.advertised_by_warden is True
 
 
@@ -51,4 +51,40 @@ def test_unavailable_kernel_does_not_leak_raw_exception_or_host():
     assert "internal.example" not in serialized
     assert "secret traceback" not in serialized
     assert all(item["status"] == "UNAVAILABLE" for item in report["capabilities"])
+
+
+def test_warden_rc1_routes_are_supported_but_blocked_until_runtime_dispatcher_and_artifacts_ready():
+    report = build_research_capability_report({
+        "status": "ready", "kernel_version": "0.4.0rc1", "api_version": "v1",
+        "research_token_configured": False, "runtime_available": False,
+        "capabilities": [
+            {"component_id": "agent.runtime", "available": False, "capabilities": []},
+            {"component_id": "activation.backend", "available": False, "capabilities": []},
+        ],
+        "capability_statuses": {
+            "persistent_run_available": "unsupported", "artifact_reader_available": "unsupported",
+        },
+        "openapi_summary": {
+            "compatible": True, "service_version": "0.4.0rc1", "path_count": 9,
+            "research_request_fields_available": True,
+            "artifact_content_operation_available": True,
+            "artifact_content_media_type_compatible": False,
+            "path_methods": {
+                "/v1/audit-plans": ["get", "post"],
+                "/v1/runs": ["get", "post"],
+                "/v1/runs/{run_id}": ["get"],
+                "/v1/artifacts/{artifact_id}/content": ["get"],
+            },
+        },
+        "blockers": [],
+    })
+    by_name = {item.capability: item for item in report.capabilities}
+    assert by_name["research_dataset_mechanism"].status == "SUPPORTED_BUT_BLOCKED"
+    assert "WARDEN_RESEARCH_STAGE_ALLOWLIST_NOT_ADVERTISED" in by_name["research_dataset_mechanism"].blockers
+    assert "WARDEN_DURABLE_DISPATCHER_NOT_ADVERTISED" in by_name["persistent_run"].blockers
+    assert by_name["artifact_content_read"].status == "SUPPORTED_BUT_BLOCKED"
+    assert "WARDEN_ARTIFACT_OPENAPI_MEDIA_TYPE_MISMATCH" in by_name["artifact_content_read"].blockers
+    assert by_name["message_block"].status == "UNSUPPORTED"
+    assert by_name["research_dataset_mechanism"].source_api_version == "v1"
+    assert by_name["research_dataset_mechanism"].contract_ref == "WARDEN:POST /v1/audit-plans + POST /v1/runs"
 

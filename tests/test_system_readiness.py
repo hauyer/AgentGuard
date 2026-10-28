@@ -109,7 +109,9 @@ def test_ready_kernel_reports_layers_without_promoting_health():
         "intervention_execution", "evidence_access", "api_reachable", "kernel_available",
         "threat_contracts_available", "runtime_available", "probe_resources_available",
         "sae_resources_available", "whitebox_workflow_api_available",
-        "intervention_api_available", "artifact_access_available",
+            "intervention_api_available", "artifact_access_available",
+            "research_execution_available", "persistent_run_available",
+            "artifact_reader_available",
     }
     assert checks["agentguard_api"].status == "available"
     assert checks["agentguard_api"].capability_version
