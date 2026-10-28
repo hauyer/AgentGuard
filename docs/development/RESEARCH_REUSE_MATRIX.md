@@ -1,5 +1,7 @@
 # AgentGuard 研究开发复用矩阵
 
+> 本文前面的基线表是 1.1.0rc3 历史记录。当前版本补记见文末“2026-10-28 rc5”，当前 WARDEN 合同详见 `docs/integration/WARDEN_RESEARCH_CONTRACT.md`。
+
 ## 基线
 
 - 核查工作树：`feature/i-reliability-and-live-validation`，HEAD `a5d5603cc653e17025038f3eb0606bc28d8bbd70`；工作树干净。
@@ -33,3 +35,11 @@
 - `compat` 下旧 Probe/paired/whitebox 接口是离线兼容实现，不表示 WARDEN 执行或可信因果证据。
 - 508 项基线通过、6 项跳过；跳过项中 5 项因 `AGENTGUARD_LIVE_WARDEN_URL` 未设置，1 项因可选 PyTorch 未安装。真实 WARDEN/模型实验为 `NOT_RUN`。
 - 真实四类干预、Receiver 结果、上游工件字节读取与签名均依赖 WARDEN 公共合同；在此之前不得建成功 RemoteRun、不得填充真实结果，也不得从 synthetic 生成 live/causal 声明。
+
+## 2026-10-28 rc5 实施补记
+
+- AgentGuard 版本为 `1.1.0rc5`，API 实现快照 `d85aa97e1566e2c50816f2ade3129235266ec704`；Study 注册和分析仍复用原 SQLite `ResearchRegistry`，增加可选 `Idempotency-Key`（同 key/同请求重放原资源；同 key/异请求 `409 IDEMPOTENCY_CONFLICT`）、稳定分页和持久 actor/request hash/resource 状态。没有新建数据库或统计引擎。
+- WARDEN 请求生命周期仍唯一使用 `WardenKernelClient`、`WardenLifecycleService` 和既有 `WardenWorkflowStore`。研究 `study_id → study_arm_id` 保存在现有工作流请求记录中；WARDEN plan/run ID 只从真实返回保存。未创建 WARDEN 不支持的映射或结果。
+- `StudyRegistrationRequest` 冻结 dataset version、WARDEN contract/runtime/mode/capture targets、approval requirements 和 `supersedes_study_id`。`live_steganography` 预注册必须提供 dataset version 与 WARDEN 执行合同。现有研究统计逻辑继续使用 `core/study_analysis.py` 与 `core/statistics.py`。
+- `evidence_mode=measured` 因当前没有可信 WARDEN run/artifact 导入合同而返回 `ARTIFACT_CONTENT_NOT_VERIFIED`；调用方数组的 `observed` 仍为 `unverified`，`script_replay` 与 `synthetic_only` 分开标记。显著性不改变因果状态。
+- WARDEN 合同依赖固定于 `2e121c5c8da41dc4ccbaa72418ecaa3698c2428e` / `0.4.0rc1`；artifact media mismatch、默认 Runtime/dispatcher/研究阶段/reader 阻塞均已进入诊断。真实 WARDEN 和模型调用为 `NOT_RUN`。

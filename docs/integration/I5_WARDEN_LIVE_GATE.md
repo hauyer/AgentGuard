@@ -6,6 +6,11 @@
 WARDEN 源码并运行本地软件/Stub 测试，没有向真实 WARDEN 提交计划或运行，没有真实模型
 调用，也没有产生真实新增证据。
 
+2026-10-28 对固定 WARDEN 0.4.0rc1 合同的最新核验见
+[`I5_WARDEN_RESEARCH_GATE_2026-10-28.md`](I5_WARDEN_RESEARCH_GATE_2026-10-28.md)；
+固定源码与真实能力判断见 [`WARDEN_RESEARCH_CONTRACT.md`](WARDEN_RESEARCH_CONTRACT.md)。
+本次结论仍为 **BLOCKED / NOT_RUN**，并未通过放宽门控获得绿色状态。
+
 ## 2026-10-26 rc3 候选复核
 
 候选版本为 `1.1.0rc3`，AgentGuard 提交为

@@ -1,5 +1,7 @@
 # WARDEN 接口能力矩阵
 
+> 本文件前面的 0.3.0/rc3 和 rc4 条目是历史快照。当前合同与能力判断请看下方 2026-10-28 rc5 补记和 [`WARDEN_RESEARCH_CONTRACT.md`](WARDEN_RESEARCH_CONTRACT.md)。
+
 **核查日期：** 2026-10-26  
 **AgentGuard Git 基线：** `9a8ee1f5e78a0b254c17ea66ac5b140aa7e1e89a`，版本 `1.1.0rc3`；[三版本 CI](https://github.com/hauyer/AgentGuard/actions/runs/40336215846) 通过
 **WARDEN 源码基线：** `381fc08170386a2dbd4c2ded3f0f724f871e9636`（官方仓库 `main`，版本 `0.3.0`）
@@ -29,7 +31,24 @@ operation object 全部保持相同。候选能力列表来源于开发指南，
 本表是对固定 WARDEN 源码和契约测试的只读核对，不是运行中服务的 OpenAPI 导出。在线
 服务版本、配置、模型与资源仍为 `unknown`，不能用本表解除真实服务或模型验收阻塞。
 
-## 公开 REST 路由
+## AgentGuard rc5 / WARDEN 0.4.0rc1 复核（2026-10-28）
+
+AgentGuard 候选版本为 `1.1.0rc5`。固定 WARDEN `main` 提交为
+[`2e121c5c8da41dc4ccbaa72418ecaa3698c2428e`](https://github.com/Xinyuan20061/WARDEN/commit/2e121c5c8da41dc4ccbaa72418ecaa3698c2428e)，版本 `0.4.0rc1`；固定 OpenAPI 3.1.0、9 paths，原始 SHA-256
+`e4af2ac3ee880bbef26f4c4c69ce4808340992d7d8cef374dcecd95197fb533a`，规范化 SHA-256
+`8fc591e7179a0429dbbd55de32c9e6200f872b62fb6ab57379e7c4769b746015`。源矩阵及精确阻塞项见
+[`WARDEN_RESEARCH_CONTRACT.md`](WARDEN_RESEARCH_CONTRACT.md) 和
+[`I5_WARDEN_RESEARCH_GATE_2026-10-28.md`](I5_WARDEN_RESEARCH_GATE_2026-10-28.md)。
+
+rc1 公开 plan/run 研究引用字段和 artifact content GET 已纳入适配器合同检查。默认组合没有广告
+durable dispatcher、研究阶段白名单或 artifact reader 就绪；artifact OpenAPI 响应媒体类型与二进制
+运行时响应不一致。研究任务因此保持 `SUPPORTED_BUT_BLOCKED`，未出现 `SUPPORTED_AND_READY`。
+隔离、消息干预、LEACE、activation/residual patch、Probe training 仍为 `UNSUPPORTED`。
+
+当前环境没有 AgentGuard/WARDEN URL、Operator/API/research token；Live smoke、远端 POST、重启对账、
+模型运行和真实 artifact 字节校验均为 `NOT_RUN`。本地夹具测试不是 Live 通过。
+
+## 历史：WARDEN 0.3.0 公开 REST 路由（2026-10-26）
 
 来源：[WARDEN `app.py`](https://github.com/Xinyuan20061/WARDEN/blob/381fc08170386a2dbd4c2ded3f0f724f871e9636/warden/interface/api/app.py)、
 [HTTP Schema](https://github.com/Xinyuan20061/WARDEN/blob/381fc08170386a2dbd4c2ded3f0f724f871e9636/warden/interface/api/schemas.py)、

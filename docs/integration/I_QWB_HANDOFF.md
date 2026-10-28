@@ -5,39 +5,59 @@
 | 项目 | 固定值 |
 | --- | --- |
 | AgentGuard 分支 | `feature/i-reliability-and-live-validation` |
-| API 实现快照 SHA | `9d1c1dc9331f4ce168aab29b860c94b9d65a8321` |
-| 包版本 | `1.1.0rc4` |
-| CI | [GitHub Actions run 40665395993](https://github.com/hauyer/AgentGuard/actions/runs/40665395993)：Python 3.11、3.12、3.13 全部通过 |
+| API 实现快照 SHA | `d85aa97e1566e2c50816f2ade3129235266ec704` |
+| 包版本 | `1.1.0rc5` |
+| CI | 本轮提交后 GitHub Actions：`NOT_RUN`（本轮不推送） |
 | Python 支持范围 | `>=3.11`；CI 矩阵为 3.11、3.12、3.13 |
-| OpenAPI 文件 | [`openapi-1.1.0rc4.json`](openapi-1.1.0rc4.json) |
-| rc3→rc4 差异 | [`openapi-1.1.0rc4.diff.md`](openapi-1.1.0rc4.diff.md) |
-| OpenAPI 文件 SHA-256（UTF-8、LF 换行） | `f2b802fd7928bf2701bfbc65e4cf655c8f801a465fe6dd853f938e9d8f75b978` |
-| 规范化运行时 OpenAPI SHA-256 | `09b21ab3cd1e95dd3073142e4274b387ffb43689437be3fa60ad0939403f7894` |
+| OpenAPI 文件 | [`openapi-1.1.0rc5.json`](openapi-1.1.0rc5.json) |
+| rc4→rc5 差异 | [`openapi-1.1.0rc5.diff.md`](openapi-1.1.0rc5.diff.md) |
+| OpenAPI 文件 SHA-256（UTF-8、LF 换行） | `605a9cd95f0edeedd4d7235fe46a4a6d8c99ffeb4aab00e2e7f51b2addc2a6b7` |
+| 规范化运行时 OpenAPI SHA-256 | `b7722098b9adac87386a62325b19240e5c7024f704d7024a38ad3a2fb6ca8acd` |
 | OpenAPI 版本 | `3.1.0` |
 | OpenAPI 路径数 | `87` |
 
-API 实现快照 SHA 标识本次 rc4 实现提交；后续纯文档提交不改变该代码快照。文件 SHA 按 UTF-8 编码和 LF 换行计算，以便不同操作系统得到相同结果。发布构建应通过
+本轮代码提交 SHA 标识 rc5 API 实现；后续纯文档提交不改变该代码快照。文件 SHA 按 UTF-8 编码和 LF 换行计算，以便不同操作系统得到相同结果。发布构建应通过
 `AGENTGUARD_BUILD_COMMIT` 注入实际 40 位 commit SHA；本地
 开发构建会明确返回 `unknown`。`GET /v1/system/identity` 返回软件/API 版本、提交身份、
 能力状态和规范化 OpenAPI SHA。规范化算法为 UTF-8 JSON、键排序、紧凑分隔符、不转义
 Unicode，再计算 SHA-256。部署应分别核验快照文件 SHA 与运行时身份返回值。
 
-rc4 增加只读 `GET /v1/research/capabilities`；OpenAPI 共 87 条路径。公开 Schema 的 `CausalValidationCriteria`
+rc4 基线增加只读 `GET /v1/research/capabilities`；OpenAPI 共 87 条路径。公开 Schema 的 `CausalValidationCriteria`
 升级至 0.3，加入预注册方案、独立案例家族、sham/无关位置负对照、随机/置换基线、前后输出、
 执行日志、干预参数、评价器、统计结果和内容寻址工件引用。`PairedExperimentDesign` 增加
 真实执行所需的预注册条件（paired schema 兼容旧 0.1 数据并默认使用 0.2）。GovernedEvidence
 增加 provenance 字段。结构完整只使报告通过合同检查，不能替代对真实工件内容、执行来源和独立审查的验证；
 具体阻塞见 [`I5_PAIRED_CAUSAL_GATE.md`](I5_PAIRED_CAUSAL_GATE.md)。
 
+## rc5 冻结补充（2026-10-28）
+
+rc5 保持 87 paths / 99 operations，不新增或删除路径；QWB-App 固定的 33 个 operation object
+逐项保持一致。四个 Study operation（注册、列表、分析、分析历史）扩展了研究数据合同：
+预注册包括 dataset version、WARDEN contract/runtime/mode、capture targets、审批要求与
+supersedes 引用；Study/分析列表增加白名单排序、分页和 track/evidence-mode 过滤。写入支持可选
+`Idempotency-Key`，同键同请求重放原资源，同键异请求返回 `409 IDEMPOTENCY_CONFLICT`；声明的
+`Content-Length` 超过 16 MiB 时返回 413。schema 详情和响应错误见 rc5 OpenAPI 与差异文件。
+
+`evidence_mode=measured` 在真实工件字节与来源尚未验证时返回
+`422 ARTIFACT_CONTENT_NOT_VERIFIED`；`script_replay` 与 `synthetic`、`observed` 保持分离。
+RQ3 报告成本单位及预注册的 planned/completed/failed/blocked/not-run pair 计数；缺失成本、失败
+和未运行数据不会被填成零或推断为有效结果。Study/Arm 与 WARDEN 操作关联仅记录明确的研究引用，
+不会自行创建远端运行。
+
+WARDEN 固定合同详见
+[`WARDEN_RESEARCH_CONTRACT.md`](WARDEN_RESEARCH_CONTRACT.md)；当前真实接入审查和阻塞详见
+[`I5_WARDEN_RESEARCH_GATE_2026-10-28.md`](I5_WARDEN_RESEARCH_GATE_2026-10-28.md)。
+
 ## 研究能力、Study / Arm 与写权限
 
 `GET /v1/research/capabilities` 只读取 AgentGuard 对 WARDEN 的公开诊断，逐项返回提议研究能力的
 `SUPPORTED_AND_READY`、`SUPPORTED_BUT_BLOCKED`、`UNSUPPORTED`、`UNAVAILABLE` 或 `UNKNOWN`、
 观察时间、源版本与阻塞码。健康检查成功不会被解释成模型、Probe、GPU、干预或工件已就绪。
-未配置 WARDEN 时返回 `WARDEN_URL_NOT_CONFIGURED`；固定 WARDEN 0.3.0 对当前研究能力返回
-`WARDEN_RESEARCH_CAPABILITY_NOT_DECLARED`。此 GET 不提交 plan/run。
+未配置 WARDEN 时返回配置/连接类 blocker；固定 WARDEN 0.4.0rc1 的研究执行为
+`SUPPORTED_BUT_BLOCKED`，不就绪的能力明确带有缺少研究 token、默认持久 Dispatcher、研究阶段
+白名单、Runtime 或 artifact reader 等原因。此 GET 不提交 plan/run。
 
-已有 `/v1/studies` 仍负责不可变预注册，rc4 只在请求中增加可选字段：轨道
+`/v1/studies` 负责不可变预注册。rc4 起请求包括可选字段：轨道
 `mechanism_testbed`/`live_steganography`、协议与数据集引用、split SHA-256、模型/tokenizer/解码版本、
 标签语义、指标定义以及 baseline/treatment/sham/irrelevant/randomization arms。启用 `track` 时，
 这些冻结元数据和至少一个 baseline + treatment 必须完整。`registration_sha256` 覆盖整个冻结
@@ -56,7 +76,7 @@ RQ1 使用 preregistered endpoint 的现有配对/family-clustered bootstrap 与
 family-bootstrap Spearman 区间；RQ3 分开呈现 `SRR_ITT` 安全效应与 `NORMAL_UTILITY` 损失及 Pareto
 frontier，不压成一个总分。未运行或失败的 Arm 保留状态、null 指标和原因。caller-supplied 数组及
 artifact refs 不是独立来源证明：synthetic 报告为 `synthetic_only`，observed/measured 报告为
-`unverified`，因果状态不自动晋级。
+`unverified`；本版本 `measured` 请求会在进入分析前被拒绝，因果状态不会自动晋级。
 
 ## 路由
 
