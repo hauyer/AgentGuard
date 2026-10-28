@@ -34,3 +34,12 @@
 WARDEN 源码固定为 `381fc08170386a2dbd4c2ded3f0f724f871e9636` / v0.3.0。在线服务与在线 OpenAPI 未运行。其公开 REST 没有白盒实验提交/查询、干预执行、远端 POST 幂等、进程重启后的任务查询、受控工件内容下载或来源签名合同。AG-1/AG-2/AG-3/AG-5 的真实后端验收因此保持 `BLOCKED / NOT_RUN`；本地合同测试不得替代 Live 通过。
 
 完整文件/符号/调用者与复用决定见 [`RESEARCH_REUSE_MATRIX.md`](RESEARCH_REUSE_MATRIX.md)。
+
+## 本轮最终候选验收
+
+- AgentGuard rc4 实现快照：`9d1c1dc9331f4ce168aab29b860c94b9d65a8321`；分支：`feature/i-reliability-and-live-validation`。
+- 最终本地回归：`python -m pytest -q`，退出码 0，**524 passed, 6 skipped, 1 warning**。6 个跳过项仍是可选 PyTorch 测试和 5 个未配置 `AGENTGUARD_LIVE_WARDEN_URL` 的 Live 测试。
+- `ruff check .`、`python -m compileall -q src tests scripts`、`python scripts/audit_architecture.py --check` 和 `git diff --check` 均退出码 0。架构审计为 109 modules / 722 imports，0 boundary violations、0 dependency cycles；3 个既有 compat 下层导入仍限制在 compat。
+- 隔离 `python -m build` 因配置的 Tsinghua PyPI 镜像 TLS EOF 未能下载 hatchling；`python -m build --no-isolation` 使用本机已安装 hatchling 成功生成 sdist 与 wheel。推送后的 GitHub Actions 另在干净环境完成 build 与 wheel 安装验证。
+- GitHub Actions [run 40665395993](https://github.com/hauyer/AgentGuard/actions/runs/40665395993) 对该实现快照的 Python 3.11、3.12、3.13 全部成功，包括测试、构建、隔离 wheel 安装和 synthetic demo 检查。
+- WARDEN URL 未配置；上述任何本地或 CI 通过都不代表真实 WARDEN、真实模型或 Live 研究执行。AG-5 保持 `BLOCKED / NOT_RUN`。

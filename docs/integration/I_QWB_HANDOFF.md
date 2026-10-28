@@ -5,9 +5,9 @@
 | 项目 | 固定值 |
 | --- | --- |
 | AgentGuard 分支 | `feature/i-reliability-and-live-validation` |
-| API 实现快照 SHA | 本地 rc4 候选；提交后记录实现快照 commit |
+| API 实现快照 SHA | `9d1c1dc9331f4ce168aab29b860c94b9d65a8321` |
 | 包版本 | `1.1.0rc4` |
-| CI | 本地验收进行中；rc4 GitHub Actions 尚未运行 |
+| CI | [GitHub Actions run 40665395993](https://github.com/hauyer/AgentGuard/actions/runs/40665395993)：Python 3.11、3.12、3.13 全部通过 |
 | Python 支持范围 | `>=3.11`；CI 矩阵为 3.11、3.12、3.13 |
 | OpenAPI 文件 | [`openapi-1.1.0rc4.json`](openapi-1.1.0rc4.json) |
 | rc3→rc4 差异 | [`openapi-1.1.0rc4.diff.md`](openapi-1.1.0rc4.diff.md) |
@@ -16,7 +16,7 @@
 | OpenAPI 版本 | `3.1.0` |
 | OpenAPI 路径数 | `87` |
 
-API 实现快照 SHA 标识候选实现；文件 SHA 按 UTF-8 编码和 LF 换行计算，以便不同操作系统得到相同结果。发布构建应通过
+API 实现快照 SHA 标识本次 rc4 实现提交；后续纯文档提交不改变该代码快照。文件 SHA 按 UTF-8 编码和 LF 换行计算，以便不同操作系统得到相同结果。发布构建应通过
 `AGENTGUARD_BUILD_COMMIT` 注入实际 40 位 commit SHA；本地
 开发构建会明确返回 `unknown`。`GET /v1/system/identity` 返回软件/API 版本、提交身份、
 能力状态和规范化 OpenAPI SHA。规范化算法为 UTF-8 JSON、键排序、紧凑分隔符、不转义

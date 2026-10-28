@@ -1,6 +1,6 @@
 # AG-4：公开 API、SDK/MCP 与兼容门
 
-日期：2026-10-28。结论：**本地 rc4 合同/SDK/MCP 验收通过；外部 App smoke 和 GitHub CI `NOT_RUN`。**
+日期：2026-10-28。结论：**本地 rc4 合同/SDK/MCP 验收通过；GitHub CI 通过；外部 App smoke `NOT_RUN`。**
 
 ## OpenAPI 冻结
 
@@ -23,4 +23,5 @@
 | `pytest tests/test_qwb_pinned_openapi_compat.py` | 退出码 0；快照等于运行时 OpenAPI，87 paths，旧 App 33/33 相等，Study header/error schema 在位 |
 | `pytest tests/test_sdk_c7.py tests/test_mcp_boundary_a7.py` | 退出码 0；SDK 固定 URL/header，MCP 仍只走公开 API |
 | QWB-App 实时服务 smoke / App pin 更新 | `NOT_RUN`；App 仓库没有修改，旧 pin 不自动升级 |
-| rc4 GitHub Actions Python 3.11/3.12/3.13 | `NOT_RUN`；尚未推送本地候选 |
+| rc4 GitHub Actions Python 3.11/3.12/3.13 | [run 40665395993](https://github.com/hauyer/AgentGuard/actions/runs/40665395993)；3.11、3.12、3.13 全部成功，含测试、构建、隔离 wheel 安装和 synthetic demo 检查 |
+| 本地 `python -m build` | 隔离构建被配置的 Tsinghua PyPI 镜像 TLS EOF 阻断；`python -m build --no-isolation` 使用已安装 hatchling 成功生成 sdist 和 wheel |

@@ -2,6 +2,11 @@
 
 日期：2026-10-28。结论：**BLOCKED / NOT_RUN。没有把 Stub 或 synthetic 结果记作 Live 通过。**
 
+AgentGuard 实现快照 `9d1c1dc9331f4ce168aab29b860c94b9d65a8321` 的 GitHub Actions
+[run 40665395993](https://github.com/hauyer/AgentGuard/actions/runs/40665395993) 已在
+Python 3.11、3.12、3.13 全部通过。这是软件与合同 CI 结果，不是 WARDEN Live 验证，
+不解除本 Gate 的任何远端能力阻塞。
+
 | Live 验收 | 状态 | 原因 |
 |---|---|---|
 | WARDEN URL / 在线 OpenAPI | `NOT_RUN` | `AGENTGUARD_WARDEN_URL` 与 `AGENTGUARD_LIVE_WARDEN_URL` 未配置 |

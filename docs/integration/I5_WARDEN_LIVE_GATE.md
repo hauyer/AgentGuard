@@ -32,8 +32,12 @@ AgentGuard 的当前 API 实现快照与本文件对应；后续纯文档提交�
 
 ## 2026-10-28 rc4 研究能力和真实接入复核
 
-候选版本 `1.1.0rc4` 基于仓库基线 `a5d5603cc653e17025038f3eb0606bc28d8bbd70`；该
+候选版本 `1.1.0rc4` 的 API 实现快照为
+`9d1c1dc9331f4ce168aab29b860c94b9d65a8321`，基于仓库基线
+`a5d5603cc653e17025038f3eb0606bc28d8bbd70`；该
 候选的本地变更和固定 OpenAPI 见 [`openapi-1.1.0rc4.diff.md`](openapi-1.1.0rc4.diff.md)。
+GitHub Actions [run 40665395993](https://github.com/hauyer/AgentGuard/actions/runs/40665395993)
+在 Python 3.11、3.12、3.13 全部通过；CI 通过不代表真实 WARDEN 执行。
 新增 `GET /v1/research/capabilities` 只读投影：未配置/错误配置返回 `UNAVAILABLE`；固定
 WARDEN 0.3.0 合同下未声明的研究能力返回 `UNSUPPORTED`；未来仅声明能力但缺少经审查的
 版本化操作合同，则返回 `SUPPORTED_BUT_BLOCKED`。该查询只用健康、OpenAPI、capabilities、
