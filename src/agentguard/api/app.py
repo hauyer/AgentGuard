@@ -2412,6 +2412,111 @@ def create_app(
             "track": track, "sort_by": sort_by, "sort_order": sort_order,
         }
 
+    from agentguard.contracts.experiment_view import ExperimentTimeline, ExperimentVisualization
+
+    @app.get("/v1/studies/{study_id}/runs/{workflow_id}/visualization", response_model=ExperimentVisualization)
+    def study_visualization(study_id: str, workflow_id: str,
+                            through_seq: int | None = Query(default=None, ge=0)) -> dict:
+        from agentguard.services.experiment_views import project_graph
+        from agentguard.services.study_execution import StudyExecutionService
+
+        client = _configured_warden_client()
+        if client is None:
+            raise HTTPException(status_code=503, detail={"error": "WARDEN_NOT_CONFIGURED"})
+        try:
+            result, events = StudyExecutionService(app.state.research_registry,
+                app.state.warden_workflows, client, app.state.artifacts).events(study_id, workflow_id)
+            study = app.state.research_registry.get(study_id)
+            if through_seq is not None and through_seq > len(events):
+                raise HTTPException(status_code=422, detail="INVALID_EVENT_CURSOR")
+            manifest = next((item["manifest"] for item in result.get("artifacts", [])), {})
+            return {"schema_version": "stego.visualization/1",
+                "data_mode": "RECORDED" if events else "UNAVAILABLE",
+                "origin_mode": "LIVE_S" if events else "LIVE_M" if manifest else "UNAVAILABLE",
+                "workflow_id": workflow_id, "status": (result.get("run") or {}).get("status", result.get("status")),
+                "graph": project_graph(study_id, (result.get("run") or {}).get("run_id"),
+                    study.track or "mechanism_testbed", events, through_seq=through_seq),
+                "events": events, "last_seq": len(events), "metrics": manifest.get("metrics", {}),
+                "artifacts": [{"artifact_id": item["artifact_id"], "sha256": item["sha256"]}
+                              for item in result.get("artifacts", [])],
+                "unavailable_reason": None if events else "NO_OBSERVED_COMMUNICATION_EVENTS",
+                "limitations": manifest.get("limitations", ["M track capture is not S communication."])}
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail="Study run not found") from exc
+        except (ValueError, WardenKernelError) as exc:
+            raise HTTPException(status_code=502, detail={"error": "EXPERIMENT_VIEW_NOT_VERIFIED"}) from exc
+
+    @app.get("/v1/studies/{study_id}/runs/{workflow_id}/timeline", response_model=ExperimentTimeline)
+    def study_timeline(study_id: str, workflow_id: str,
+                       after_seq: int = Query(default=0, ge=0),
+                       limit: int = Query(default=100, ge=1, le=200)) -> dict:
+        view = study_visualization(study_id, workflow_id, None)
+        if after_seq > view["last_seq"]:
+            raise HTTPException(status_code=422, detail="INVALID_EVENT_CURSOR")
+        events = [event for event in view["events"] if event["seq"] > after_seq][:limit]
+        return {"schema_version": "stego.timeline/1", "events": events,
+                "status": view["status"],
+                "next_seq": events[-1]["seq"] if events else after_seq,
+                "last_seq": view["last_seq"], "has_more": bool(events and events[-1]["seq"] < view["last_seq"]),
+                "unavailable_reason": view["unavailable_reason"]}
+
+    @app.get("/v1/studies/{study_id}/comparison")
+    def study_comparison(study_id: str) -> dict:
+        from agentguard.services.experiment_views import compare_verified_runs
+        from agentguard.services.study_execution import StudyExecutionService
+
+        study = app.state.research_registry.get(study_id)
+        if study is None:
+            raise HTTPException(status_code=404, detail="Study not found")
+        client = _configured_warden_client()
+        if client is None:
+            raise HTTPException(status_code=503, detail={"error": "WARDEN_NOT_CONFIGURED"})
+        try:
+            service = StudyExecutionService(app.state.research_registry,
+                app.state.warden_workflows, client, app.state.artifacts)
+            entries = app.state.warden_workflows.list_for_study(study_id)
+            results = [service.result(study_id, entry["request_id"]) for entry in entries]
+            return compare_verified_runs(study, results)
+        except (ValueError, WardenKernelError) as exc:
+            raise HTTPException(status_code=502, detail={"error": "PAIRED_RESULTS_NOT_VERIFIED"}) from exc
+
+    @app.get("/v1/studies/{study_id}/run-batches")
+    def list_study_batches(study_id: str, limit: int = Query(default=50, ge=1, le=100),
+                          offset: int = Query(default=0, ge=0)) -> dict:
+        from agentguard.artifacts.local_store import ArtifactIntegrityError, ArtifactNotFoundError
+        from agentguard.services.study_execution import StudyExecutionService
+        try:
+            return StudyExecutionService(app.state.research_registry, app.state.warden_workflows,
+                None, app.state.artifacts).list_batches(study_id, limit=limit, offset=offset)
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail="Study not found") from exc
+        except (ValueError, ArtifactIntegrityError, ArtifactNotFoundError) as exc:
+            raise HTTPException(status_code=502, detail="BATCH_MANIFEST_NOT_VERIFIED") from exc
+
+    @app.post("/v1/studies/{study_id}/run-batches")
+    def submit_study_batch(study_id: str, http_request: Request,
+                          idempotency_key: str = Header(alias="Idempotency-Key", min_length=1,
+                              max_length=128, pattern=r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$")) -> dict:
+        from agentguard.services.study_execution import StudyExecutionService
+
+        require_research_write_authorization(
+            http_request.headers.get("X-AgentGuard-Operator-Token")
+            or http_request.headers.get("X-AgentGuard-Token"),
+            http_request.headers.get("X-Approval-Token"))
+        audit_research_write(http_request, {"study_id": study_id, "batch": True}, approval_valid=False)
+        client = _configured_warden_client()
+        if client is None:
+            raise HTTPException(status_code=503, detail={"error": "WARDEN_NOT_CONFIGURED"})
+        try:
+            return StudyExecutionService(app.state.research_registry, app.state.warden_workflows,
+                client, app.state.artifacts).submit_batch(study_id, idempotency_key)
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail="Study not found") from exc
+        except WorkflowConflictError as exc:
+            raise HTTPException(status_code=409, detail="IDEMPOTENCY_CONFLICT") from exc
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+
     @app.get("/v1/studies/{study_id}/runs")
     def list_study_runs(study_id: str) -> dict:
         if app.state.research_registry.get(study_id) is None:
