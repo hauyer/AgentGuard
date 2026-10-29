@@ -115,9 +115,11 @@ class StudyExecutionService:
         if not run_id:
             return {**result, "source_validation": "not_run"}
         run = self.client.get_run(run_id)
-        if run.get("status") != "completed":
-            return {**result, "run": run, "source_validation": "not_verified"}
         study = self.registry.get(study_id)
+        if run.get("status") != "completed" and not (
+            run.get("status") == "failed" and study.track == "live_steganography"
+        ):
+            return {**result, "run": run, "source_validation": "not_verified"}
         manifests = []
         for ref in (run.get("evidence") or {}).get("artifacts", []):
             if ref.get("kind") != "public-summary":
@@ -140,7 +142,7 @@ class StudyExecutionService:
                 "protocol_ref": study.protocol_ref, "model_id": study.model_id,
                 "model_revision": study.model_revision,
                 "tokenizer_revision": study.tokenizer_revision, "split_sha256": study.split_sha256,
-                "status": "completed",
+                "status": run["status"] if is_live else "completed",
                 "provenance": "real_sender_receiver" if is_live else "local_real_model",
                 "seed": study.seed,
             }

@@ -100,6 +100,8 @@ def test_comparison_requires_matching_frozen_families_and_reports_missing_arms()
     treatment["seed"] = 9
     with pytest.raises(ValueError, match="FROZEN_METADATA_MISMATCH"):
         compare_verified_runs(study, results)
+    baseline["status"] = "failed"
+    assert compare_verified_runs(study, results)["blockers"] == ["BASELINE_RUN_FAILED"]
 
 
 def test_batch_manifest_is_written_before_submissions_and_has_stable_per_arm_keys():

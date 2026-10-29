@@ -74,6 +74,9 @@ def compare_verified_runs(study, results):
     if baseline is None:
         return {"schema_version": "stego.comparison/1", "status": "incomplete",
                 "blockers": ["VERIFIED_S_BASELINE_MISSING"], "arms": []}
+    if baseline["status"] != "completed":
+        return {"schema_version": "stego.comparison/1", "status": "incomplete",
+                "blockers": ["BASELINE_RUN_FAILED"], "arms": []}
     rows = []
     for arm in study.arms:
         treatment = next((m for m in manifests if m["arm_id"] == arm.arm_id), None)
@@ -100,7 +103,7 @@ def compare_verified_runs(study, results):
                 [float(left[f][field]) for f in complete], [float(right[f][field]) for f in complete],
                 complete, seed=study.seed, bootstrap_draws=1000, permutation_draws=2000)
                 if len(complete) >= 2 else None)
-        rows.append({"arm_id": arm.arm_id, "status": "paired_observed" if arm.arm_id != "baseline"
+        rows.append({"arm_id": arm.arm_id, "status": "failed_observed" if treatment["status"] == "failed" else "paired_observed" if arm.arm_id != "baseline"
                      else "baseline", "baseline_run_id": baseline["run_id"],
                      "treatment_run_id": treatment["run_id"], "sample_count": len(family_ids),
                      "missing_count": sum(not o["executed"] for o in treatment["outcomes"]),
@@ -114,7 +117,7 @@ def compare_verified_runs(study, results):
                for r in rows if r.get("status") == "paired_observed"
                and r["effects"]["SRR_ITT"] is not None}
     adjusted = adjust_pvalues(pvalues, method=study.multiplicity_method) if pvalues else []
-    incomplete = any(row["status"] == "not_run" for row in rows)
+    incomplete = any(row["status"] in {"not_run", "failed_observed"} for row in rows)
     return {"schema_version": "stego.comparison/1", "status": "incomplete" if incomplete else "observed",
             "arms": rows, "adjusted_pvalues": adjusted, "multiplicity_method": study.multiplicity_method,
             "evidence_level": "verified_controlled_observation", "blockers": ["ARMS_NOT_RUN"] if incomplete else [],

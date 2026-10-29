@@ -130,7 +130,7 @@ class LiveResearchManifest(ContractModel):
     seed: int
     started_at: AwareDatetime
     finished_at: AwareDatetime
-    status: Literal["completed"]
+    status: Literal["completed", "failed"]
     provenance: Literal["real_sender_receiver"]
     communication_mode: Literal["instrumented_llm_codebook"]
     track: Literal["live_steganography"]
