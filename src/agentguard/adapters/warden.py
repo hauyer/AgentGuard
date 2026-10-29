@@ -11,12 +11,15 @@ import hashlib
 import json
 import os
 import re
+import ssl
 import time
 from collections.abc import Callable, Mapping
+from functools import lru_cache
+from threading import Lock
 from typing import Any
 from urllib.error import HTTPError, URLError
 from urllib.parse import quote, unquote, urlencode, urlparse
-from urllib.request import HTTPRedirectHandler, Request, build_opener
+from urllib.request import HTTPRedirectHandler, HTTPSHandler, Request, build_opener
 
 _MAX_RESPONSE_BYTES = 2 * 1024 * 1024
 _MAX_ARTIFACT_BYTES = 1024 * 1024
@@ -52,6 +55,16 @@ class _NoRedirect(HTTPRedirectHandler):
         raise WardenKernelError("WARDEN redirect rejected", code="WARDEN_REDIRECT_REJECTED")
 
 
+_TLS_CONTEXT_LOCK = Lock()
+
+
+@lru_cache(maxsize=1)
+def _verified_tls_context() -> ssl.SSLContext:
+    # Loading the Windows trust store for every artifact read dominates batch latency.
+    # Reuse trust configuration, while keeping each request/opener and hash check fresh.
+    return ssl.create_default_context()
+
+
 def _read_bounded(response: Any) -> bytes:
     raw = response.read(_MAX_RESPONSE_BYTES + 1)
     if len(raw) > _MAX_RESPONSE_BYTES:
@@ -64,7 +77,9 @@ def _urllib_transport(
 ) -> tuple[int, bytes]:
     request = Request(url, data=body, method=method, headers=dict(headers))
     try:
-        with build_opener(_NoRedirect()).open(request, timeout=timeout) as response:
+        with _TLS_CONTEXT_LOCK:
+            context = _verified_tls_context()
+        with build_opener(_NoRedirect(), HTTPSHandler(context=context)).open(request, timeout=timeout) as response:
             return int(response.status), _read_bounded(response)
     except HTTPError as exc:
         with exc:

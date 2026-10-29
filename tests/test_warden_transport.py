@@ -434,3 +434,46 @@ def test_unready_api_never_receives_mutating_request(health, error_code):
         client.create_audit_plan({})
     assert caught.value.code == error_code
     assert methods == ["GET"]
+
+
+def test_repeated_transport_reads_reuse_verified_tls_trust_configuration(monkeypatch):
+    import ssl
+
+    import agentguard.adapters.warden as boundary
+
+    created = []
+    actual_create = ssl.create_default_context
+
+    def create_context():
+        context = actual_create()
+        created.append(context)
+        return context
+
+    class Response:
+        status = 200
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_):
+            return False
+
+        def read(self, _limit):
+            return b"{}"
+
+    class Opener:
+        def open(self, *_args, **_kwargs):
+            return Response()
+
+    boundary._verified_tls_context.cache_clear()
+    monkeypatch.setattr(boundary.ssl, "create_default_context", create_context)
+    monkeypatch.setattr(boundary, "build_opener", lambda *_: Opener())
+    try:
+        for _ in range(3):
+            assert boundary._urllib_transport("GET", "https://example.test/v1/health", {}, None, 5) == (200, b"{}")
+        assert len(created) == 1
+        assert created[0].verify_mode == ssl.CERT_REQUIRED
+        assert created[0].check_hostname is True
+    finally:
+        boundary._verified_tls_context.cache_clear()
+
