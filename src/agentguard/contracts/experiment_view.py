@@ -40,7 +40,7 @@ class ExperimentEvent(ContractModel):
                    "token_policy", "generation_step", "value", "threshold", "threshold_source",
                    "label_semantics", "evaluation_split", "claim_level", "probability_calibrated",
                    "probe_id", "decoded", "recovered", "ber", "missing_reason", "utility",
-                   "trial_count", "failure_count", "error", "measurement_phase"}
+                   "trial_count", "failure_count", "error", "measurement_phase", "failure_stage"}
         if set(self.data) - allowed or self.at_utc.utcoffset().total_seconds() != 0:
             raise ValueError("Unsafe event fields or non-UTC time")
         if any(isinstance(v, float) and not math.isfinite(v) for v in self.data.values()):
@@ -209,6 +209,17 @@ class ProbeEvidence(ContractModel):
     threshold_source: str | None
     probability_calibrated: Literal[False]
     case_family: str | None
+    detection_status: Literal["observed", "target_label_threshold_passed", "below_threshold"] = "observed"
+    threshold_passed: bool | None = None
+    probe_model_version: str | None = None
+    measurement_phase: str | None = None
+
+    @model_validator(mode="after")
+    def consistent_threshold(self):
+        if self.threshold_passed is not None and (
+            self.value is None or self.threshold is None or self.threshold_passed != (self.value >= self.threshold)):
+            raise ValueError("Probe threshold status contradicts frozen measurements")
+        return self
 
 
 class InterventionTarget(ContractModel):
@@ -223,6 +234,7 @@ class InterventionOverlay(ContractModel):
     target: InterventionTarget
     execution_state: Literal["planned", "applied", "failed", "not_run"]
     source_event_ids: list[str]
+    details: dict = Field(default_factory=dict)
 
 
 class GraphSnapshot(ContractModel):

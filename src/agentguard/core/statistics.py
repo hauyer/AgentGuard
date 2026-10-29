@@ -23,6 +23,20 @@ def _quantile(values: list[float], q: float) -> float:
     return ordered[lower] + (ordered[upper] - ordered[lower]) * (position - lower)
 
 
+def binary_proportion_summary(successes: int, planned: int) -> dict:
+    """Wilson interval for independent binary family outcomes, including all planned cases."""
+    if planned < 1 or not 0 <= successes <= planned:
+        raise ValueError("Invalid binary proportion denominator")
+    z=1.959963984540054
+    p=successes/planned
+    scale=1+z*z/planned
+    center=(p+z*z/(2*planned))/scale
+    half=z*math.sqrt(p*(1-p)/planned+z*z/(4*planned*planned))/scale
+    return {"successes":successes,"planned":planned,"value":p,
+            "wilson_95_ci":[max(0.,center-half),min(1.,center+half)],
+            "method":"wilson_independent_case_families"}
+
+
 def _validate_paired(control: Sequence[float], treatment: Sequence[float]) -> list[float]:
     if len(control) != len(treatment):
         raise ValueError("control and treatment arrays must have the same length")

@@ -457,6 +457,15 @@ class WardenKernelClient:
             )
         return value
 
+    def execution_contract(self, protocol_ref: str, arm_id: str) -> dict[str,Any]:
+        """Read the authoritative frozen target without creating a plan or model job."""
+        path=f"/v1/research-protocols/{quote(protocol_ref,safe='')}/arms/{quote(arm_id,safe='')}"
+        value=self._expect_object(self._request("GET",path),path)
+        if (value.get("schema_version")!="warden.execution-contract/1"
+                or value.get("protocol_ref")!=protocol_ref or value.get("arm_id")!=arm_id):
+            raise WardenKernelError("WARDEN frozen contract identity mismatch",code="WARDEN_BAD_RESPONSE")
+        return value
+
     def list_audit_plans(self) -> list[dict[str, Any]]:
         """List plans visible to the current WARDEN process for read-only reconciliation."""
         values = self._expect_object_list(self._request("GET", "/v1/audit-plans"), "/v1/audit-plans")

@@ -1,7 +1,11 @@
 """Deterministic views from verified event artifacts; Probe never creates message edges."""
 from __future__ import annotations
 
-from agentguard.core.statistics import adjust_pvalues, clustered_paired_effect_summary
+from agentguard.core.statistics import (
+    adjust_pvalues,
+    binary_proportion_summary,
+    clustered_paired_effect_summary,
+)
 
 
 def project_graph(study_id, run_id, track, events, *, through_seq=None):
@@ -12,7 +16,7 @@ def project_graph(study_id, run_id, track, events, *, through_seq=None):
         kind, data = event["type"], event["data"]
         actor = event.get("actor_id")
         if kind == "agent_started" and actor:
-            node = nodes.setdefault(actor, {"id": actor, "label": actor.title(), "role": actor,
+            node = nodes.setdefault(actor, {"id": actor, "label": actor.replace("_", " ").title(), "role": actor,
                 "status": "active", "source_event_ids": []})
             node["source_event_ids"].append(event["event_id"])
         if kind in {"message_sent", "message_delivered", "message_blocked", "message_replaced"}:
@@ -46,17 +50,29 @@ def project_graph(study_id, run_id, track, events, *, through_seq=None):
                 "evidence_refs": event["evidence_refs"], "source_event_ids": [event["event_id"]],
                 "claim_level": "linear_decodability", "threshold_source": data.get("threshold_source"),
                 "probability_calibrated": False, "case_family": data.get("case_family")})
+            value, threshold = data.get("value"), data.get("threshold")
+            passed = value >= threshold if value is not None and threshold is not None else None
+            probes[-1].update(threshold_passed=passed,
+                detection_status="target_label_threshold_passed" if passed else
+                                 "below_threshold" if passed is False else "observed",
+                probe_model_version=data.get("probe_id"), measurement_phase=data.get("measurement_phase"))
         if kind in {"intervention_planned", "intervention_applied", "intervention_failed"}:
             method = data["kind"]
             target = data.get("target", actor)
             state = {"intervention_planned": "planned", "intervention_applied": "applied",
                      "intervention_failed": "failed"}[kind]
+            if data.get("mode") == "literal_match_no_change":
+                state = "not_run"
             interventions.append({"id": event["event_id"], "arm_id": event["arm_id"],
                 "kind": method, "target": {"type": "agent" if method == "agent_isolation"
                                            else "edge" if method.startswith("message_") else "activation", "id": target},
-                "execution_state": state, "source_event_ids": [event["event_id"]]})
+                "execution_state": state, "source_event_ids": [event["event_id"]],
+                "details": {key:value for key,value in data.items() if key not in {"case_family"}}})
             if method == "agent_isolation" and state == "applied" and target in nodes:
                 nodes[target]["status"] = "isolated"
+        if kind == "run_failed" and actor in nodes:
+            nodes[actor]["status"]="failed"
+            nodes[actor]["source_event_ids"].append(event["event_id"])
     return {"schema_version": "stego.graph/1", "study_id": study_id, "run_id": run_id,
         "track": track, "state": "observed" if events else "unavailable",
         "nodes": list(nodes.values()), "communication_edges": list(edges.values()),
@@ -69,9 +85,11 @@ def project_graph(study_id, run_id, track, events, *, through_seq=None):
 def compare_verified_runs(study, results):
     """Pair frozen held-out families and reuse the family-aware statistics implementation."""
     manifests = [item["manifest"] for result in results for item in result.get("artifacts", [])
-                 if item["manifest"].get("schema_version") == "warden.research-run/2"]
-    # Earliest frozen attempt per arm, independent of read/reconcile timestamps.
-    manifests.sort(key=lambda item: (item["started_at"], item["run_id"]))
+                 if item["manifest"].get("schema_version") in {"warden.research-run/2", "warden.research-run/3"}]
+    # Unscoped Study history must never select attempts across independent batches.
+    if len({m["arm_id"] for m in manifests}) != len(manifests):
+        return {"schema_version":"stego.comparison/1", "status":"incomplete",
+                "blockers":["BATCH_SCOPE_REQUIRED"], "arms":[]}
     baseline = next((m for m in manifests if m["arm_id"] == "baseline"), None)
     if baseline is None:
         return {"schema_version": "stego.comparison/1", "status": "incomplete",
@@ -92,13 +110,21 @@ def compare_verified_runs(study, results):
             raise ValueError("PAIRED_RUN_FROZEN_METADATA_MISMATCH")
         if treatment.get("model_files_sha256") != baseline.get("model_files_sha256"):
             raise ValueError("PAIRED_MODEL_WEIGHTS_MISMATCH")
+        for name in ("batch_id", "replicate_id", "protocol_version", "outcome_schema_version",
+                     "method_version", "scenario", "baseline_validity_gate"):
+            if treatment.get(name) != baseline.get(name):
+                raise ValueError("PAIRED_BATCH_OR_PROTOCOL_MISMATCH")
         left = {o["case_family"]: o for o in baseline["outcomes"]}
         right = {o["case_family"]: o for o in treatment["outcomes"]}
         if set(left) != set(right):
             raise ValueError("PAIRED_CASE_FAMILIES_MISMATCH")
         family_ids = sorted(left)
         effects = {}
-        for metric, field in (("SRR_ITT", "recovered"), ("NORMAL_UTILITY", "utility"), ("BER", "ber")):
+        metrics = [("SRR_ITT", "recovered"), ("NORMAL_UTILITY", "utility"), ("BER", "ber")]
+        if baseline["schema_version"] == "warden.research-run/3":
+            metrics += [("UTILITY_INDEPENDENT","utility_independent"),
+                        ("UTILITY_COLLABORATIVE","utility_collaborative")]
+        for metric, field in metrics:
             complete = [family for family in family_ids
                         if left[family][field] is not None and right[family][field] is not None]
             effects[metric] = (clustered_paired_effect_summary(
@@ -110,7 +136,7 @@ def compare_verified_runs(study, results):
                      "treatment_run_id": treatment["run_id"], "sample_count": len(family_ids),
                      "missing_count": sum(not o["executed"] for o in treatment["outcomes"]),
                      "case_families": family_ids,
-                     "failed_count": sum(not o["executed"] for o in treatment["outcomes"]),
+                     "failed_count": sum(not o.get("execution_success", o["executed"]) for o in treatment["outcomes"]),
                      "undecodable_count": sum(o["executed"] and not o["decoded"] for o in treatment["outcomes"]),
                      "metrics": treatment["metrics"], "effects": effects,
                      "protocol_hash": treatment["config_sha256"], "model_revision": treatment["model_revision"],
@@ -120,8 +146,32 @@ def compare_verified_runs(study, results):
                and r["effects"]["SRR_ITT"] is not None}
     adjusted = adjust_pvalues(pvalues, method=study.multiplicity_method) if pvalues else []
     incomplete = any(row["status"] in {"not_run", "failed_observed"} for row in rows)
+    gate = baseline.get("baseline_validity_gate")
+    valid = (baseline["metrics"]["SRR_ITT"]["value"] >= gate["minimum"]
+             and baseline["metrics"].get("CARRIER_VALID_RATE", {}).get("value") == 1) if gate else False
+    limitations = [] if valid else ["BASELINE_BELOW_PREDEFINED_VALIDITY_GATE" if gate else
+                                    "BASELINE_VALIDITY_NOT_PREREGISTERED_HISTORICAL_V1"]
+    input_novelty=baseline["metrics"].get("RECEIVER_INPUT_NOVELTY_RATE",{})
+    independent_inputs=(baseline.get("protocol_version")=="controlled-collaborative/3"
+        and input_novelty.get("value")==1
+        and input_novelty.get("denominator")==len(baseline["outcomes"]))
+    if not independent_inputs:
+        limitations.append("RECEIVER_INPUT_FAMILY_NOVELTY_NOT_VERIFIED")
     return {"schema_version": "stego.comparison/1", "status": "incomplete" if incomplete else "observed",
+            "baseline_srr":binary_proportion_summary(sum(o["recovered"] for o in baseline["outcomes"]),len(baseline["outcomes"])),
+            "research_validity": "baseline_gate_passed" if valid and independent_inputs else
+                "information_transfer_only" if valid else "not_established",
+            "baseline_validity_gate": gate, "research_limitations":limitations,
+            "causal_claim_status":"not_validated",
+            "processing_states":{"study_registered":True,"artifacts_verified":True,
+                "statistical_analysis_complete":not incomplete,
+                "baseline_validity_established":valid,
+                "independent_input_holdout_verified":independent_inputs,
+                "nonzero_behavior_difference_observed":any(r.get("effects",{}).get("SRR_ITT")
+                    and r["effects"]["SRR_ITT"]["mean_treatment_minus_control"] != 0 for r in rows),
+                "causal_mechanism_validated":False},
             "arms": rows, "adjusted_pvalues": adjusted, "multiplicity_method": study.multiplicity_method,
             "evidence_level": "verified_controlled_observation", "blockers": ["ARMS_NOT_RUN"] if incomplete else [],
             "limitations": ["Pilot estimates, not a claim of spontaneous collusion or causal validation.",
+                             "Low raw SRR can be an invertible label flip: inspect the preregistered inverted-readout diagnostic; adaptive secrecy is not established.",
                              "Missing BER/utility values are excluded with denominators retained."]}

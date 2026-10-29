@@ -35,7 +35,11 @@ from agentguard.agents.coordinator import AgentCoordinator
 from agentguard.agents.llm_advisor import LLMInvestigationAdvisor
 from agentguard.api.console import CONSOLE_HTML
 from agentguard.api.public_routes import create_public_router
-from agentguard.artifacts.local_store import ArtifactNotFoundError, LocalArtifactStore
+from agentguard.artifacts.local_store import (
+    ArtifactIntegrityError,
+    ArtifactNotFoundError,
+    LocalArtifactStore,
+)
 from agentguard.compat.linear_probe import (
     BinaryLinearProbe,
     select_f1_threshold,
@@ -82,6 +86,7 @@ from agentguard.contracts.research import (
     StudyRunRequest,
 )
 from agentguard.contracts.research_capability import ResearchCapabilityReport
+from agentguard.contracts.stego_remediation import ReplicateBatchRequest
 from agentguard.contracts.system_identity import SystemIdentityResponse
 from agentguard.contracts.warden import WardenAuditRequest, WardenDefenseExecuteRequest
 from agentguard.core.attribution import analyze_attribution_node, analyze_path_shift
@@ -2480,6 +2485,70 @@ def create_app(
         except (ValueError, WardenKernelError) as exc:
             raise HTTPException(status_code=502, detail={"error": "PAIRED_RESULTS_NOT_VERIFIED"}) from exc
 
+    @app.get("/v1/studies/{study_id}/comparisons/batches/{batch_id}")
+    def study_batch_comparison(study_id: str, batch_id: str) -> dict:
+        from agentguard.services.study_execution import StudyExecutionService
+        client = _configured_warden_client()
+        if client is None:
+            raise HTTPException(status_code=503, detail={"error":"WARDEN_NOT_CONFIGURED"})
+        try:
+            return StudyExecutionService(app.state.research_registry, app.state.warden_workflows,
+                client, app.state.artifacts).compare_batch(study_id, batch_id)
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail="Study batch not found") from exc
+        except (ValueError, WardenKernelError, ArtifactIntegrityError, ArtifactNotFoundError) as exc:
+            raise HTTPException(status_code=502, detail={"error":"BATCH_COMPARISON_NOT_VERIFIED"}) from exc
+
+    @app.get("/v1/studies/{study_id}/submission-intents/{intent_key}")
+    def lookup_submission_intent(study_id: str, intent_key: str) -> dict:
+        from agentguard.services.study_execution import StudyExecutionService
+        if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._:-]{0,127}",intent_key):
+            raise HTTPException(status_code=422,detail="Invalid submission intent")
+        try:
+            return StudyExecutionService(app.state.research_registry,app.state.warden_workflows,
+                None,app.state.artifacts).lookup_intent(study_id,intent_key)
+        except KeyError as exc:
+            raise HTTPException(status_code=404,detail="Study not found") from exc
+        except ValueError as exc:
+            raise HTTPException(status_code=502,detail="SUBMISSION_INTENT_NOT_VERIFIED") from exc
+
+    @app.get("/v1/studies/{study_id}/arms/{arm_id}/execution-contract")
+    def study_execution_contract(study_id: str,arm_id: str) -> dict:
+        from agentguard.services.study_execution import StudyExecutionService
+        client=_configured_warden_client()
+        if client is None:
+            raise HTTPException(status_code=503,detail="WARDEN_NOT_CONFIGURED")
+        try:
+            return StudyExecutionService(app.state.research_registry,app.state.warden_workflows,
+                client,app.state.artifacts).execution_contract(study_id,arm_id)
+        except KeyError as exc:
+            raise HTTPException(status_code=404,detail="Study not found") from exc
+        except (ValueError,WardenKernelError) as exc:
+            raise HTTPException(status_code=502,detail="FROZEN_EXECUTION_CONTRACT_NOT_VERIFIED") from exc
+
+    @app.post("/v1/studies/{study_id}/replicate-batches")
+    def submit_replicate_batch(study_id: str, request: ReplicateBatchRequest, http_request: Request,
+        idempotency_key: str = Header(alias="Idempotency-Key", min_length=1, max_length=128,
+                                     pattern=r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$")) -> dict:
+        from agentguard.services.study_execution import StudyExecutionService
+        require_research_write_authorization(
+            http_request.headers.get("X-AgentGuard-Operator-Token")
+            or http_request.headers.get("X-AgentGuard-Token"),
+            http_request.headers.get("X-Approval-Token"))
+        audit_research_write(http_request, {"study_id":study_id,"replicate_id":request.replicate_id},
+                             approval_valid=False)
+        client = _configured_warden_client()
+        if client is None:
+            raise HTTPException(status_code=503, detail={"error":"WARDEN_NOT_CONFIGURED"})
+        try:
+            return StudyExecutionService(app.state.research_registry, app.state.warden_workflows,
+                client, app.state.artifacts).submit_batch(study_id, idempotency_key,
+                                                         replicate_id=request.replicate_id)
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail="Study not found") from exc
+        except (WorkflowConflictError, ValueError) as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+
     @app.get("/v1/studies/{study_id}/run-batches")
     def list_study_batches(study_id: str, limit: int = Query(default=50, ge=1, le=100),
                           offset: int = Query(default=0, ge=0)) -> dict:
@@ -2523,6 +2592,9 @@ def create_app(
             raise HTTPException(status_code=404, detail="Study not found")
         return {"items": [
             {"workflow_id": entry["request_id"], "run_id": entry.get("run_id"),
+             "arm_id":entry.get("request",{}).get("study_arm_id"),
+             "batch_id":entry.get("request",{}).get("metadata",{}).get("batch_id"),
+             "replicate_id":entry.get("request",{}).get("metadata",{}).get("replicate_id"),
              "status": entry["workflow_status"], "updated_at": entry.get("updated_at")}
             for entry in app.state.warden_workflows.list_for_study(study_id)
         ]}

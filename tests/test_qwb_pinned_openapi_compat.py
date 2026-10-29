@@ -8,7 +8,7 @@ from fastapi.testclient import TestClient
 from agentguard.api.app import create_app
 
 FIXTURE = Path(__file__).parent / "fixtures" / "qwb_app_supported_operations_rc2.json"
-RC5_SNAPSHOT = Path(__file__).resolve().parents[1] / "docs" / "integration" / "openapi-stego-sandbox-v1.json"
+RC5_SNAPSHOT = Path(__file__).resolve().parents[1] / "docs" / "integration" / "openapi-stego-sandbox-v2.json"
 
 
 def test_runtime_openapi_preserves_all_pinned_qwb_app_operations(tmp_path):
@@ -30,12 +30,12 @@ def test_rc5_snapshot_matches_runtime_and_documents_research_write_gates(tmp_pat
     snapshot = json.loads(RC5_SNAPSHOT.read_text(encoding="utf-8"))
     assert current == snapshot
     assert current["info"]["version"] == "1.1.0rc5"
-    assert len(current["paths"]) == 93
+    assert len(current["paths"]) == 97
     assert sum(
         1 for path_item in current["paths"].values()
         for operation in path_item.values()
         if isinstance(operation, dict) and "responses" in operation
-    ) == 107
+    ) == 111
     capability = current["paths"]["/v1/research/capabilities"]
     assert set(capability) == {"get"}
     for path in ("/v1/studies", "/v1/studies/{study_id}/analyses"):
