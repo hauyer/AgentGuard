@@ -11,6 +11,7 @@ from __future__ import annotations
 import threading
 import time
 from collections.abc import Callable
+from datetime import UTC, datetime
 from typing import Any
 
 from agentguard import __version__
@@ -114,7 +115,7 @@ class SystemReadinessService:
             payload = {"diagnosis": diagnose_kernel(client), "config_error": config_error}
             self._payload = payload
             self._generated_mono = now
-            self._generated_wall = time.strftime("%Y-%m-%dT%H:%M:%S+00:00", time.gmtime(now))
+            self._generated_wall = datetime.now(UTC).isoformat()
             return payload, ReadinessCacheInfo(
                 source="live", generated_at=self._generated_wall,
                 age_seconds=0.0, ttl_seconds=self._ttl, is_stale=False,

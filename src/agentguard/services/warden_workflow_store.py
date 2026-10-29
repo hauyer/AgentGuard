@@ -305,6 +305,15 @@ class WardenWorkflowStore:
                 ).fetchall()
         return [self._decode(r) for r in rows]
 
+    def list_for_study(self, study_id: str) -> list[dict[str, Any]]:
+        """List only durable mappings belonging to one registered Study."""
+        with self._connect() as db:
+            rows = db.execute(
+                "SELECT * FROM warden_workflows WHERE json_extract(request_json, '$.study_id')=? "
+                "ORDER BY updated_at DESC", (study_id,),
+            ).fetchall()
+        return [self._decode(row) for row in rows]
+
     def begin_api_audit_event(
         self, *, request_id: str, method: str, actor_role: str
     ) -> int:

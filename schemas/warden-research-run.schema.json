@@ -1,0 +1,196 @@
+{
+  "$defs": {
+    "ResearchMetricValue": {
+      "additionalProperties": false,
+      "properties": {
+        "value": {
+          "title": "Value",
+          "type": "number"
+        },
+        "denominator": {
+          "exclusiveMinimum": 0,
+          "title": "Denominator",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "value",
+        "denominator"
+      ],
+      "title": "ResearchMetricValue",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {
+      "const": "warden.research-run/1",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "run_id": {
+      "minLength": 1,
+      "title": "Run Id",
+      "type": "string"
+    },
+    "plan_id": {
+      "minLength": 1,
+      "title": "Plan Id",
+      "type": "string"
+    },
+    "study_id": {
+      "minLength": 1,
+      "title": "Study Id",
+      "type": "string"
+    },
+    "arm_id": {
+      "minLength": 1,
+      "title": "Arm Id",
+      "type": "string"
+    },
+    "protocol_ref": {
+      "minLength": 1,
+      "title": "Protocol Ref",
+      "type": "string"
+    },
+    "contract_id": {
+      "minLength": 1,
+      "title": "Contract Id",
+      "type": "string"
+    },
+    "config_sha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "title": "Config Sha256",
+      "type": "string"
+    },
+    "executor_sha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "title": "Executor Sha256",
+      "type": "string"
+    },
+    "dataset_sha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "title": "Dataset Sha256",
+      "type": "string"
+    },
+    "split_sha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "title": "Split Sha256",
+      "type": "string"
+    },
+    "model_id": {
+      "minLength": 1,
+      "title": "Model Id",
+      "type": "string"
+    },
+    "model_revision": {
+      "minLength": 1,
+      "title": "Model Revision",
+      "type": "string"
+    },
+    "tokenizer_revision": {
+      "minLength": 1,
+      "title": "Tokenizer Revision",
+      "type": "string"
+    },
+    "seed": {
+      "title": "Seed",
+      "type": "integer"
+    },
+    "started_at": {
+      "format": "date-time",
+      "title": "Started At",
+      "type": "string"
+    },
+    "finished_at": {
+      "format": "date-time",
+      "title": "Finished At",
+      "type": "string"
+    },
+    "status": {
+      "const": "completed",
+      "title": "Status",
+      "type": "string"
+    },
+    "provenance": {
+      "const": "local_real_model",
+      "title": "Provenance",
+      "type": "string"
+    },
+    "track": {
+      "const": "mechanism_testbed",
+      "title": "Track",
+      "type": "string"
+    },
+    "files_sha256": {
+      "additionalProperties": {
+        "pattern": "^[0-9a-f]{64}$",
+        "type": "string"
+      },
+      "minProperties": 1,
+      "title": "Files Sha256",
+      "type": "object"
+    },
+    "model_files_sha256": {
+      "additionalProperties": {
+        "pattern": "^[0-9a-f]{64}$",
+        "type": "string"
+      },
+      "minProperties": 1,
+      "title": "Model Files Sha256",
+      "type": "object"
+    },
+    "metrics": {
+      "additionalProperties": {
+        "$ref": "#/$defs/ResearchMetricValue"
+      },
+      "minProperties": 1,
+      "title": "Metrics",
+      "type": "object"
+    },
+    "missing_metrics": {
+      "additionalProperties": {
+        "type": "string"
+      },
+      "title": "Missing Metrics",
+      "type": "object"
+    },
+    "dependencies": {
+      "additionalProperties": {
+        "type": "string"
+      },
+      "minProperties": 1,
+      "title": "Dependencies",
+      "type": "object"
+    }
+  },
+  "required": [
+    "schema_version",
+    "run_id",
+    "plan_id",
+    "study_id",
+    "arm_id",
+    "protocol_ref",
+    "contract_id",
+    "config_sha256",
+    "executor_sha256",
+    "dataset_sha256",
+    "split_sha256",
+    "model_id",
+    "model_revision",
+    "tokenizer_revision",
+    "seed",
+    "started_at",
+    "finished_at",
+    "status",
+    "provenance",
+    "track",
+    "files_sha256",
+    "model_files_sha256",
+    "metrics",
+    "missing_metrics",
+    "dependencies"
+  ],
+  "title": "WardenResearchManifest",
+  "type": "object"
+}

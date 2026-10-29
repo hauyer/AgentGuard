@@ -79,6 +79,7 @@ from agentguard.contracts.research import (
     StudyAnalysisReport,
     StudyAnalysisRequest,
     StudyRegistrationRequest,
+    StudyRunRequest,
 )
 from agentguard.contracts.research_capability import ResearchCapabilityReport
 from agentguard.contracts.system_identity import SystemIdentityResponse
@@ -2410,6 +2411,63 @@ def create_app(
             "total": total, "limit": limit, "offset": offset, "next_offset": next_offset,
             "track": track, "sort_by": sort_by, "sort_order": sort_order,
         }
+
+    @app.get("/v1/studies/{study_id}/runs")
+    def list_study_runs(study_id: str) -> dict:
+        if app.state.research_registry.get(study_id) is None:
+            raise HTTPException(status_code=404, detail="Study not found")
+        return {"items": [
+            {"workflow_id": entry["request_id"], "run_id": entry.get("run_id"),
+             "status": entry["workflow_status"], "updated_at": entry.get("updated_at")}
+            for entry in app.state.warden_workflows.list_for_study(study_id)
+        ]}
+
+    @app.post("/v1/studies/{study_id}/runs")
+    def submit_study_run(
+        study_id: str, request: StudyRunRequest, http_request: Request,
+        idempotency_key: str = Header(alias="Idempotency-Key", min_length=1, max_length=128,
+                                      pattern=r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$"),
+    ) -> dict:
+        from agentguard.services.study_execution import StudyExecutionService
+
+        require_research_write_authorization(
+            http_request.headers.get("X-AgentGuard-Operator-Token")
+            or http_request.headers.get("X-AgentGuard-Token"),
+            http_request.headers.get("X-Approval-Token"),
+        )
+        audit_research_write(http_request, {"study_id": study_id, "arm_id": request.arm_id},
+                             approval_valid=False)
+        client = _configured_warden_client()
+        if client is None:
+            raise HTTPException(status_code=503, detail={"error": "WARDEN_NOT_CONFIGURED"})
+        try:
+            return StudyExecutionService(
+                app.state.research_registry, app.state.warden_workflows, client, app.state.artifacts,
+            ).submit(study_id, request.arm_id, idempotency_key)
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail="Study not found") from exc
+        except WorkflowConflictError as exc:
+            raise HTTPException(status_code=409, detail="IDEMPOTENCY_CONFLICT") from exc
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+        except WardenKernelError as exc:
+            raise HTTPException(status_code=502, detail={"error": exc.code}) from exc
+
+    @app.get("/v1/studies/{study_id}/runs/{workflow_id}")
+    def study_run_result(study_id: str, workflow_id: str) -> dict:
+        from agentguard.services.study_execution import StudyExecutionService
+
+        client = _configured_warden_client()
+        if client is None:
+            raise HTTPException(status_code=503, detail={"error": "WARDEN_NOT_CONFIGURED"})
+        try:
+            return StudyExecutionService(
+                app.state.research_registry, app.state.warden_workflows, client, app.state.artifacts,
+            ).result(study_id, workflow_id)
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail="Study run not found") from exc
+        except (ValueError, WardenKernelError) as exc:
+            raise HTTPException(status_code=502, detail={"error": "STUDY_RESULT_NOT_VERIFIED"}) from exc
 
     @app.get("/v1/studies/{study_id}", response_model=RegisteredStudy)
     def get_study(study_id: str) -> RegisteredStudy:

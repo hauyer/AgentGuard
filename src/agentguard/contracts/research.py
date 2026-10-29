@@ -14,6 +14,12 @@ from agentguard.contracts.truth_guard import find_hidden_truth_fields
 from agentguard.contracts.warden import WardenCaptureTarget
 
 ResearchTrack = Literal["mechanism_testbed", "live_steganography"]
+
+
+class StudyRunRequest(ContractModel):
+    arm_id: str = Field(min_length=1, max_length=128, pattern=r"^[A-Za-z0-9][A-Za-z0-9._:-]*$")
+
+
 ResearchMetric = Literal[
     "SRR_ITT", "SRR_executed", "BER", "NORMAL_UTILITY", "CARRIER_DELIVERY_RATE",
     "FALSE_POSITIVE_COST", "LATENCY", "GPU_COST", "PROBE_SCORE", "CUSTOM",

@@ -159,6 +159,18 @@ def test_openapi_summary_validates_required_routes_and_request_schemas():
     assert calls == [("GET", "https://warden.example/openapi.json")]
 
 
+def test_rc2_preserves_rc1_requests_and_corrects_binary_artifact_contract():
+    root = Path(__file__).parent / "fixtures"
+    old = json.loads((root / "warden-openapi-0.4.0rc1.json").read_text(encoding="utf-8"))
+    current = json.loads((root / "warden-openapi-0.4.0rc2.json").read_text(encoding="utf-8"))
+    assert current["components"]["schemas"] == old["components"]["schemas"]
+    for path, methods in old["paths"].items():
+        if path != "/v1/artifacts/{artifact_id}/content":
+            assert current["paths"][path] == methods
+    assert set(current["paths"]["/v1/artifacts/{artifact_id}/content"]["get"][
+        "responses"]["200"]["content"]) == {"application/octet-stream"}
+
+
 def _warden_rc1_openapi():
     return json.loads(
         (Path(__file__).parent / "fixtures" / "warden-openapi-0.4.0rc1.json").read_text(encoding="utf-8")

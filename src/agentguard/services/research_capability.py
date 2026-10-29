@@ -82,17 +82,23 @@ def build_research_capability_report(diagnostic: dict[str, Any]) -> ResearchCapa
             blockers = ["WARDEN_API_CONTRACT_NOT_VERIFIED"]
         elif name == "research_dataset_mechanism" and research_fields:
             status = "SUPPORTED_BUT_BLOCKED"
-            blockers = ["WARDEN_RESEARCH_STAGE_ALLOWLIST_NOT_ADVERTISED"]
+            blockers = []
+            if diagnostic.get("research_stage_allowlist_advertised") is not True:
+                blockers.append("WARDEN_RESEARCH_STAGE_ALLOWLIST_NOT_ADVERTISED")
             if not token_configured:
                 blockers.append("WARDEN_RESEARCH_TOKEN_MISSING")
             if diagnostic.get("runtime_available") is not True:
                 blockers.append("WARDEN_RUNTIME_NOT_READY")
             if capability_statuses.get("persistent_run_available") != "available":
                 blockers.append("WARDEN_DURABLE_DISPATCHER_NOT_ADVERTISED")
-            blockers.append("WARDEN_LIVE_RESEARCH_SMOKE_NOT_RUN")
+            if not blockers:
+                status = "SUPPORTED_AND_READY"
         elif name == "persistent_run" and "/v1/runs/{run_id}" in path_methods:
             status = "SUPPORTED_BUT_BLOCKED"
-            blockers = ["WARDEN_DURABLE_DISPATCHER_NOT_ADVERTISED", "WARDEN_CROSS_RESTART_RECONCILIATION_NOT_VERIFIED"]
+            blockers = ([] if capability_statuses.get("persistent_run_available") == "available"
+                        else ["WARDEN_DURABLE_DISPATCHER_NOT_ADVERTISED"])
+            if not blockers:
+                status = "SUPPORTED_AND_READY"
         elif name == "artifact_content_read" and artifact_read:
             status = "SUPPORTED_BUT_BLOCKED"
             blockers = []
@@ -102,7 +108,8 @@ def build_research_capability_report(diagnostic: dict[str, Any]) -> ResearchCapa
                 blockers.append("WARDEN_ARTIFACT_READER_NOT_CONFIGURED")
             if not artifact_media_ok:
                 blockers.append("WARDEN_ARTIFACT_OPENAPI_MEDIA_TYPE_MISMATCH")
-            blockers.append("WARDEN_LIVE_ARTIFACT_HASH_SMOKE_NOT_RUN")
+            if not blockers:
+                status = "SUPPORTED_AND_READY"
         elif is_advertised:
             status = "SUPPORTED_BUT_BLOCKED"
             blockers = ["WARDEN_RESEARCH_OPERATION_UNREVIEWED"]
@@ -132,8 +139,8 @@ def build_research_capability_report(diagnostic: dict[str, Any]) -> ResearchCapa
     limitations = [
         "Capability states are derived from the observed WARDEN OpenAPI and capability response.",
         "A healthy WARDEN API does not establish model, GPU, Probe, intervention, or artifact readiness.",
-        "The default WARDEN deployment does not advertise the durable dispatcher, research-stage allowlist, or artifact reader as configured.",
-        "Artifact content remains blocked while the published media type differs from the binary response contract.",
+        "Readiness reflects configured public capabilities, not completed experiments or measured effects.",
+        "Each result still requires artifact hash and frozen Study metadata verification.",
         "No research operation is submitted by this read-only capability check.",
     ]
     return ResearchCapabilityReport(

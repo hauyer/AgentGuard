@@ -30,12 +30,12 @@ def test_rc5_snapshot_matches_runtime_and_documents_research_write_gates(tmp_pat
     snapshot = json.loads(RC5_SNAPSHOT.read_text(encoding="utf-8"))
     assert current == snapshot
     assert current["info"]["version"] == "1.1.0rc5"
-    assert len(current["paths"]) == 87
+    assert len(current["paths"]) == 89
     assert sum(
         1 for path_item in current["paths"].values()
         for operation in path_item.values()
         if isinstance(operation, dict) and "responses" in operation
-    ) == 99
+    ) == 102
     capability = current["paths"]["/v1/research/capabilities"]
     assert set(capability) == {"get"}
     for path in ("/v1/studies", "/v1/studies/{study_id}/analyses"):

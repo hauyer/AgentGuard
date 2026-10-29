@@ -7,6 +7,22 @@ from agentguard.api.app import create_app
 from agentguard.services.system_readiness import SystemReadinessService
 
 
+def test_readiness_utc_uses_wall_clock_independently_of_cache_clock():
+    from datetime import UTC, datetime
+
+    service = SystemReadinessService(
+        client_provider=lambda: (None, "WARDEN_URL_NOT_CONFIGURED"), monotonic=lambda: 12.0,
+    )
+    before = datetime.now(UTC)
+    first = service.readiness()
+    generated = datetime.fromisoformat(first.cache.generated_at)
+    assert before <= generated <= datetime.now(UTC)
+    second = service.readiness()
+    assert second.cache.source == "cache"
+    assert second.cache.generated_at == first.cache.generated_at
+    assert second.cache.age_seconds == 0
+
+
 class FakeWardenClient:
     """Duck-typed stand-in satisfying diagnose_kernel's client usage."""
 
