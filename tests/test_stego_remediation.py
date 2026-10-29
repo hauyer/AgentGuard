@@ -165,3 +165,43 @@ def test_preview_target_cannot_override_warden_frozen_target():
     arm.target_ref="agent:sender"
     with pytest.raises(ValueError,match="TARGET_OR_PARAMETERS_MISMATCH"):
         service.execution_contract("study","leace")
+
+
+def test_waiting_for_durable_audit_does_not_block_other_asgi_requests(tmp_path, monkeypatch):
+    import asyncio
+    import threading
+    import time
+
+    import httpx
+
+    from agentguard.api.app import create_app
+
+    app = create_app(data_dir=tmp_path / "data")
+    entered, release = threading.Event(), threading.Event()
+    original = app.state.warden_workflows.begin_api_audit_event
+
+    def reserve(**kwargs):
+        if kwargs["request_id"] == "slow-audit-request":
+            entered.set()
+            release.wait(timeout=3)
+        return original(**kwargs)
+
+    monkeypatch.setattr(app.state.warden_workflows, "begin_api_audit_event", reserve)
+
+    async def exercise():
+        async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as client:
+            start = time.monotonic()
+            slow = asyncio.create_task(client.get("/v1/system/health", headers={"X-Request-ID": "slow-audit-request"}))
+            try:
+                assert await asyncio.to_thread(entered.wait, 2)
+                fast = await client.get("/v1/system/health", headers={"X-Request-ID": "fast-audit-request"})
+                assert fast.status_code == 200
+                assert time.monotonic() - start < 2
+            finally:
+                release.set()
+                assert (await slow).status_code == 200
+
+    asyncio.run(exercise())
+    events = app.state.warden_workflows.list_api_audit_events()
+    assert {e["request_id"] for e in events} == {"slow-audit-request", "fast-audit-request"}
+    assert all(e["completed"] for e in events)

@@ -27,6 +27,7 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse, JSONResponse, Response
 from pydantic import Field
+from starlette.concurrency import run_in_threadpool
 
 from agentguard import __version__
 from agentguard.adapters.mock import MockBackend
@@ -362,7 +363,8 @@ def create_app(
         )
         actor_role = "operator" if operator_valid or legacy_operator_valid or approval_valid else ("api" if api_valid else "anonymous")
         try:
-            audit_event_id = app.state.warden_workflows.begin_api_audit_event(
+            audit_event_id = await run_in_threadpool(
+                app.state.warden_workflows.begin_api_audit_event,
                 request_id=request_id, method=request.method, actor_role=actor_role,
             )
         except Exception as exc:  # noqa: BLE001 - fail closed if the audit sink cannot reserve an event
@@ -437,7 +439,8 @@ def create_app(
                     )
             try:
                 matched_path = getattr(request.scope.get("route"), "path", "/<unmatched>")
-                app.state.warden_workflows.finish_api_audit_event(
+                await run_in_threadpool(
+                    app.state.warden_workflows.finish_api_audit_event,
                     audit_event_id, path=matched_path, status_code=response.status_code,
                 )
             except Exception as exc:  # noqa: BLE001 - request processing must not expose audit storage failures

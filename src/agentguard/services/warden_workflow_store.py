@@ -318,7 +318,7 @@ class WardenWorkflowStore:
         self, *, request_id: str, method: str, actor_role: str
     ) -> int:
         """Persist the intent before routing so a failed audit sink blocks API work."""
-        with self._connect() as db:
+        with self._lock, self._connect() as db:
             db.execute(
                 "INSERT INTO api_audit_events(request_id, method, path, status_code, actor_role, created_at, completed) "
                 "VALUES (?, ?, ?, 0, ?, ?, 0)",
@@ -331,7 +331,7 @@ class WardenWorkflowStore:
 
     def finish_api_audit_event(self, event_id: int, *, path: str, status_code: int) -> None:
         """Complete a reserved event with only a route template and HTTP status."""
-        with self._connect() as db:
+        with self._lock, self._connect() as db:
             cursor = db.execute(
                 "UPDATE api_audit_events SET path=?, status_code=?, completed=1 "
                 "WHERE event_id=? AND completed=0",
@@ -348,7 +348,7 @@ class WardenWorkflowStore:
             raise ValueError("payload_sha256 must be a lowercase SHA-256 digest")
         if approval_status not in {"operator_authorized", "approval_authorized"}:
             raise ValueError("approval_status is not a supported audit value")
-        with self._connect() as db:
+        with self._lock, self._connect() as db:
             cursor = db.execute(
                 "UPDATE api_audit_events SET payload_sha256=?, approval_status=? "
                 "WHERE event_id=? AND completed=0",
