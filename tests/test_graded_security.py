@@ -41,7 +41,7 @@ def test_monotonic_policy_levels():
     assert assess_risk(*inputs(violation=True)).lower >= assess_risk(*inputs(violation=False)).lower
 
 
-@pytest.mark.parametrize("field,value", [("alpha", math.nan), ("beta", math.inf), ("threshold", -1)])
+@pytest.mark.parametrize("field,value", [("alpha", math.nan), ("beta", math.inf), ("threshold", -1), ("alpha", .5000000005)])
 def test_nonfinite_and_invalid_policy_rejected(field, value):
     p, _, _ = inputs()
     with pytest.raises(ValidationError):

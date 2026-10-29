@@ -33,6 +33,12 @@ class OptimizationPolicy(StrictModel):
     cost_weight: Unit = .1
     disruption_weight: Unit = .1
 
+    @model_validator(mode="after")
+    def nonzero_objective(self):
+        if not any([self.risk_weight, self.utility_weight, self.cost_weight, self.disruption_weight]):
+            raise ValueError("优化代价权重不能全为零")
+        return self
+
 
 class SecurityProfile(StrictModel):
     schema_version: Literal["gsei.security-profile/1"] = "gsei.security-profile/1"
@@ -51,7 +57,7 @@ class SecurityProfile(StrictModel):
 
     @model_validator(mode="after")
     def valid_policy(self):
-        if abs(self.alpha + self.beta + self.gamma - 1) > 1e-9:
+        if round(self.alpha + self.beta + self.gamma, 12) != 1:
             raise ValueError("风险权重之和必须为1")
         if len({n.agent_id for n in self.nodes}) != len(self.nodes) or len({e.edge_id for e in self.channels}) != len(self.channels):
             raise ValueError("等级配置引用不得重复")
