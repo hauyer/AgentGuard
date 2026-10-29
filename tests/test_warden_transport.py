@@ -476,4 +476,3 @@ def test_repeated_transport_reads_reuse_verified_tls_trust_configuration(monkeyp
         assert created[0].check_hostname is True
     finally:
         boundary._verified_tls_context.cache_clear()
-
