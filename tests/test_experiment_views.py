@@ -94,6 +94,7 @@ def test_comparison_requires_matching_frozen_families_and_reports_missing_arms()
     baseline, treatment = manifest(), manifest("leace")
     results = [{"artifacts": [{"manifest": m}]} for m in (baseline, treatment)]
     report = compare_verified_runs(study, results)
+    assert report == compare_verified_runs(study, list(reversed(results)))
     assert report["status"] == "incomplete"
     assert report["arms"][-1]["status"] == "not_run"
     assert report["arms"][1]["effects"]["SRR_ITT"]["mean_treatment_minus_control"] == 0

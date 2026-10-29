@@ -70,6 +70,8 @@ def compare_verified_runs(study, results):
     """Pair frozen held-out families and reuse the family-aware statistics implementation."""
     manifests = [item["manifest"] for result in results for item in result.get("artifacts", [])
                  if item["manifest"].get("schema_version") == "warden.research-run/2"]
+    # Earliest frozen attempt per arm, independent of read/reconcile timestamps.
+    manifests.sort(key=lambda item: (item["started_at"], item["run_id"]))
     baseline = next((m for m in manifests if m["arm_id"] == "baseline"), None)
     if baseline is None:
         return {"schema_version": "stego.comparison/1", "status": "incomplete",
