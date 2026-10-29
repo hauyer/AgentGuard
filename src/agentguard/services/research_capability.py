@@ -110,6 +110,19 @@ def build_research_capability_report(diagnostic: dict[str, Any]) -> ResearchCapa
                 blockers.append("WARDEN_ARTIFACT_OPENAPI_MEDIA_TYPE_MISMATCH")
             if not blockers:
                 status = "SUPPORTED_AND_READY"
+        elif (is_advertised and research_fields and "live_stego_frozen_protocol_v1" in advertised
+              and name in {"sender_receiver_baseline", "agent_isolation", "message_block",
+                           "message_replace", "leace_fit_apply", "activation_patch", "probe_training"}):
+            blockers = []
+            if not token_configured:
+                blockers.append("WARDEN_RESEARCH_TOKEN_MISSING")
+            if diagnostic.get("runtime_available") is not True:
+                blockers.append("WARDEN_RUNTIME_NOT_READY")
+            if capability_statuses.get("persistent_run_available") != "available":
+                blockers.append("WARDEN_DURABLE_DISPATCHER_NOT_ADVERTISED")
+            if not artifact_read or not artifact_media_ok:
+                blockers.append("WARDEN_PUBLIC_ARTIFACT_CONTRACT_NOT_READY")
+            status = "SUPPORTED_BUT_BLOCKED" if blockers else "SUPPORTED_AND_READY"
         elif is_advertised:
             status = "SUPPORTED_BUT_BLOCKED"
             blockers = ["WARDEN_RESEARCH_OPERATION_UNREVIEWED"]
@@ -127,7 +140,7 @@ def build_research_capability_report(diagnostic: dict[str, Any]) -> ResearchCapa
             evidence_refs=[],
             contract_ref=(
                 "WARDEN:POST /v1/audit-plans + POST /v1/runs"
-                if name == "research_dataset_mechanism" and research_fields
+                if (name == "research_dataset_mechanism" or (is_advertised and "live_stego_frozen_protocol_v1" in advertised)) and research_fields
                 else "WARDEN:GET /v1/runs/{run_id}"
                 if name == "persistent_run" and "/v1/runs/{run_id}" in path_methods
                 else "WARDEN:GET /v1/artifacts/{artifact_id}/content"

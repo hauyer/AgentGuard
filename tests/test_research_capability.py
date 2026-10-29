@@ -9,6 +9,19 @@ def test_unconfigured_warden_is_unavailable_with_concrete_blocker():
     assert all(item.blockers == ["WARDEN_URL_NOT_CONFIGURED"] for item in report.capabilities)
 
 
+def test_reviewed_frozen_live_protocol_requires_runtime_token_and_artifact_contract():
+    diagnostic = {"status": "ready", "api_version": "v1", "runtime_available": True,
+        "research_token_configured": True, "capability_statuses": {"persistent_run_available": "available"},
+        "openapi_summary": {"compatible": True, "research_request_fields_available": True,
+            "artifact_content_operation_available": True, "artifact_content_media_type_compatible": True},
+        "capabilities": [{"available": True, "capabilities": ["live_stego_frozen_protocol_v1", "message_block", "leace_fit_apply"]}]}
+    ready = build_research_capability_report(diagnostic)
+    assert next(item for item in ready.capabilities if item.capability == "leace_fit_apply").status == "SUPPORTED_AND_READY"
+    diagnostic["research_token_configured"] = False
+    blocked = build_research_capability_report(diagnostic)
+    assert next(item for item in blocked.capabilities if item.capability == "message_block").blockers == ["WARDEN_RESEARCH_TOKEN_MISSING"]
+
+
 def test_compatible_warden_without_research_routes_is_explicitly_unsupported():
     report = build_research_capability_report({
         "status": "ready",
