@@ -2792,6 +2792,12 @@ def create_app(
         list_strategy_evaluations_handler=list_strategy_evaluations,
         get_strategy_evaluation_handler=get_strategy_evaluation,
     ))
+    from agentguard.api.graded_security import register_graded_routes
+    from agentguard.services.study_execution import StudyExecutionService
+
+    register_graded_routes(app, lambda: StudyExecutionService(app.state.research_registry,
+        app.state.warden_workflows, _configured_warden_client(), app.state.artifacts),
+        require_research_write_authorization, audit_research_write)
     return app
 
 
