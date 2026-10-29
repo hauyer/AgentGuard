@@ -8,7 +8,10 @@ from __future__ import annotations
 import math
 import random
 from collections.abc import Sequence
+from copy import deepcopy
+from functools import lru_cache
 from statistics import mean, median, stdev
+from threading import RLock
 
 
 def _quantile(values: list[float], q: float) -> float:
@@ -99,7 +102,35 @@ def paired_effect_summary(
     }
 
 
+_CLUSTER_SUMMARY_LOCK = RLock()
+
+
 def clustered_paired_effect_summary(
+    control: Sequence[float], treatment: Sequence[float], case_families: Sequence[str], *,
+    seed: int = 7, bootstrap_draws: int = 5000, permutation_draws: int = 20000,
+) -> dict:
+    """Return the same family-aware estimate with bounded reuse of identical numeric inputs.
+
+    Provenance and authorization remain the caller's responsibility on every request.
+    This cache contains only deterministic mathematical summaries, never Run membership
+    or trained model resources. Returned dictionaries cannot mutate cached results.
+    """
+    if not isinstance(seed, int):
+        return _calculate_clustered_summary(control, treatment, case_families, seed=seed,
+            bootstrap_draws=bootstrap_draws, permutation_draws=permutation_draws)
+    with _CLUSTER_SUMMARY_LOCK:
+        summary = _cached_clustered_summary(tuple(map(float, control)), tuple(map(float, treatment)),
+            tuple(map(str, case_families)), seed, bootstrap_draws, permutation_draws)
+    return deepcopy(summary)
+
+
+@lru_cache(maxsize=256)
+def _cached_clustered_summary(control, treatment, case_families, seed, bootstrap_draws, permutation_draws):
+    return _calculate_clustered_summary(control, treatment, case_families, seed=seed,
+        bootstrap_draws=bootstrap_draws, permutation_draws=permutation_draws)
+
+
+def _calculate_clustered_summary(
     control: Sequence[float], treatment: Sequence[float], case_families: Sequence[str], *,
     seed: int = 7, bootstrap_draws: int = 5000, permutation_draws: int = 20000,
 ) -> dict:

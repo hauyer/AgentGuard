@@ -3,6 +3,22 @@ import pytest
 from agentguard.core.statistics import paired_effect_summary
 
 
+def test_repeated_clustered_reads_preserve_input_identity_and_cannot_mutate_prior_results():
+    from agentguard.core.statistics import clustered_paired_effect_summary
+
+    control, treatment, families = [1., 1., 0.], [0., 1., 0.], ["a", "b", "c"]
+    original = clustered_paired_effect_summary(control, treatment, families, seed=91)
+    expected = original["mean_treatment_minus_control"]
+    original["family_effects"]["a"] = 999
+    original["cluster_bootstrap_95_ci"][0] = 999
+    again = clustered_paired_effect_summary(control, treatment, families, seed=91)
+    assert again["family_effects"]["a"] == -1
+    assert again["mean_treatment_minus_control"] == expected
+    assert again["cluster_bootstrap_95_ci"][0] != 999
+    changed = clustered_paired_effect_summary(control, [1., 1., 0.], families, seed=91)
+    assert changed["mean_treatment_minus_control"] == 0
+
+
 def test_paired_statistics_detects_known_direction_and_is_reproducible():
     control = [1.0, 0.9, 1.0, 0.8, 0.95]
     treatment = [0.2, 0.3, 0.25, 0.4, 0.2]
